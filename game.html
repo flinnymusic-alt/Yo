@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Survive</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #111; display: flex; justify-content: center; align-items: center; height: 100vh; overflow: hidden; }
+  canvas { display: block; cursor: crosshair; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+
+canvas.width  = window.innerWidth;
+canvas.height = window.innerHeight;
+
+const W = canvas.width;
+const H = canvas.height;
+const CX = W / 2;
+const CY = H / 2;
+
+let state = 'start'; // 'start' | 'play' | 'dead'
+let score = 0;
+let wave  = 1;
+let frameCount = 0;
+let highScore = 0;
+
+const PLAYER_R  = 22;
+const ENEMY_R   = 16;
+const BULLET_R  = 6;
+const BULLET_SPD = 10;
+const ENEMY_BASE_SPD = 1.1;
+
+let enemies = [];
+let bullets = [];
+let particles = [];
+
+// ── helpers ──────────────────────────────────────────────────────────────────
+function rnd(a, b) { return a + Math.random() * (b - a); }
+
+function dist(a, b) {
+  const dx = a.x - b.x, dy = a.y - b.y;
+  return Math.sqrt(dx * dx + dy * dy);
+}
+
+function spawnEnemy() {
+  const side = Math.floor(rnd(0, 4));
+  let x, y;
+  if      (side === 0) { x = rnd(0, W); y = -ENEMY_R; }
+  else if (side === 1) { x = W + ENEMY_R; y = rnd(0, H); }
+  else if (side === 2) { x = rnd(0, W); y = H + ENEMY_R; }
+  else                  { x = -ENEMY_R;  y = rnd(0, H); }
+
+  const spd = ENEMY_BASE_SPD + wave * 0.15 + Math.random() * 0.4;
+  enemies.push({ x, y, spd, hp: 1, flash: 0 });
+}
+
+function spawnParticles(x, y, color, n) {
+  for (let i = 0; i < n; i++) {
+    const angle = rnd(0, Math.PI * 2);
+    const spd   = rnd(1.5, 5);
+    particles.push({
+      x, y,
+      vx: Math.cos(angle) * spd,
+      vy: Math.sin(angle) * spd,
+      r: rnd(2, 5),
+      life: 1,
+      decay: rnd(0.03, 0.07),
+      color
+    });
+  }
+}
+
+// ── input ─────────────────────────────────────────────────────────────────────
+canvas.addEventListener('click', e => {
+  if (state === 'start' || state === 'dead') {
+    startGame();
+    return;
+  }
+  const dx = e.clientX - CX;
+  const dy = e.clientY - CY;
+  const len = Math.sqrt(dx * dx + dy * dy) || 1;
+  bullets.push({
+    x: CX, y: CY,
+    vx: (dx / len) * BULLET_SPD,
+    vy: (dy / len) * BULLET_SPD
+  });
+});
+
+function startGame() {
+  state      = 'play';
+  score      = 0;
+  wave       = 1;
+  frameCount = 0;
+  enemies    = [];
+  bullets    = [];
+  particles  = [];
+}
+
+// ── draw helpers ──────────────────────────────────────────────────────────────
+function drawCircle(x, y, r, fill, stroke, lw) {
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI * 2);
+  if (fill)   { ctx.fillStyle   = fill;   ctx.fill(); }
+  if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = lw || 2; ctx.stroke(); }
+}
+
+function drawPlayer() {
+  // glow
+  const g = ctx.createRadialGradient(CX, CY, 0, CX, CY, PLAYER_R * 2.5);
+  g.addColorStop(0, 'rgba(0,200,255,0.3)');
+  g.addColorStop(1, 'rgba(0,200,255,0)');
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.arc(CX, CY, PLAYER_R * 2.5, 0, Math.PI * 2);
+  ctx.fill();
+
+  drawCircle(CX, CY, PLAYER_R, '#0af', null);
+  // body
+  drawCircle(CX, CY - PLAYER_R * 0.15, PLAYER_R * 0.5, '#eee', null);
+  // legs suggestion
+  ctx.beginPath();
+  ctx.moveTo(CX - 8, CY + PLAYER_R * 0.3);
+  ctx.lineTo(CX - 10, CY + PLAYER_R);
+  ctx.moveTo(CX + 8, CY + PLAYER_R * 0.3);
+  ctx.lineTo(CX + 10, CY + PLAYER_R);
+  ctx.strokeStyle = '#eee';
+  ctx.lineWidth = 3;
+  ctx.stroke();
+}
+
+function drawEnemy(e) {
+  const color = e.flash > 0 ? '#fff' : '#e44';
+  drawCircle(e.x, e.y, ENEMY_R, color, null);
+  // eyes
+  ctx.fillStyle = '#111';
+  ctx.beginPath(); ctx.arc(e.x - 5, e.y - 4, 3, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(e.x + 5, e.y - 4, 3, 0, Math.PI * 2); ctx.fill();
+  // angry brows
+  ctx.strokeStyle = '#111'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(e.x - 8, e.y - 8); ctx.lineTo(e.x - 2, e.y - 6); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(e.x + 8, e.y - 8); ctx.lineTo(e.x + 2, e.y - 6); ctx.stroke();
+}
+
+// ── update ────────────────────────────────────────────────────────────────────
+function update() {
+  frameCount++;
+
+  // spawn cadence: speeds up with wave
+  const interval = Math.max(30, 90 - wave * 8);
+  if (frameCount % interval === 0) spawnEnemy();
+  if (frameCount % 500 === 0) wave++;
+
+  // move bullets
+  bullets = bullets.filter(b => {
+    b.x += b.vx; b.y += b.vy;
+    return b.x > -10 && b.x < W + 10 && b.y > -10 && b.y < H + 10;
+  });
+
+  // move enemies toward center
+  for (const e of enemies) {
+    const dx = CX - e.x, dy = CY - e.y;
+    const d  = Math.sqrt(dx * dx + dy * dy) || 1;
+    e.x += (dx / d) * e.spd;
+    e.y += (dy / d) * e.spd;
+    if (e.flash > 0) e.flash--;
+  }
+
+  // bullet ↔ enemy collision
+  for (const b of bullets) {
+    for (const e of enemies) {
+      if (!e.dead && dist(b, e) < BULLET_R + ENEMY_R) {
+        e.dead = true;
+        score++;
+        spawnParticles(e.x, e.y, '#e44', 12);
+      }
+    }
+  }
+  // remove hit bullets & dead enemies
+  const hitEnemies = new Set(enemies.filter(e => e.dead));
+  bullets = bullets.filter(b => !enemies.some(e => e.dead && dist(b, e) < BULLET_R + ENEMY_R + 2));
+  enemies = enemies.filter(e => !e.dead);
+
+  // enemy hits player
+  for (const e of enemies) {
+    if (dist(e, { x: CX, y: CY }) < PLAYER_R + ENEMY_R) {
+      spawnParticles(CX, CY, '#0af', 20);
+      if (score > highScore) highScore = score;
+      state = 'dead';
+      return;
+    }
+  }
+
+  // particles
+  particles = particles.filter(p => {
+    p.x += p.vx; p.y += p.vy;
+    p.vx *= 0.93; p.vy *= 0.93;
+    p.life -= p.decay;
+    return p.life > 0;
+  });
+}
+
+// ── render ────────────────────────────────────────────────────────────────────
+function render() {
+  // background
+  ctx.fillStyle = '#111';
+  ctx.fillRect(0, 0, W, H);
+
+  // grid lines for depth
+  ctx.strokeStyle = 'rgba(255,255,255,0.04)';
+  ctx.lineWidth = 1;
+  for (let x = 0; x < W; x += 60) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
+  for (let y = 0; y < H; y += 60) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+
+  // danger ring
+  ctx.beginPath();
+  ctx.arc(CX, CY, PLAYER_R + ENEMY_R, 0, Math.PI * 2);
+  ctx.strokeStyle = 'rgba(255,80,80,0.15)';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  if (state === 'play' || state === 'dead') {
+    // particles
+    for (const p of particles) {
+      ctx.globalAlpha = p.life;
+      drawCircle(p.x, p.y, p.r, p.color, null);
+    }
+    ctx.globalAlpha = 1;
+
+    // bullets
+    for (const b of bullets) {
+      const g = ctx.createRadialGradient(b.x, b.y, 0, b.x, b.y, BULLET_R * 2);
+      g.addColorStop(0, '#fff');
+      g.addColorStop(1, 'rgba(255,255,0,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(b.x, b.y, BULLET_R * 2, 0, Math.PI * 2);
+      ctx.fill();
+      drawCircle(b.x, b.y, BULLET_R, '#ff0', null);
+    }
+
+    // enemies
+    for (const e of enemies) drawEnemy(e);
+
+    // player
+    drawPlayer();
+
+    // HUD
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 22px monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText(`SCORE: ${score}`, 20, 36);
+    ctx.fillText(`WAVE:  ${wave}`, 20, 62);
+    ctx.textAlign = 'right';
+    ctx.fillText(`BEST: ${highScore}`, W - 20, 36);
+  }
+
+  if (state === 'start') {
+    drawPlayer();
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#0af';
+    ctx.font = 'bold 52px monospace';
+    ctx.fillText('SURVIVE', CX, CY - 60);
+    ctx.fillStyle = '#eee';
+    ctx.font = '20px monospace';
+    ctx.fillText('CLICK anywhere to shoot', CX, CY + 30);
+    ctx.fillText('Keep enemies away from the center', CX, CY + 60);
+    ctx.fillStyle = '#ff0';
+    ctx.font = 'bold 26px monospace';
+    ctx.fillText('[ CLICK TO START ]', CX, CY + 110);
+  }
+
+  if (state === 'dead') {
+    // dim overlay
+    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    ctx.fillRect(0, 0, W, H);
+
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#e44';
+    ctx.font = 'bold 64px monospace';
+    ctx.fillText('GAME OVER', CX, CY - 50);
+    ctx.fillStyle = '#fff';
+    ctx.font = '28px monospace';
+    ctx.fillText(`Score: ${score}`, CX, CY + 10);
+    ctx.fillText(`Best:  ${highScore}`, CX, CY + 48);
+    ctx.fillStyle = '#ff0';
+    ctx.font = 'bold 26px monospace';
+    ctx.fillText('[ CLICK TO PLAY AGAIN ]', CX, CY + 100);
+  }
+}
+
+// ── loop ──────────────────────────────────────────────────────────────────────
+function loop() {
+  if (state === 'play') update();
+  render();
+  requestAnimationFrame(loop);
+}
+
+loop();
+</script>
+</body>
+</html>
