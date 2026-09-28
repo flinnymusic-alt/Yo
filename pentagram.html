@@ -41,28 +41,42 @@ const TYPE_COLOR = {
   lightning: '#88ffff', poison: '#7dff4a', spirit: '#c77dff', holy: '#fff6b0',
 };
 
+// Power scales hard with chain length. Tier name is indexed by combo length.
+const TIERS = ['', '', 'Minor', 'Adept', 'Greater', 'Monstrous', 'Omni King', 'Doomsday Destroyer'];
+const TIER_COLOR = ['', '', '#bbb', '#8fd0ff', '#b98cff', '#ff8a3a', '#ffd24a', '#ff3355'];
+
 // Every combo that does something. Anything else fizzles.
 const SPELLS = {
-  FF:      { name: 'Firebolt',        kind: 'attack',  cost: 2,  cast() { shoot({ dmg: 2, type: 'fire', speed: 520, r: 7 }); } },
-  WW:      { name: 'Frost Shard',     kind: 'attack',  cost: 2,  cast() { shoot({ dmg: 1.5, type: 'water', speed: 600, r: 6, fx: 'slow' }); } },
-  EE:      { name: 'Stone Spike',     kind: 'attack',  cost: 3,  cast() { shoot({ dmg: 3, type: 'earth', speed: 380, r: 9, pierce: 1 }); } },
-  AA:      { name: 'Gust',            kind: 'attack',  cost: 2,  cast() { aoe(player.x, player.y, 170, 1, 'air', 320); } },
-  EW:      { name: 'Venom Dart',      kind: 'poison',  cost: 2,  cast() { shoot({ dmg: 0.5, type: 'poison', speed: 560, r: 6, fx: 'poison' }); } },
-  WS:      { name: 'Mend',            kind: 'heal',    cost: 4,  cast() { healPlayer(5); } },
-  ES:      { name: 'Stoneskin',       kind: 'defence', cost: 4,  cast() { player.skin = 12; } },
-  AS:      { name: 'Haste',           kind: 'buff',    cost: 3,  cast() { player.haste = 10; } },
-  AWA:     { name: 'Chain Lightning', kind: 'attack',  cost: 5,  cast() { chainLightning(3, 5); } },
-  FFA:     { name: 'Fireball',        kind: 'attack',  cost: 5,  cast() { shoot({ dmg: 2, type: 'fire', speed: 450, r: 11, fx: 'explode', boom: 3, boomR: 95 }); } },
-  SSA:     { name: 'Spirit Lance',    kind: 'attack',  cost: 5,  cast() { shoot({ dmg: 4, type: 'spirit', speed: 760, r: 8, pierce: 3 }); } },
-  EWS:     { name: 'Plague Cloud',    kind: 'poison',  cost: 6,  cast() { plagueCloud(); } },
+  // ── 2 · Minor: cheap pokes ──
+  FF:      { name: 'Firebolt',        kind: 'attack',  cost: 2,  cast() { shoot({ dmg: 1.5, type: 'fire', speed: 520, r: 7 }); } },
+  WW:      { name: 'Frost Shard',     kind: 'attack',  cost: 2,  cast() { shoot({ dmg: 1, type: 'water', speed: 600, r: 6, fx: 'slow' }); } },
+  EE:      { name: 'Stone Spike',     kind: 'attack',  cost: 2,  cast() { shoot({ dmg: 2, type: 'earth', speed: 380, r: 8 }); } },
+  AA:      { name: 'Gust',            kind: 'attack',  cost: 2,  cast() { aoe(player.x, player.y, 150, 0.5, 'air', 300); } },
+  EW:      { name: 'Venom Dart',      kind: 'poison',  cost: 2,  cast() { shoot({ dmg: 0.3, type: 'poison', speed: 560, r: 6, fx: 'poison' }); } },
+  WS:      { name: 'Mend',            kind: 'heal',    cost: 3,  cast() { healPlayer(3); } },
+  ES:      { name: 'Stoneskin',       kind: 'defence', cost: 3,  cast() { player.skin = 8; } },
+  AS:      { name: 'Haste',           kind: 'buff',    cost: 2,  cast() { player.haste = 6; } },
+  // ── 3 · Adept: real spells ──
+  AWA:     { name: 'Chain Lightning', kind: 'attack',  cost: 5,  cast() { chainLightning(3.5, 5); } },
+  FFA:     { name: 'Fireball',        kind: 'attack',  cost: 5,  cast() { shoot({ dmg: 3, type: 'fire', speed: 450, r: 11, fx: 'explode', boom: 3.5, boomR: 100 }); } },
+  SSA:     { name: 'Spirit Lance',    kind: 'attack',  cost: 5,  cast() { shoot({ dmg: 4.5, type: 'spirit', speed: 760, r: 8, pierce: 3 }); } },
+  EWS:     { name: 'Plague Cloud',    kind: 'poison',  cost: 5,  cast() { plagueCloud(); } },
   SWS:     { name: 'Ward',            kind: 'defence', cost: 5,  cast() { player.ward = 4; } },
-  FSF:     { name: 'Empower',         kind: 'buff',    cost: 6,  cast() { player.empower = 10; } },
-  SAS:     { name: 'Wisp',            kind: 'summon',  cost: 6,  cast() { summon('wisp'); } },
-  FSE:     { name: 'Fire Imp',        kind: 'summon',  cost: 7,  cast() { summon('imp'); } },
-  EESE:    { name: 'Stone Golem',     kind: 'summon',  cost: 9,  cast() { summon('golem'); } },
+  FSF:     { name: 'Empower',         kind: 'buff',    cost: 5,  cast() { player.empower = 10; } },
+  SAS:     { name: 'Wisp',            kind: 'summon',  cost: 5,  cast() { summon('wisp'); } },
+  FSE:     { name: 'Fire Imp',        kind: 'summon',  cost: 5,  cast() { summon('imp'); } },
+  // ── 4 · Greater: way more than a 3 ──
   WWWA:    { name: 'Tidal Wave',      kind: 'attack',  cost: 8,  cast() { tidalWave(); } },
-  FEFEF:   { name: 'Meteor',          kind: 'attack',  cost: 11, cast() { meteor(); } },
-  SFWEASS: { name: 'Judgment',        kind: 'attack',  cost: 18, cast() { judgment(); } },
+  EESE:    { name: 'Stone Golem',     kind: 'summon',  cost: 8,  cast() { summon('golem'); } },
+  AWAW:    { name: 'Thunderstorm',    kind: 'attack',  cost: 8,  cast() { storms.push({ left: 10, t: 0 }); } },
+  // ── 5 · Monstrous ──
+  FEFEF:   { name: 'Meteor',          kind: 'attack',  cost: 12, cast() { meteor(); } },
+  WAWAW:   { name: 'Blizzard',        kind: 'attack',  cost: 12, cast() { blizzard(); } },
+  // ── 6 · Omni King ──
+  SAFEWS:  { name: 'Crown of All',    kind: 'buff',    cost: 16, cast() { player.omni = 12; player.omniCd = 0; } },
+  FFSAFF:  { name: 'Dragon',          kind: 'summon',  cost: 16, cast() { summon('dragon'); } },
+  // ── 7 · Doomsday Destroyer ──
+  SFWEASS: { name: 'Doomsday',        kind: 'attack',  cost: 20, cast() { doomsday(); } },
 };
 const SPELL_COUNT = Object.keys(SPELLS).length;
 
@@ -80,8 +94,8 @@ const BOSSES = [
   { id: 'troll',    name: 'Frost Troll',   x: 0,     y: -850,  hp: 30, r: 38, spd: 50, color: '#9fd8ff', weak: ['fire'],            dmg: 3, attack: 'aimed', shots: 1,  rate: 2.0, minion: 'bat',      reward: 'AWA' },
   { id: 'sentinel', name: 'Iron Sentinel', x: 1150,  y: 150,   hp: 40, r: 40, spd: 40, color: '#8a8f9c', weak: ['lightning'],       dmg: 3, attack: 'aimed', shots: 3,  rate: 2.2, minion: 'skeleton', reward: 'SSA' },
   { id: 'lich',     name: 'Bone Lich',     x: -150,  y: 1200,  hp: 45, r: 34, spd: 55, color: '#d8d2b8', weak: ['spirit', 'holy'],  dmg: 3, attack: 'aimed', shots: 2,  rate: 2.0, minion: 'skeleton', reward: 'WWWA', summon: 'skeleton' },
-  { id: 'titan',    name: 'Magma Titan',   x: -1200, y: -150,  hp: 60, r: 48, spd: 38, color: '#ff7a30', weak: ['water'],           dmg: 4, attack: 'ring',  shots: 10, rate: 2.6, minion: 'ember',    reward: 'SFWEASS' },
-  { id: 'hydra',    name: 'Void Hydra',    x: 1250,  y: -1250, hp: 90, r: 50, spd: 45, color: '#6a3aa8', weak: ['poison', 'holy'], dmg: 4, attack: 'aimed', shots: 5,  rate: 2.4, minion: 'shade',    reward: 'FEFEF', summon: 'shade' },
+  { id: 'titan',    name: 'Magma Titan',   x: -1200, y: -150,  hp: 60, r: 48, spd: 38, color: '#ff7a30', weak: ['water'],           dmg: 4, attack: 'ring',  shots: 10, rate: 2.6, minion: 'ember',    reward: 'SAFEWS' },
+  { id: 'hydra',    name: 'Void Hydra',    x: 1250,  y: -1250, hp: 90, r: 50, spd: 45, color: '#6a3aa8', weak: ['poison', 'holy'], dmg: 4, attack: 'aimed', shots: 5,  rate: 2.4, minion: 'shade',    reward: 'SFWEASS', summon: 'shade' },
 ];
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -161,6 +175,7 @@ function playerScreenY() { return panelTop * 0.5; }
 let state = 'title'; // 'title' | 'play' | 'reveal' | 'dead' | 'won'
 const player = {};
 let foes = [], shots = [], enemyShots = [], allies = [], zones = [], waves = [], meteors = [];
+let storms = [], dooms = [];
 let fx = [], particles = [], floaters = [], chests = [];
 let spawnQueue = [];
 let discovered = new Set();
@@ -192,6 +207,7 @@ function resetPlayer() {
   Object.assign(player, {
     x: 0, y: 0, hp: 20, maxHp: 20, mana: 20, maxMana: 20,
     face: { x: 0, y: -1 }, invuln: 0, skin: 0, haste: 0, empower: 0, ward: 0, moving: false,
+    omni: 0, omniCd: 0, omniIdx: 0,
   });
 }
 
@@ -215,6 +231,7 @@ function makeFoe(kind, x, y) {
 
 function clearCombat() {
   shots = []; enemyShots = []; allies = []; zones = []; waves = []; meteors = [];
+  storms = []; dooms = [];
   fx = []; particles = []; floaters = []; spawnQueue = [];
 }
 
@@ -330,7 +347,7 @@ function aoe(x, y, rad, dmg, type, push) {
 }
 
 function hurtPlayer(d) {
-  if (state !== 'play' || player.invuln > 0) return;
+  if (state !== 'play' || player.invuln > 0 || player.omni > 0) return;
   if (player.ward > 0) {
     player.ward--;
     player.invuln = 0.3;
@@ -395,7 +412,7 @@ function plagueCloud() {
 }
 
 function tidalWave() {
-  waves.push({ x: player.x, y: player.y, r: 20, maxR: 330, speed: 430, dmg: 3, type: 'water', hit: new Set() });
+  waves.push({ x: player.x, y: player.y, r: 20, maxR: 440, speed: 480, dmg: 8, type: 'water', hit: new Set() });
 }
 
 function meteor() {
@@ -403,23 +420,86 @@ function meteor() {
   meteors.push({ x: p.x, y: p.y, t: 0.9, max: 0.9 });
 }
 
-function judgment() {
-  flash = 1;
-  shake = 18;
+function blizzard() {
+  flash = 0.4;
+  shake = Math.max(shake, 10);
   for (const f of foes) {
-    if (!f.dead && Math.hypot(f.x - player.x, f.y - player.y) < 900) {
-      damageFoe(f, 12, 'holy');
-      burst(f.x, f.y, TYPE_COLOR.holy, 10, 200);
-    }
+    if (f.dead || Math.hypot(f.x - player.x, f.y - player.y) > 460) continue;
+    damageFoe(f, 22, 'water');
+    f.freeze = 4;
+    f.slow = 8;
+  }
+  ring(player.x, player.y, 460, '#cfefff', 0.8);
+  for (let i = 0; i < 90; i++) {
+    const a = rnd(0, TAU), d = rnd(0, 460);
+    particles.push({ x: player.x + Math.cos(a) * d, y: player.y + Math.sin(a) * d - 60, vx: rnd(-30, 30), vy: rnd(60, 160),
+                     r: rnd(2, 4), life: 1, decay: rnd(0.6, 1.2), color: '#e8f8ff' });
   }
 }
 
-const ALLY_LIFE = { wisp: 20, imp: 18, golem: 25 };
+// 7-element finale: after a short charge, everything nearby is erased and every
+// guardian in range takes a massive hit of the one thing it can't resist.
+function doomsday() {
+  dooms.push({ t: 1.2, max: 1.2 });
+}
+
+function detonateDoom() {
+  flash = 1.6;
+  shake = 34;
+  enemyShots = [];
+  for (const f of foes) {
+    if (f.dead || Math.hypot(f.x - player.x, f.y - player.y) > 1000) continue;
+    if (f.boss) damageFoe(f, 50, f.def.weak[0]);
+    else damageFoe(f, 9999, 'holy');
+    burst(f.x, f.y, '#ff3355', 18, 400);
+  }
+  for (let i = 0; i < 4; i++) ring(player.x, player.y, 250 + i * 250, i % 2 ? '#fff6b0' : '#ff3355', 0.9 + i * 0.2);
+  burst(player.x, player.y, '#fff', 80, 700);
+}
+
+// Crown of All: invulnerable, and fires bolts that cycle through every damage type.
+const OMNI_TYPES = ['fire', 'water', 'earth', 'air', 'lightning', 'poison', 'spirit', 'holy'];
+function omniFire(dt) {
+  if (player.omni <= 0) return;
+  player.omniCd -= dt;
+  if (player.omniCd > 0) return;
+  player.omniCd = 0.15;
+  const type = OMNI_TYPES[player.omniIdx++ % OMNI_TYPES.length];
+  const a = aimFrom(player, 650);
+  if (!a.t) return;
+  launch(player.x, player.y, a, { dmg: 8, type, speed: 720, r: 10, pierce: 1 });
+}
+
+function updateStorms(dt) {
+  for (const s of storms) {
+    s.t -= dt;
+    if (s.t > 0) continue;
+    s.t = 0.2;
+    s.left--;
+    const near = foes.filter(f => !f.dead && Math.hypot(f.x - player.x, f.y - player.y) < 480);
+    if (!near.length) continue;
+    const f = near[Math.floor(Math.random() * near.length)];
+    damageFoe(f, 7, 'lightning');
+    fx.push({ kind: 'bolt', pts: [{ x: f.x + rnd(-40, 40), y: f.y - 420 }, { x: f.x, y: f.y }], life: 0.25, max: 0.25 });
+    burst(f.x, f.y, TYPE_COLOR.lightning, 10, 220);
+    shake = Math.max(shake, 4);
+  }
+  storms = storms.filter(s => s.left > 0);
+
+  for (const d of dooms) {
+    d.t -= dt;
+    if (d.t <= 0) detonateDoom();
+  }
+  dooms = dooms.filter(d => d.t > 0);
+}
+
+const ALLY_LIFE = { wisp: 20, imp: 18, golem: 30, dragon: 30 };
+const ALLY_R = { wisp: 9, imp: 9, golem: 18, dragon: 26 };
 function summon(kind) {
   const a = rnd(0, TAU);
   allies.push({ kind, x: player.x + Math.cos(a) * 40, y: player.y + Math.sin(a) * 40,
-                life: ALLY_LIFE[kind], max: ALLY_LIFE[kind], cd: 0.4, ang: a, r: kind === 'golem' ? 18 : 9 });
-  burst(player.x + Math.cos(a) * 40, player.y + Math.sin(a) * 40, '#fff', 16, 200);
+                life: ALLY_LIFE[kind], max: ALLY_LIFE[kind], cd: 0.4, ang: a, r: ALLY_R[kind] });
+  burst(player.x + Math.cos(a) * 40, player.y + Math.sin(a) * 40, kind === 'dragon' ? '#ff5a2a' : '#fff', kind === 'dragon' ? 50 : 16, 260);
 }
 
 function castSequence() {
@@ -435,13 +515,15 @@ function castSequence() {
   }
   if (player.mana < sp.cost) { castMessage('Not enough mana', '#6af'); return; }
   player.mana -= sp.cost;
-  const color = ELEMENTS[key[key.length - 1]].color;
-  castMessage(sp.name, color);
-  burst(player.x, player.y, color, 12, 200);
+  const tier = key.length;
+  castMessage(tier >= 4 ? `${sp.name} · ${TIERS[tier]}` : sp.name, TIER_COLOR[tier]);
+  burst(player.x, player.y, ELEMENTS[key[tier - 1]].color, 6 * tier, 100 + 50 * tier);
+  if (tier >= 4) shake = Math.max(shake, (tier - 3) * 4);
   sp.cast();
   if (!discovered.has(key)) {
     discovered.add(key);
-    showBanner('New spell discovered!', `${sp.name} · ${sp.kind}`, 3);
+    showBanner(tier >= 5 ? `${TIERS[tier].toUpperCase()} SPELL!` : 'New spell discovered!',
+               `${sp.name} · tier ${tier} ${TIERS[tier]} · ${sp.kind}`, tier >= 5 ? 4 : 3);
   }
 }
 
@@ -534,6 +616,7 @@ function updateFoes(dt) {
       if (f.poisonTick <= 0) { f.poisonTick = 0.5; damageFoe(f, f.poisonDps * 0.5, 'poison'); }
       if (f.dead) continue;
     }
+    if (f.freeze > 0) { f.freeze -= dt; continue; } // frozen solid: no moving, biting or shooting
     const dp = Math.hypot(player.x - f.x, player.y - f.y);
     if (f.boss) {
       updateBoss(f, dt, dp);
@@ -583,7 +666,7 @@ function updateShots(dt) {
         s.hit.add(f);
         damageFoe(f, s.dmg, s.type);
         if (s.fx === 'slow') f.slow = 2.5;
-        if (s.fx === 'poison') { f.poison = Math.max(f.poison, 4); f.poisonDps = Math.max(f.poisonDps, 1); }
+        if (s.fx === 'poison') { f.poison = Math.max(f.poison, 3); f.poisonDps = Math.max(f.poisonDps, 0.6); }
         if (s.fx === 'explode') { aoe(s.x, s.y, s.boomR, s.boom, s.type, 120); burst(s.x, s.y, s.color, 22, 300); }
         else burst(s.x, s.y, s.color, 5, 140);
         if (s.pierce-- <= 0) s.life = 0;
@@ -618,15 +701,27 @@ function updateAllies(dt) {
     } else if (a.kind === 'golem') {
       const t = nearestFoe(a.x, a.y, 450);
       if (t) {
-        const d = moveToward(a, t.x, t.y, 95, dt, a.r + t.r);
+        const d = moveToward(a, t.x, t.y, 110, dt, a.r + t.r);
         if (d <= a.r + t.r + 8 && a.cd <= 0) {
-          damageFoe(t, 3, 'earth');
-          knock(t, a.x, a.y, 260);
-          ring(t.x, t.y, t.r + 10, TYPE_COLOR.earth, 0.25);
-          a.cd = 1;
+          // ground slam: big hit on the target, splash around it
+          aoe(t.x, t.y, 70, 3, 'earth', 200);
+          damageFoe(t, 5, 'earth');
+          knock(t, a.x, a.y, 320);
+          shake = Math.max(shake, 3);
+          a.cd = 0.9;
         }
       } else {
-        moveToward(a, player.x, player.y, 120, dt, 55);
+        moveToward(a, player.x, player.y, 130, dt, 55);
+      }
+    } else if (a.kind === 'dragon') {
+      a.ang += 1.1 * dt;
+      moveToward(a, player.x + Math.cos(a.ang) * 90, player.y + Math.sin(a.ang) * 60 - 40, 260, dt, 0);
+      if (a.cd <= 0) {
+        const t = nearestFoe(a.x, a.y, 600);
+        if (t) {
+          launch(a.x, a.y, aimFrom(a, 600), { dmg: 6, type: 'fire', speed: 560, r: 13, fx: 'explode', boom: 6, boomR: 120 });
+          a.cd = 0.7;
+        }
       }
     }
   }
@@ -644,6 +739,7 @@ function updateEffects(dt) {
       z.tick = 0.5;
       for (const f of foes) {
         if (f.dead || Math.hypot(f.x - z.x, f.y - z.y) > z.r + f.r) continue;
+        if (z.type === 'fire') { damageFoe(f, 1.5, 'fire'); continue; } // meteor crater
         damageFoe(f, 0.6, 'poison');
         f.poison = Math.max(f.poison, 2);
         f.poisonDps = Math.max(f.poisonDps, 1);
@@ -668,10 +764,12 @@ function updateEffects(dt) {
   for (const m of meteors) {
     m.t -= dt;
     if (m.t <= 0) {
-      aoe(m.x, m.y, 150, 10, 'fire', 260);
-      burst(m.x, m.y, '#ff5a2a', 50, 480);
-      burst(m.x, m.y, '#ffd24a', 30, 300);
-      shake = Math.max(shake, 14);
+      aoe(m.x, m.y, 200, 25, 'fire', 380);
+      zones.push({ x: m.x, y: m.y, r: 140, life: 4, max: 4, tick: 0, type: 'fire' });
+      burst(m.x, m.y, '#ff5a2a', 80, 560);
+      burst(m.x, m.y, '#ffd24a', 40, 340);
+      shake = Math.max(shake, 20);
+      flash = Math.max(flash, 0.35);
     }
   }
   meteors = meteors.filter(m => m.t > 0);
@@ -751,6 +849,9 @@ function update(dt) {
   updateFoes(dt);
   updateShots(dt);
   updateAllies(dt);
+  updateStorms(dt);
+  omniFire(dt);
+  player.omni = Math.max(0, player.omni - dt);
   updateEffects(dt);
 
   for (const c of chests) {
@@ -1045,6 +1146,7 @@ function drawFoe(f) {
   if (f.flash > 0) circle(0, 0, r, 'rgba(255,255,255,0.7)');
   if (f.slow > 0) circle(0, 0, r + 3, null, 'rgba(58,176,255,0.8)', 2);
   if (f.poison > 0) circle(0, 0, r + 5, null, 'rgba(125,255,74,0.7)', 2);
+  if (f.freeze > 0) circle(0, 0, r + 2, 'rgba(200,240,255,0.55)', '#e8f8ff', 2);
   ctx.restore();
 
   if (f.hp < f.maxHp) {
@@ -1118,6 +1220,7 @@ function drawBoss(b) {
   if (b.flash > 0) circle(0, 0, r, 'rgba(255,255,255,0.6)');
   if (b.slow > 0) circle(0, 0, r + 4, null, 'rgba(58,176,255,0.8)', 2);
   if (b.poison > 0) circle(0, 0, r + 7, null, 'rgba(125,255,74,0.7)', 2);
+  if (b.freeze > 0) circle(0, 0, r + 2, 'rgba(200,240,255,0.5)', '#e8f8ff', 3);
   ctx.restore();
 
   if (b.aggro || b.hp < b.maxHp) {
@@ -1145,6 +1248,23 @@ function drawAlly(a) {
     ctx.beginPath(); ctx.moveTo(a.x - 8, a.y - 6); ctx.lineTo(a.x - 5, a.y - 16); ctx.lineTo(a.x - 2, a.y - 8); ctx.fill();
     ctx.beginPath(); ctx.moveTo(a.x + 8, a.y - 6); ctx.lineTo(a.x + 5, a.y - 16); ctx.lineTo(a.x + 2, a.y - 8); ctx.fill();
     circle(a.x - 3, a.y - 1, 1.8, '#ff4'); circle(a.x + 3, a.y - 1, 1.8, '#ff4');
+  } else if (a.kind === 'dragon') {
+    const flap = Math.sin(elapsed * 8) * 0.5;
+    circle(a.x + 6, a.y + 34, 22, 'rgba(0,0,0,0.25)');
+    ctx.fillStyle = '#8a1e14';
+    for (const s of [-1, 1]) {
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(a.x + s * 58, a.y - 30 - flap * 30);
+      ctx.lineTo(a.x + s * 44, a.y + 6);
+      ctx.lineTo(a.x + s * 24, a.y + 10);
+      ctx.closePath(); ctx.fill();
+    }
+    ctx.strokeStyle = '#c0301c'; ctx.lineWidth = 8; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(a.x, a.y + 10); ctx.quadraticCurveTo(a.x - 14, a.y + 34, a.x + 6, a.y + 44); ctx.stroke();
+    circle(a.x, a.y, 16, '#c0301c', '#ffb04a', 2);
+    circle(a.x, a.y - 18, 10, '#d8401e');
+    circle(a.x - 4, a.y - 20, 2.2, '#ffd24a'); circle(a.x + 4, a.y - 20, 2.2, '#ffd24a');
   } else {
     circle(a.x + 3, a.y + 12, 16, 'rgba(0,0,0,0.3)');
     roundRect(a.x - 18, a.y - 18, 36, 36, 8); ctx.fillStyle = '#7d6a55'; ctx.fill();
@@ -1177,6 +1297,17 @@ function drawPlayer() {
   circle(x + 16, y - 20, 4, seq.length ? ELEMENTS[seq[seq.length - 1]].color : '#c77dff');
 
   if (player.skin > 0) circle(x, y, 24, null, 'rgba(181,131,74,0.9)', 4);
+  if (player.omni > 0) {
+    // a ring of every element's colour, spinning, plus a gold crown
+    for (let i = 0; i < OMNI_TYPES.length; i++) {
+      const a = elapsed * 3 + i * TAU / OMNI_TYPES.length;
+      circle(x + Math.cos(a) * 36, y + Math.sin(a) * 36, 5, TYPE_COLOR[OMNI_TYPES[i]]);
+    }
+    ctx.fillStyle = '#ffd24a';
+    ctx.beginPath();
+    ctx.moveTo(x - 11, y - 34); ctx.lineTo(x - 11, y - 44); ctx.lineTo(x - 5, y - 38); ctx.lineTo(x, y - 47);
+    ctx.lineTo(x + 5, y - 38); ctx.lineTo(x + 11, y - 44); ctx.lineTo(x + 11, y - 34); ctx.closePath(); ctx.fill();
+  }
   if (player.ward > 0) {
     circle(x, y, 30, 'rgba(199,125,255,0.12)', 'rgba(199,125,255,0.8)', 2);
     for (let i = 0; i < player.ward; i++) {
@@ -1197,12 +1328,21 @@ function drawEffects() {
   for (const z of zones) {
     const a = Math.min(1, z.life) * 0.35;
     const g = ctx.createRadialGradient(z.x, z.y, 0, z.x, z.y, z.r);
-    g.addColorStop(0, `rgba(125,255,74,${a})`); g.addColorStop(1, 'rgba(60,140,30,0)');
+    if (z.type === 'fire') { g.addColorStop(0, `rgba(255,110,40,${a * 1.5})`); g.addColorStop(1, 'rgba(120,30,10,0)'); }
+    else { g.addColorStop(0, `rgba(125,255,74,${a})`); g.addColorStop(1, 'rgba(60,140,30,0)'); }
     ctx.fillStyle = g; ctx.beginPath(); ctx.arc(z.x, z.y, z.r, 0, TAU); ctx.fill();
     for (let i = 0; i < 5; i++) {
       const bx = z.x + Math.cos(i * 1.3 + elapsed) * z.r * 0.6, by = z.y + Math.sin(i * 2.1 + elapsed * 1.3) * z.r * 0.6;
-      circle(bx, by, 4, `rgba(160,255,110,${a * 1.5})`);
+      circle(bx, by, 4, z.type === 'fire' ? `rgba(255,200,90,${a * 2})` : `rgba(160,255,110,${a * 1.5})`);
     }
+  }
+  for (const d of dooms) {
+    // the sky darkens and a blood-red circle tightens around the caster
+    const k = 1 - d.t / d.max;
+    ctx.fillStyle = `rgba(20,0,8,${k * 0.5})`;
+    ctx.fillRect(player.x - 3000, player.y - 3000, 6000, 6000);
+    circle(player.x, player.y, 1000 * (1 - k) + 40, null, `rgba(255,51,85,${0.4 + k * 0.6})`, 4 + k * 8);
+    circle(player.x, player.y, 40 + k * 30, `rgba(255,246,176,${k})`);
   }
   for (const w of waves) {
     const a = 1 - w.r / w.maxR;
@@ -1211,7 +1351,7 @@ function drawEffects() {
   }
   for (const m of meteors) {
     const k = 1 - m.t / m.max;
-    circle(m.x, m.y, 150, `rgba(255,90,42,${0.08 + k * 0.15})`, `rgba(255,90,42,${0.4 + k * 0.4})`, 2);
+    circle(m.x, m.y, 200, `rgba(255,90,42,${0.08 + k * 0.15})`, `rgba(255,90,42,${0.4 + k * 0.4})`, 2);
     const hx = m.x - 260 * (1 - k), hy = m.y - 420 * (1 - k);
     const g = ctx.createRadialGradient(hx, hy, 0, hx, hy, 30);
     g.addColorStop(0, '#fff'); g.addColorStop(0.4, '#ffb04a'); g.addColorStop(1, 'rgba(255,90,42,0)');
@@ -1303,6 +1443,7 @@ function drawHUD() {
   if (player.skin > 0)    buffs.push([`Stoneskin ${Math.ceil(player.skin)}`, TYPE_COLOR.earth]);
   if (player.haste > 0)   buffs.push([`Haste ${Math.ceil(player.haste)}`, TYPE_COLOR.air]);
   if (player.empower > 0) buffs.push([`Empower ${Math.ceil(player.empower)}`, TYPE_COLOR.fire]);
+  if (player.omni > 0)    buffs.push([`Crown of All ${Math.ceil(player.omni)}`, TIER_COLOR[6]]);
   let bx = 14;
   for (const [t, c] of buffs) {
     ctx.fillStyle = c;
@@ -1500,6 +1641,10 @@ function drawReveal() {
   ctx.fillStyle = '#ffd24a';
   ctx.font = 'bold 16px system-ui, sans-serif';
   ctx.fillText('AN ANCIENT SCROLL', W / 2, y);
+  y += 22;
+  ctx.fillStyle = TIER_COLOR[combo.length];
+  ctx.font = 'bold 13px system-ui, sans-serif';
+  ctx.fillText(`TIER ${combo.length} · ${TIERS[combo.length].toUpperCase()}`, W / 2, y);
   y += 40;
   ctx.fillStyle = '#fff';
   ctx.font = `bold ${Math.min(36, W / 11)}px Georgia, serif`;
