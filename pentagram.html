@@ -36,8 +36,9 @@ const ELEMENTS = {
 const KEY_TO_EL = { Digit1: 'F', Digit2: 'W', Digit3: 'E', Digit4: 'A', Digit5: 'S' };
 
 const TYPE_COLOR = {
+  // keep these 6-digit: the boss aura appends a 2-digit alpha
   fire: '#ff5a2a', water: '#3ab0ff', earth: '#b5834a', air: '#f5e663',
-  lightning: '#8ff', poison: '#7dff4a', spirit: '#c77dff', holy: '#fff6b0',
+  lightning: '#88ffff', poison: '#7dff4a', spirit: '#c77dff', holy: '#fff6b0',
 };
 
 // Every combo that does something. Anything else fizzles.
@@ -1579,6 +1580,11 @@ function tick(dt) {
 }
 
 function render() {
+  // start every frame from a clean context, in case a previous frame threw mid-draw
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  ctx.globalAlpha = 1;
+  ctx.shadowBlur = 0;
+  ctx.setLineDash([]);
   ctx.fillStyle = '#0b0a12';
   ctx.fillRect(0, 0, W, H);
   if (state === 'title') {
@@ -1599,13 +1605,18 @@ function render() {
 
 let last = performance.now();
 function loop(now) {
+  // schedule first so one bad frame can't stop the game
+  requestAnimationFrame(loop);
   const dt = Math.min(0.05, (now - last) / 1000);
   last = now;
   const v = viewSize();
   if (v.w !== W || v.h !== H) resize();
-  tick(dt);
-  render();
-  requestAnimationFrame(loop);
+  try {
+    tick(dt);
+    render();
+  } catch (err) {
+    console.error(err);
+  }
 }
 requestAnimationFrame(loop);
 </script>
