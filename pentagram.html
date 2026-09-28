@@ -822,11 +822,15 @@ function update(dt) {
     const dx = movePos.x - W / 2, dy = movePos.y - playerScreenY(), d = Math.hypot(dx, dy);
     if (d > 14) { mx += dx / d; my += dy / d; }
   }
-  const ml = Math.hypot(mx, my);
-  player.moving = ml > 0;
-  if (ml > 0) {
+  const t = tiltVector();
+  mx += t.x; my += t.y;
+  // analog: a gentle tilt walks slowly, anything else is capped at full speed
+  let ml = Math.hypot(mx, my);
+  player.moving = ml > 0.02;
+  if (player.moving) {
     mx /= ml; my /= ml;
-    const sp = 170 * (player.haste > 0 ? 1.6 : 1);
+    ml = Math.min(1, ml);
+    const sp = 170 * ml * (player.haste > 0 ? 1.6 : 1);
     player.x = clamp(player.x + mx * sp * dt, -WORLD, WORLD);
     player.y = clamp(player.y + my * sp * dt, -WORLD, WORLD);
     player.face = { x: mx, y: my };
@@ -859,6 +863,69 @@ function update(dt) {
   }
 }
 
+// ── tilt steering ────────────────────────────────────────────────────────────
+// Walk by tilting the phone. Whatever angle you hold it at when tilt starts
+// (or when you tap the tilt label) counts as "level".
+const TILT_DEAD = 4, TILT_FULL = 18; // degrees
+const tilt = { asked: false, listening: false, raw: null, base: null, startedAt: 0, warned: false };
+
+function screenAngle() {
+  const a = (screen.orientation && screen.orientation.angle) ?? window.orientation ?? 0;
+  return ((a % 360) + 360) % 360;
+}
+
+function onOrient(e) {
+  if (e.beta == null || e.gamma == null) return;
+  const b = e.beta, g = e.gamma, a = screenAngle();
+  // convert device axes into screen right (x) / screen down (y)
+  let x, y;
+  if (a === 90)       { x = b;  y = -g; }
+  else if (a === 270) { x = -b; y = g; }
+  else if (a === 180) { x = -g; y = -b; }
+  else                { x = g;  y = b; }
+  tilt.raw = { x, y };
+  if (!tilt.base) tilt.base = { x, y };
+}
+
+function startTilt() {
+  const D = window.DeviceOrientationEvent;
+  if (!D) return;
+  const listen = () => {
+    if (!tilt.listening) window.addEventListener('deviceorientation', onOrient);
+    tilt.listening = true;
+    tilt.startedAt = performance.now();
+    tilt.base = null;
+  };
+  // iOS asks the player first; this must run inside a tap
+  if (typeof D.requestPermission === 'function') {
+    D.requestPermission().then(r => { if (r === 'granted') listen(); }).catch(() => {});
+  } else {
+    listen();
+  }
+}
+
+function levelTilt() { tilt.base = tilt.raw ? { ...tilt.raw } : null; }
+
+function tiltVector() {
+  if (!tilt.raw || !tilt.base) return { x: 0, y: 0 };
+  const axis = v => {
+    const m = Math.abs(v);
+    return m < TILT_DEAD ? 0 : Math.sign(v) * Math.min(1, (m - TILT_DEAD) / (TILT_FULL - TILT_DEAD));
+  };
+  return { x: axis(tilt.raw.x - tilt.base.x), y: axis(tilt.raw.y - tilt.base.y) };
+}
+
+const isTouch = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+function tiltLabelRect() {
+  const s = Math.min(110, W * 0.26);
+  return { x: W - s - 12, y: 12 + s + 4, w: s, h: 24 };
+}
+function tiltLabelHit(x, y) {
+  if (!isTouch) return false;
+  const r = tiltLabelRect();
+  return x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
+}
+
 // ── input ─────────────────────────────────────────────────────────────────────
 function castMove(x, y) {
   finger = { x, y };
@@ -889,6 +956,11 @@ canvas.addEventListener('pointerdown', e => {
   e.preventDefault();
   if (tapOverlay()) return;
   const { x, y } = localPos(e);
+  if (tiltLabelHit(x, y)) {
+    if (tilt.raw) { levelTilt(); castMessage('Tilt levelled', '#ccc'); }
+    else { tilt.asked = false; tilt.warned = false; } // try again on this tap's release
+    return;
+  }
   if (castPtr === null && inCastZone(x, y)) {
     castPtr = e.pointerId;
     seq = [];
@@ -913,7 +985,11 @@ function endPointer(e, cancelled) {
   }
   if (e.pointerId === movePtr) { movePtr = null; movePos = null; }
 }
-canvas.addEventListener('pointerup', e => endPointer(e, false));
+canvas.addEventListener('pointerup', e => {
+  // a finished tap is what iOS accepts for the motion-sensor prompt
+  if (isTouch && !tilt.asked) { tilt.asked = true; startTilt(); }
+  endPointer(e, false);
+});
 canvas.addEventListener('pointercancel', e => endPointer(e, true));
 canvas.addEventListener('contextmenu', e => e.preventDefault());
 
@@ -1453,6 +1529,23 @@ function drawHUD() {
 
   drawMinimap();
 
+  if (isTouch) {
+    const r = tiltLabelRect();
+    const ok = !!tilt.raw;
+    const waiting = tilt.listening && !ok && performance.now() - tilt.startedAt < 1500;
+    roundRect(r.x, r.y, r.w, r.h, 6);
+    ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fill();
+    ctx.strokeStyle = ok ? 'rgba(125,255,74,0.6)' : 'rgba(255,255,255,0.2)'; ctx.lineWidth = 1; ctx.stroke();
+    ctx.fillStyle = ok ? '#bfffa0' : '#aaa';
+    ctx.font = '11px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(ok ? 'Tilt on · level' : waiting ? 'Tilt…' : 'Tilt off · retry', r.x + r.w / 2, r.y + 16);
+    if (tilt.listening && !ok && !waiting && !tilt.warned) {
+      tilt.warned = true;
+      showBanner('Tilt isn’t available here', 'Drag on the field to walk instead', 3.5);
+    }
+  }
+
   if (banner) {
     const a = Math.min(1, banner.life, (banner.max - banner.life) * 4);
     ctx.globalAlpha = Math.max(0, a);
@@ -1613,7 +1706,7 @@ function drawTitle() {
   const lines = [
     'Slide across the five elements to weave a spell — up to seven. Slide off an element and back on to use it again.',
     'Release to cast. Most patterns just fizzle; you have to find the ones that work.',
-    'Drag on the field (or use WASD) to walk.',
+    'Tilt your phone to walk (or drag on the field, or use WASD). The angle you start at counts as level.',
     'Guardians only fall to the right kind of magic. Their chests hold forgotten spells. Nothing is written down — remember them.',
   ];
   for (const l of lines) y = wrapText(l, W / 2, y, maxW, 20) + 8;
