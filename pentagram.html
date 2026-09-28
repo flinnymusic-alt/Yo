@@ -5,8 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <title>Pentagram</title>
 <style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  html, body { background: #0b0a12; height: 100%; overflow: hidden; overscroll-behavior: none; }
+  *, *::before, *::after { box-sizing: border-box; }
+  html { background: #0b0a12; color-scheme: dark; }
+  html, body { height: 100%; margin: 0; overflow: hidden; overscroll-behavior: none; }
+  body { background: #0b0a12; color: #e6e0f0; }
   canvas { display: block; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
 </style>
 </head>
@@ -101,10 +103,21 @@ let W = 0, H = 0, DPR = 1;
 let panelTop = 0;
 const PENT = { cx: 0, cy: 0, R: 0, S: 0, slot: 0, slotY: 0, msgY: 0 };
 
+// Size to the body, not the window: embedded views can start at 0×0 and
+// grow later, and the body excludes any safe-area padding on phones.
+function viewSize() {
+  const b = document.body;
+  return {
+    w: (b && b.clientWidth)  || window.innerWidth  || 0,
+    h: (b && b.clientHeight) || window.innerHeight || 0,
+  };
+}
+
 function resize() {
   DPR = Math.min(window.devicePixelRatio || 1, 2);
-  W = window.innerWidth;
-  H = window.innerHeight;
+  const v = viewSize();
+  W = v.w;
+  H = v.h;
   canvas.width  = Math.floor(W * DPR);
   canvas.height = Math.floor(H * DPR);
   canvas.style.width  = W + 'px';
@@ -122,6 +135,7 @@ function resize() {
   panelTop   = PENT.msgY - 18;
 }
 window.addEventListener('resize', resize);
+if (window.ResizeObserver) new ResizeObserver(resize).observe(document.body);
 resize();
 
 function nodePos(i) {
@@ -764,10 +778,15 @@ function tapOverlay() {
   return false;
 }
 
+function localPos(e) {
+  const r = canvas.getBoundingClientRect();
+  return { x: e.clientX - r.left, y: e.clientY - r.top };
+}
+
 canvas.addEventListener('pointerdown', e => {
   e.preventDefault();
   if (tapOverlay()) return;
-  const x = e.clientX, y = e.clientY;
+  const { x, y } = localPos(e);
   if (castPtr === null && inCastZone(x, y)) {
     castPtr = e.pointerId;
     seq = [];
@@ -781,8 +800,8 @@ canvas.addEventListener('pointerdown', e => {
 });
 
 canvas.addEventListener('pointermove', e => {
-  if (e.pointerId === castPtr) castMove(e.clientX, e.clientY);
-  else if (e.pointerId === movePtr) movePos = { x: e.clientX, y: e.clientY };
+  if (e.pointerId === castPtr) { const p = localPos(e); castMove(p.x, p.y); }
+  else if (e.pointerId === movePtr) movePos = localPos(e);
 });
 
 function endPointer(e, cancelled) {
@@ -1582,6 +1601,8 @@ let last = performance.now();
 function loop(now) {
   const dt = Math.min(0.05, (now - last) / 1000);
   last = now;
+  const v = viewSize();
+  if (v.w !== W || v.h !== H) resize();
   tick(dt);
   render();
   requestAnimationFrame(loop);
