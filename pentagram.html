@@ -7,7 +7,8 @@
 <style>
   *, *::before, *::after { box-sizing: border-box; }
   html { background: #0b0a12; color-scheme: dark; }
-  html, body { height: 100%; margin: 0; overflow: hidden; overscroll-behavior: none; }
+  html, body { height: 100%; margin: 0; overflow: hidden; overscroll-behavior: none; touch-action: none; }
+  body { position: fixed; inset: 0; }
   body { background: #0b0a12; color: #e6e0f0; }
   canvas { display: block; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
 </style>
@@ -18,6 +19,114 @@
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
 const TAU = Math.PI * 2;
+
+// Keep swipes inside the game: no page scrolling, pull-to-refresh or bounce.
+for (const ev of ['touchstart', 'touchmove']) {
+  document.addEventListener(ev, e => { if (e.cancelable) e.preventDefault(); }, { passive: false });
+}
+document.addEventListener('gesturestart', e => e.preventDefault());
+
+// ── sound effects (synthesised, no files) ───────────────────────────────────
+const sfx = { ctx: null, out: null, noise: null, on: true, last: {} };
+try { sfx.on = localStorage.getItem('pentagram-sound') !== 'off'; } catch (_) {}
+
+function audioInit() {
+  if (sfx.ctx) { if (sfx.ctx.state === 'suspended') sfx.ctx.resume(); return; }
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) return;
+  try {
+    sfx.ctx = new AC();
+    sfx.out = sfx.ctx.createGain();
+    sfx.out.gain.value = 0.45;
+    sfx.out.connect(sfx.ctx.destination);
+    const len = sfx.ctx.sampleRate;
+    sfx.noise = sfx.ctx.createBuffer(1, len, len);
+    const d = sfx.noise.getChannelData(0);
+    for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+  } catch (_) { sfx.ctx = null; }
+}
+
+// skip a sound if the same one played a moment ago (hit spam, poison ticks)
+function sfxReady(name, gap) {
+  if (!sfx.on || !sfx.ctx || sfx.ctx.state !== 'running') return false;
+  const now = sfx.ctx.currentTime;
+  if (gap && sfx.last[name] && now - sfx.last[name] < gap) return false;
+  sfx.last[name] = now;
+  return true;
+}
+
+function tone(freq, dur, type, vol, slideTo, delay) {
+  const c = sfx.ctx, t = c.currentTime + (delay || 0);
+  const o = c.createOscillator(), g = c.createGain();
+  o.type = type || 'sine';
+  o.frequency.setValueAtTime(freq, t);
+  if (slideTo) o.frequency.exponentialRampToValueAtTime(slideTo, t + dur);
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(vol || 0.2, t + 0.01);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(g); g.connect(sfx.out);
+  o.start(t); o.stop(t + dur + 0.05);
+}
+
+function hiss(dur, vol, filter, freq, slideTo, delay) {
+  const c = sfx.ctx, t = c.currentTime + (delay || 0);
+  const src = c.createBufferSource(), f = c.createBiquadFilter(), g = c.createGain();
+  src.buffer = sfx.noise;
+  f.type = filter || 'lowpass';
+  f.frequency.setValueAtTime(freq || 1200, t);
+  if (slideTo) f.frequency.exponentialRampToValueAtTime(slideTo, t + dur);
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(vol || 0.2, t + 0.01);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  src.connect(f); f.connect(g); g.connect(sfx.out);
+  src.start(t, Math.random() * 0.5); src.stop(t + dur + 0.05);
+}
+
+const EL_NOTE = { S: 880, A: 784, W: 659, F: 587, E: 440 };
+
+const SFX = {
+  node(el, n)   { if (sfxReady('node')) tone(EL_NOTE[el] * (1 + n * 0.06), 0.14, 'triangle', 0.22); },
+  fizzle()      { if (!sfxReady('fizzle')) return; hiss(0.3, 0.15, 'lowpass', 1500, 200); tone(220, 0.3, 'sawtooth', 0.05, 70); },
+  weave(key)    { if (!sfxReady('weave')) return; [...key].forEach((el, i) => tone(EL_NOTE[el], 0.18, 'triangle', 0.14, null, i * 0.045)); },
+  loaded()      { if (sfxReady('loaded')) tone(1320, 0.12, 'sine', 0.1, null, 0.05); },
+  charge(tier, dur) { if (sfxReady('charge')) { tone(110 + tier * 20, dur, 'sawtooth', 0.05, 330 + tier * 90); hiss(dur, 0.06, 'bandpass', 300, 3000); } },
+  release(key) {
+    if (!sfxReady('release', 0.04)) return;
+    const tier = key.length, el = key[tier - 1];
+    if (el === 'F') hiss(0.35, 0.18, 'bandpass', 700, 180);
+    else if (el === 'W') { tone(900, 0.25, 'sine', 0.14, 300); hiss(0.2, 0.08, 'highpass', 4000); }
+    else if (el === 'E') { tone(120, 0.3, 'sine', 0.3, 50); hiss(0.15, 0.1, 'lowpass', 400); }
+    else if (el === 'A') hiss(0.3, 0.2, 'bandpass', 2500, 600);
+    else { tone(1200, 0.4, 'sine', 0.1); tone(1800, 0.4, 'sine', 0.06, null, 0.03); }
+    if (tier >= 4) boom(0.25 + tier * 0.1);
+  },
+  lightning()   { if (sfxReady('zap', 0.05)) { hiss(0.12, 0.2, 'highpass', 3000); tone(90, 0.1, 'square', 0.06, 40); } },
+  arrow()       { if (sfxReady('arrow')) { hiss(0.08, 0.14, 'highpass', 3000); tone(700, 0.07, 'triangle', 0.08, 350); } },
+  hit()         { if (sfxReady('hit', 0.05)) hiss(0.05, 0.1, 'bandpass', 1800); },
+  immune()      { if (sfxReady('immune', 0.2)) { tone(1400, 0.12, 'square', 0.05); tone(1900, 0.1, 'square', 0.03, null, 0.02); } },
+  kill()        { if (sfxReady('kill', 0.04)) tone(360, 0.18, 'triangle', 0.12, 90); },
+  hurt()        { if (sfxReady('hurt', 0.1)) { tone(220, 0.22, 'sawtooth', 0.12, 80); hiss(0.1, 0.1, 'lowpass', 900); } },
+  block()       { if (sfxReady('block')) tone(1000, 0.2, 'triangle', 0.12, 1400); },
+  heal()        { if (sfxReady('heal')) [523, 659, 784].forEach((f, i) => tone(f, 0.3, 'sine', 0.1, null, i * 0.07)); },
+  buff()        { if (sfxReady('buff')) [440, 554, 659, 880].forEach((f, i) => tone(f, 0.25, 'triangle', 0.08, null, i * 0.05)); },
+  summon()      { if (sfxReady('summon')) { tone(200, 0.5, 'sawtooth', 0.06, 600); hiss(0.4, 0.08, 'bandpass', 400, 2400); } },
+  explode(big)  { if (sfxReady('explode', 0.05)) boom(big ? 1.4 : 0.5); },
+  freeze()      { if (sfxReady('freeze')) { hiss(0.9, 0.18, 'highpass', 6000, 2000); [1568, 2093, 2637].forEach((f, i) => tone(f, 0.5, 'sine', 0.05, null, i * 0.06)); } },
+  awaken()      { if (sfxReady('awaken', 1)) { tone(55, 1.1, 'sawtooth', 0.14, 45); tone(58, 1.1, 'sawtooth', 0.1, 40); } },
+  bossDown()    { if (!sfxReady('bossDown')) return; boom(1.2); [392, 523, 659, 784].forEach((f, i) => tone(f, 0.45, 'triangle', 0.12, null, 0.3 + i * 0.12)); },
+  scroll()      { if (sfxReady('scroll')) [523, 659, 784, 1047, 1319].forEach((f, i) => tone(f, 0.5, 'sine', 0.1, null, i * 0.08)); },
+  discover()    { if (sfxReady('discover')) [784, 1175].forEach((f, i) => tone(f, 0.35, 'triangle', 0.1, null, i * 0.1)); },
+  splash()      { if (sfxReady('splash')) { hiss(0.5, 0.2, 'lowpass', 2000, 300); tone(300, 0.2, 'sine', 0.06, 150); } },
+  death()       { if (sfxReady('death')) [392, 330, 262, 196].forEach((f, i) => tone(f, 0.4, 'triangle', 0.12, null, i * 0.18)); },
+};
+function boom(dur) { tone(90, dur, 'sine', 0.4, 28); hiss(dur, 0.3, 'lowpass', 900, 60); }
+
+function toggleSound() {
+  sfx.on = !sfx.on;
+  try { localStorage.setItem('pentagram-sound', sfx.on ? 'on' : 'off'); } catch (_) {}
+  audioInit();
+  castMessage(sfx.on ? 'Sound on' : 'Sound off', '#ccc');
+}
 
 // ── constants ────────────────────────────────────────────────────────────────
 const WORLD    = 1700;          // world spans -WORLD..WORLD on both axes
@@ -459,6 +568,7 @@ function damageFoe(f, dmg, type) {
   let mult = 1;
   if (f.boss) {
     if (!f.def.weak.includes(type)) {
+      SFX.immune();
       if (f.txtCd <= 0) { floatText(f.x, f.y - f.r - 10, 'IMMUNE', '#999', 15); f.txtCd = 0.6; }
       ring(f.x, f.y, f.r + 6, 'rgba(200,200,200,0.6)', 0.2);
       return;
@@ -469,6 +579,7 @@ function damageFoe(f, dmg, type) {
   if (player.empower > 0) mult *= 2;
   const d = dmg * mult;
   f.hp -= d;
+  if (type !== 'poison') SFX.hit();
   f.flash = 0.12;
   const weak = f.boss || mult > 1.01;
   floatText(f.x + rnd(-8, 8), f.y - f.r - 6, fmt(d) + (weak && !f.boss ? '!' : ''),
@@ -478,6 +589,7 @@ function damageFoe(f, dmg, type) {
 
 function killFoe(f) {
   f.dead = true;
+  f.boss ? SFX.bossDown() : SFX.kill();
   kills++;
   burst(f.x, f.y, f.boss ? f.def.color : f.def.color, f.boss ? 70 : 14, f.boss ? 420 : 260);
   if (f.boss) {
@@ -509,6 +621,7 @@ function hurtPlayer(d) {
   if (state !== 'play' || player.invuln > 0 || player.omni > 0) return;
   if (player.ward > 0) {
     player.ward--;
+    SFX.block();
     player.invuln = 0.3;
     ring(player.x, player.y, 30, TYPE_COLOR.spirit, 0.3);
     floatText(player.x, player.y - 30, 'blocked', TYPE_COLOR.spirit, 14);
@@ -516,6 +629,7 @@ function hurtPlayer(d) {
   }
   if (player.skin > 0) d *= 0.5;
   player.hp -= d;
+  SFX.hurt();
   player.invuln = 0.5;
   shake = Math.max(shake, 6);
   burst(player.x, player.y, '#f44', 8, 180);
@@ -523,6 +637,7 @@ function hurtPlayer(d) {
   if (player.hp <= 0) {
     player.hp = 0;
     state = 'dead';
+    SFX.death();
     overlayT = 0;
     seq = []; castPtr = null; finger = null;
   }
@@ -548,6 +663,7 @@ function shoot(o) { launch(player.x, player.y, aimFrom(player), o); }
 function chainLightning(dmg, jumps) {
   let cur = nearestFoe(player.x, player.y, 450);
   if (!cur) { castMessage('No target in range', '#8ff'); return; }
+  SFX.lightning();
   const pts = [{ x: player.x, y: player.y }];
   const hit = new Set();
   for (let i = 0; i < jumps && cur; i++) {
@@ -580,6 +696,7 @@ function meteor() {
 }
 
 function blizzard() {
+  SFX.freeze();
   flash = 0.4;
   shake = Math.max(shake, 10);
   for (const f of foes) {
@@ -599,6 +716,7 @@ function blizzard() {
 // 7-element finale (after its long charge): everything nearby is erased and every
 // guardian in range takes a massive hit of the one thing it can't resist.
 function detonateDoom() {
+  SFX.explode(true);
   flash = 1.6;
   shake = 34;
   enemyShots = [];
@@ -635,6 +753,7 @@ function updateStorms(dt) {
     if (!near.length) continue;
     const f = near[Math.floor(Math.random() * near.length)];
     damageFoe(f, 7, 'lightning');
+    SFX.lightning();
     fx.push({ kind: 'bolt', pts: [{ x: f.x + rnd(-40, 40), y: f.y - 420 }, { x: f.x, y: f.y }], life: 0.25, max: 0.25 });
     burst(f.x, f.y, TYPE_COLOR.lightning, 10, 220);
     shake = Math.max(shake, 4);
@@ -659,6 +778,7 @@ function castSequence() {
   if (!sp) {
     player.mana = Math.max(0, player.mana - 1);
     castMessage('…fizzle', '#888');
+    SFX.fizzle();
     burst(player.x, player.y, '#777', 10, 120);
     return;
   }
@@ -671,12 +791,16 @@ function castSequence() {
     // attacks load onto the FIRE button; weaving a new one replaces the old
     player.loaded = { key, left: TIER_SHOTS[tier] };
     castMessage(`${sp.name} ×${TIER_SHOTS[tier]} · tap FIRE`, TIER_COLOR[tier]);
+    SFX.weave(key); SFX.loaded();
   } else {
     if (tier >= 4) shake = Math.max(shake, (tier - 3) * 4);
+    SFX.weave(key);
+    (sp.kind === 'heal' ? SFX.heal : sp.kind === 'summon' ? SFX.summon : SFX.buff)();
     sp.cast();
   }
   if (!discovered.has(key)) {
     discovered.add(key);
+    SFX.discover();
     showBanner(tier >= 5 ? `${TIERS[tier].toUpperCase()} SPELL!` : 'New spell discovered!',
                `${sp.name} · tier ${tier} ${TIERS[tier]} · ${sp.kind}`, tier >= 5 ? 4 : 3);
   }
@@ -690,11 +814,12 @@ function fireLoaded() {
   L.left--;
   if (L.left <= 0) player.loaded = null;
   const windup = TIER_WINDUP[tier];
-  if (windup > 0) player.charging = { key: L.key, t: windup, max: windup };
+  if (windup > 0) { player.charging = { key: L.key, t: windup, max: windup }; SFX.charge(tier, windup); }
   else releaseSpell(L.key);
 }
 
 function releaseSpell(key) {
+  SFX.release(key);
   const tier = key.length;
   if (tier >= 4) shake = Math.max(shake, (tier - 3) * 4);
   burst(player.x, player.y, TIER_COLOR[tier], 4 * tier, 80 + 40 * tier);
@@ -704,6 +829,7 @@ function releaseSpell(key) {
 function shootArrow(wx, wy) {
   if (player.arrowCd > 0 || player.charging) return;
   player.arrowCd = 0.3;
+  SFX.arrow();
   const dx = wx - player.x, dy = wy - player.y, d = Math.hypot(dx, dy) || 1;
   player.face = { x: dx / d, y: dy / d };
   launch(player.x, player.y, player.face, { dmg: 1, type: 'arrow', speed: 720, r: 5, life: 0.9 });
@@ -768,6 +894,7 @@ function updateBoss(b, dt, dp) {
     b.aggro = true;
     b.shotCd = 1.2;
     showBanner(b.def.name, 'awakens', 2);
+    SFX.awaken();
   }
   if (b.aggro && (dp > 700 || home > 900)) b.aggro = false;
 
@@ -857,7 +984,7 @@ function updateShots(dt) {
         damageFoe(f, s.dmg, s.type);
         if (s.fx === 'slow') f.slow = 2.5;
         if (s.fx === 'poison') { f.poison = Math.max(f.poison, 3); f.poisonDps = Math.max(f.poisonDps, 0.6); }
-        if (s.fx === 'explode') { aoe(s.x, s.y, s.boomR, s.boom, s.type, 120); burst(s.x, s.y, s.color, 22, 300); }
+        if (s.fx === 'explode') { SFX.explode(false); aoe(s.x, s.y, s.boomR, s.boom, s.type, 120); burst(s.x, s.y, s.color, 22, 300); }
         else burst(s.x, s.y, s.color, 5, 140);
         if (s.pierce-- <= 0) s.life = 0;
       }
@@ -956,6 +1083,7 @@ function updateEffects(dt) {
     m.t -= dt;
     if (m.t <= 0) {
       aoe(m.x, m.y, 200, 25, 'fire', 380);
+      SFX.explode(true);
       zones.push({ x: m.x, y: m.y, r: 140, life: 4, max: 4, tick: 0, type: 'fire' });
       burst(m.x, m.y, '#ff5a2a', 80, 560);
       burst(m.x, m.y, '#ffd24a', 40, 340);
@@ -981,6 +1109,7 @@ function updateEffects(dt) {
 }
 
 function showScroll(combo, title) {
+  SFX.scroll();
   state = 'reveal';
   reveal = { combo, name: SPELLS[combo].name, title, t: 0 };
   movePtr = null; movePos = null; moveStart = null;
@@ -1038,6 +1167,7 @@ function update(dt) {
     player.onBoat = true;
     player.x = boat.x; player.y = boat.y;
     castMessage('All aboard! Sail to land to step off', '#bfe6ff');
+    SFX.splash();
   }
 
   if (player.charging) {
@@ -1170,6 +1300,15 @@ function fireButtonHit(x, y) {
   return Math.hypot(x - b.x, y - b.y) < b.r + 8;
 }
 
+function soundRect() {
+  const s = Math.min(110, W * 0.26);
+  return { x: W - s - 12, y: 12 + s + 4 + (isTouch ? 28 : 0), w: s, h: 24 };
+}
+function soundHit(x, y) {
+  const r = soundRect();
+  return x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
+}
+
 const isTouch = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
 function tiltLabelRect() {
   const s = Math.min(110, W * 0.26);
@@ -1190,6 +1329,7 @@ function castMove(x, y) {
     if (n !== null && seq.length < MAX_SEQ) {
       seq.push(NODE_ORDER[n]);
       nodePulse[n] = 1;
+      SFX.node(NODE_ORDER[n], seq.length);
     }
   }
 }
@@ -1209,8 +1349,10 @@ function localPos(e) {
 
 canvas.addEventListener('pointerdown', e => {
   e.preventDefault();
+  audioInit();
   if (tapOverlay()) return;
   const { x, y } = localPos(e);
+  if (soundHit(x, y)) { toggleSound(); return; }
   if (tiltLabelHit(x, y)) {
     if (tilt.raw) { levelTilt(); castMessage('Tilt levelled', '#ccc'); }
     else { tilt.asked = false; tilt.warned = false; } // try again on this tap's release
@@ -1261,6 +1403,8 @@ canvas.addEventListener('pointercancel', e => endPointer(e, true));
 canvas.addEventListener('contextmenu', e => e.preventDefault());
 
 window.addEventListener('keydown', e => {
+  audioInit();
+  if (e.code === 'KeyM') toggleSound();
   if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Backspace'].includes(e.code)) e.preventDefault();
   keys[e.code] = true;
   const confirm = e.code === 'Space' || e.code === 'Enter';
@@ -1952,6 +2096,16 @@ function drawHUD() {
 
   drawMinimap();
   drawFireButton();
+  {
+    const r = soundRect();
+    roundRect(r.x, r.y, r.w, r.h, 6);
+    ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.2)'; ctx.lineWidth = 1; ctx.stroke();
+    ctx.fillStyle = sfx.on ? '#ddd' : '#888';
+    ctx.font = '11px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(sfx.on ? '♪ Sound on' : '♪ Sound off', r.x + r.w / 2, r.y + 16);
+  }
 
   if (isTouch) {
     const r = tiltLabelRect();
@@ -2164,7 +2318,7 @@ function drawTitle() {
   const lines = [
     'Slide across the five elements to weave a spell — up to seven. Slide off an element and back on to use it again.',
     'Release to cast. Most patterns just fizzle; you have to find the ones that work.',
-    'Hold or drag on the field to walk (WASD on a keyboard). Tap the field to shoot an arrow.',
+    'Tilt your phone, or hold and drag on the field, to walk (WASD on a keyboard). Tap the field to shoot an arrow.',
     'Attack spells load onto the FIRE button. Big spells root you in place while they charge.',
     'Find the boat on the lake shore and sail out to the islands.',
     'Guardians only fall to the right kind of magic. Their chests hold forgotten spells. Nothing is written down — remember them.',
