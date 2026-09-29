@@ -1141,8 +1141,10 @@ function update(dt) {
   if (keys.KeyS || keys.ArrowDown)  my += 1;
   if (keys.KeyA || keys.ArrowLeft)  mx -= 1;
   if (keys.KeyD || keys.ArrowRight) mx += 1;
-  // a held finger only walks once it's clearly a hold or a drag, not a tap
-  if (movePos && moveStart && (moveStart.moved || performance.now() - moveStart.t > 180)) {
+  if (movePos && moveStart && moveStart.shooting) {
+    shootArrow(player.x + movePos.x - W / 2, player.y + movePos.y - playerScreenY()); // held: keep firing
+  } else if (movePos && moveStart && (moveStart.moved || performance.now() - moveStart.t > 180)) {
+    // without tilt, a held finger walks once it's clearly a hold or a drag, not a tap
     const dx = movePos.x - W / 2, dy = movePos.y - playerScreenY(), d = Math.hypot(dx, dy);
     if (d > 14) { mx += dx / d; my += dy / d; }
   }
@@ -1242,7 +1244,7 @@ function movePlayer(dx, dy, step) {
 // Walk by tilting the phone. Whatever angle you hold it at when tilt starts
 // (or when you tap the tilt label) counts as "level".
 const TILT_DEAD = 4, TILT_FULL = 18; // degrees
-const tilt = { asked: false, listening: false, raw: null, base: null, startedAt: 0, warned: false };
+const tilt = { pauseUntil: 0, asked: false, listening: false, raw: null, base: null, startedAt: 0, warned: false };
 
 function screenAngle() {
   const a = (screen.orientation && screen.orientation.angle) ?? window.orientation ?? 0;
@@ -1299,8 +1301,16 @@ document.addEventListener('click', askTiltFromTap);
 
 function levelTilt() { tilt.base = tilt.raw ? { ...tilt.raw } : null; }
 
+function tiltActive() { return !!(tilt.raw && tilt.base); }
+
+// Pressing the pentagram or FIRE with a thumb tips the phone, which would
+// otherwise read as "walk". Ignore tilt then, and briefly after letting go.
+function tiltPaused() {
+  return castPtr !== null || player.charging || performance.now() < tilt.pauseUntil;
+}
+
 function tiltVector() {
-  if (!tilt.raw || !tilt.base) return { x: 0, y: 0 };
+  if (!tiltActive() || tiltPaused()) return { x: 0, y: 0 };
   const axis = v => {
     const m = Math.abs(v);
     return m < TILT_DEAD ? 0 : Math.sign(v) * Math.min(1, (m - TILT_DEAD) / (TILT_FULL - TILT_DEAD));
@@ -1376,7 +1386,7 @@ canvas.addEventListener('pointerdown', e => {
     else { tilt.asked = false; tilt.warned = false; tilt.denied = false; tilt.granted = false; } // try again on this tap's release
     return;
   }
-  if (fireButtonHit(x, y)) { fireLoaded(); return; }
+  if (fireButtonHit(x, y)) { fireLoaded(); tilt.pauseUntil = performance.now() + 400; return; }
   if (castPtr === null && inCastZone(x, y)) {
     castPtr = e.pointerId;
     seq = [];
@@ -1385,7 +1395,8 @@ canvas.addEventListener('pointerdown', e => {
   } else if (movePtr === null) {
     movePtr = e.pointerId;
     movePos = { x, y };
-    moveStart = { x, y, t: performance.now(), moved: false };
+    moveStart = { x, y, t: performance.now(), moved: false, shooting: tiltActive() };
+    if (moveStart.shooting && state === 'play') shootArrow(player.x + x - W / 2, player.y + y - playerScreenY());
   }
   try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
 });
@@ -1394,7 +1405,7 @@ canvas.addEventListener('pointermove', e => {
   if (e.pointerId === castPtr) { const p = localPos(e); castMove(p.x, p.y); }
   else if (e.pointerId === movePtr) {
     movePos = localPos(e);
-    if (moveStart && Math.hypot(movePos.x - moveStart.x, movePos.y - moveStart.y) > 14) moveStart.moved = true;
+    if (moveStart && Math.hypot(movePos.x - moveStart.x, movePos.y - moveStart.y) > 20) moveStart.moved = true;
   }
 });
 
@@ -1402,10 +1413,11 @@ function endPointer(e, cancelled) {
   if (e.pointerId === castPtr) {
     if (state === 'play' && !cancelled) castSequence();
     seq = []; castPtr = null; finger = null; curNode = null;
+    tilt.pauseUntil = performance.now() + 400;
   }
   if (e.pointerId === movePtr) {
     // a quick tap on the field shoots an arrow at that spot
-    if (!cancelled && state === 'play' && moveStart && !moveStart.moved && performance.now() - moveStart.t < 250) {
+    if (!cancelled && state === 'play' && moveStart && !moveStart.shooting && !moveStart.moved && performance.now() - moveStart.t < 350) {
       shootArrow(player.x + moveStart.x - W / 2, player.y + moveStart.y - playerScreenY());
     }
     movePtr = null; movePos = null; moveStart = null;
@@ -2336,7 +2348,7 @@ function drawTitle() {
   const lines = [
     'Slide across the five elements to weave a spell — up to seven. Slide off an element and back on to use it again.',
     'Release to cast. Most patterns just fizzle; you have to find the ones that work.',
-    'Tilt your phone, or hold and drag on the field, to walk (WASD on a keyboard). Tap the field to shoot an arrow.',
+    'Tilt your phone to walk, and touch the field to shoot arrows (hold to keep firing). Without tilt: hold or drag to walk, tap to shoot. WASD on a keyboard.',
     'Attack spells load onto the FIRE button. Big spells root you in place while they charge.',
     'Find the boat on the lake shore and sail out to the islands.',
     'Guardians only fall to the right kind of magic. Their chests hold forgotten spells. Nothing is written down — remember them.',
@@ -2477,6 +2489,7 @@ let last = performance.now();
 function loop(now) {
   // schedule first so one bad frame can't stop the game
   requestAnimationFrame(loop);
+  if (window.scrollX || window.scrollY) window.scrollTo(0, 0);
   const dt = Math.min(0.05, (now - last) / 1000);
   last = now;
   const v = viewSize();
