@@ -1268,16 +1268,34 @@ function startTilt() {
   const listen = () => {
     if (!tilt.listening) window.addEventListener('deviceorientation', onOrient);
     tilt.listening = true;
+    tilt.granted = true;
     tilt.startedAt = performance.now();
     tilt.base = null;
   };
-  // iOS asks the player first; this must run inside a tap
+  // iOS asks the player first; this must run inside a tap. If the request
+  // wasn't accepted as a tap, or was dismissed, try again on the next one.
   if (typeof D.requestPermission === 'function') {
-    D.requestPermission().then(r => { if (r === 'granted') listen(); }).catch(() => {});
+    if (tilt.pending) return;
+    tilt.pending = true;
+    D.requestPermission()
+      .then(r => { tilt.pending = false; if (r === 'granted') listen(); else tilt.denied = true; })
+      .catch(() => { tilt.pending = false; tilt.asked = false; });
   } else {
     listen();
   }
 }
+
+// iOS only accepts the permission request from a real tap's touchend (or a
+// click); asking from pointerup alone can be ignored. Ask from every one of
+// these until tilt is running.
+function askTiltFromTap() {
+  if (!isTouch || tilt.raw || tilt.pending || tilt.denied || tilt.granted) return;
+  if (tilt.listening && typeof (window.DeviceOrientationEvent || {}).requestPermission !== 'function') return;
+  tilt.asked = true;
+  startTilt();
+}
+document.addEventListener('touchend', askTiltFromTap, { passive: true });
+document.addEventListener('click', askTiltFromTap);
 
 function levelTilt() { tilt.base = tilt.raw ? { ...tilt.raw } : null; }
 
@@ -1355,7 +1373,7 @@ canvas.addEventListener('pointerdown', e => {
   if (soundHit(x, y)) { toggleSound(); return; }
   if (tiltLabelHit(x, y)) {
     if (tilt.raw) { levelTilt(); castMessage('Tilt levelled', '#ccc'); }
-    else { tilt.asked = false; tilt.warned = false; } // try again on this tap's release
+    else { tilt.asked = false; tilt.warned = false; tilt.denied = false; tilt.granted = false; } // try again on this tap's release
     return;
   }
   if (fireButtonHit(x, y)) { fireLoaded(); return; }
@@ -1396,7 +1414,7 @@ function endPointer(e, cancelled) {
 
 canvas.addEventListener('pointerup', e => {
   // a finished tap is what iOS accepts for the motion-sensor prompt
-  if (isTouch && !tilt.asked) { tilt.asked = true; startTilt(); }
+  askTiltFromTap();
   endPointer(e, false);
 });
 canvas.addEventListener('pointercancel', e => endPointer(e, true));
@@ -2117,7 +2135,7 @@ function drawHUD() {
     ctx.fillStyle = ok ? '#bfffa0' : '#aaa';
     ctx.font = '11px system-ui, sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText(ok ? 'Tilt on · level' : waiting ? 'Tilt…' : 'Tilt off · retry', r.x + r.w / 2, r.y + 16);
+    ctx.fillText(ok ? 'Tilt on · level' : tilt.denied ? 'Tilt blocked' : waiting ? 'Tilt…' : 'Tilt off · retry', r.x + r.w / 2, r.y + 16);
     if (tilt.listening && !ok && !waiting && !tilt.warned) {
       tilt.warned = true;
       showBanner('Tilt isn’t available here', 'Drag on the field to walk instead', 3.5);
