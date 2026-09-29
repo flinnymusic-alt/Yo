@@ -39,44 +39,50 @@ const TYPE_COLOR = {
   // keep these 6-digit: the boss aura appends a 2-digit alpha
   fire: '#ff5a2a', water: '#3ab0ff', earth: '#b5834a', air: '#f5e663',
   lightning: '#88ffff', poison: '#7dff4a', spirit: '#c77dff', holy: '#fff6b0',
+  arrow: '#e8dcc0',
 };
 
 // Power scales hard with chain length. Tier name is indexed by combo length.
 const TIERS = ['', '', 'Minor', 'Adept', 'Greater', 'Monstrous', 'Omni King', 'Doomsday Destroyer'];
 const TIER_COLOR = ['', '', '#bbb', '#8fd0ff', '#b98cff', '#ff8a3a', '#ffd24a', '#ff3355'];
+// Weaving an attack spell loads it onto the FIRE button. Weak spells give
+// several quick shots; strong ones give fewer and root you while they charge.
+const TIER_SHOTS  = [0, 0, 5, 3, 2, 1, 1, 1];
+const TIER_WINDUP = [0, 0, 0, 0.25, 0.7, 1.2, 1.6, 2.2]; // seconds standing still per shot
+const isAttack = sp => sp.kind === 'attack' || sp.kind === 'poison';
 
 // Every combo that does something. Anything else fizzles.
 const SPELLS = {
   // ── 2 · Minor: cheap pokes ──
-  FF:      { name: 'Firebolt',        kind: 'attack',  cost: 2,  cast() { shoot({ dmg: 1.5, type: 'fire', speed: 520, r: 7 }); } },
-  WW:      { name: 'Frost Shard',     kind: 'attack',  cost: 2,  cast() { shoot({ dmg: 1, type: 'water', speed: 600, r: 6, fx: 'slow' }); } },
-  EE:      { name: 'Stone Spike',     kind: 'attack',  cost: 2,  cast() { shoot({ dmg: 2, type: 'earth', speed: 380, r: 8 }); } },
-  AA:      { name: 'Gust',            kind: 'attack',  cost: 2,  cast() { aoe(player.x, player.y, 150, 0.5, 'air', 300); } },
-  EW:      { name: 'Venom Dart',      kind: 'poison',  cost: 2,  cast() { shoot({ dmg: 0.3, type: 'poison', speed: 560, r: 6, fx: 'poison' }); } },
+  FF:      { name: 'Firebolt',        kind: 'attack',  cost: 3,  cast() { shoot({ dmg: 1.5, type: 'fire', speed: 520, r: 7 }); } },
+  WW:      { name: 'Frost Shard',     kind: 'attack',  cost: 3,  cast() { shoot({ dmg: 1, type: 'water', speed: 600, r: 6, fx: 'slow' }); } },
+  EE:      { name: 'Stone Spike',     kind: 'attack',  cost: 3,  cast() { shoot({ dmg: 2, type: 'earth', speed: 380, r: 8 }); } },
+  AA:      { name: 'Gust',            kind: 'attack',  cost: 3,  cast() { aoe(player.x, player.y, 150, 0.5, 'air', 300); } },
+  EW:      { name: 'Venom Dart',      kind: 'poison',  cost: 3,  cast() { shoot({ dmg: 0.3, type: 'poison', speed: 560, r: 6, fx: 'poison' }); } },
   WS:      { name: 'Mend',            kind: 'heal',    cost: 3,  cast() { healPlayer(3); } },
   ES:      { name: 'Stoneskin',       kind: 'defence', cost: 3,  cast() { player.skin = 8; } },
   AS:      { name: 'Haste',           kind: 'buff',    cost: 2,  cast() { player.haste = 6; } },
   // ── 3 · Adept: real spells ──
-  AWA:     { name: 'Chain Lightning', kind: 'attack',  cost: 5,  cast() { chainLightning(3.5, 5); } },
-  FFA:     { name: 'Fireball',        kind: 'attack',  cost: 5,  cast() { shoot({ dmg: 3, type: 'fire', speed: 450, r: 11, fx: 'explode', boom: 3.5, boomR: 100 }); } },
-  SSA:     { name: 'Spirit Lance',    kind: 'attack',  cost: 5,  cast() { shoot({ dmg: 4.5, type: 'spirit', speed: 760, r: 8, pierce: 3 }); } },
-  EWS:     { name: 'Plague Cloud',    kind: 'poison',  cost: 5,  cast() { plagueCloud(); } },
+  AWA:     { name: 'Chain Lightning', kind: 'attack',  cost: 7,  cast() { chainLightning(3.5, 5); } },
+  FFA:     { name: 'Fireball',        kind: 'attack',  cost: 7,  cast() { shoot({ dmg: 3, type: 'fire', speed: 450, r: 11, fx: 'explode', boom: 3.5, boomR: 100 }); } },
+  SSA:     { name: 'Spirit Lance',    kind: 'attack',  cost: 7,  cast() { shoot({ dmg: 4.5, type: 'spirit', speed: 760, r: 8, pierce: 3 }); } },
+  EWS:     { name: 'Plague Cloud',    kind: 'poison',  cost: 7,  cast() { plagueCloud(); } },
   SWS:     { name: 'Ward',            kind: 'defence', cost: 5,  cast() { player.ward = 4; } },
   FSF:     { name: 'Empower',         kind: 'buff',    cost: 5,  cast() { player.empower = 10; } },
   SAS:     { name: 'Wisp',            kind: 'summon',  cost: 5,  cast() { summon('wisp'); } },
   FSE:     { name: 'Fire Imp',        kind: 'summon',  cost: 5,  cast() { summon('imp'); } },
   // ── 4 · Greater: way more than a 3 ──
-  WWWA:    { name: 'Tidal Wave',      kind: 'attack',  cost: 8,  cast() { tidalWave(); } },
+  WWWA:    { name: 'Tidal Wave',      kind: 'attack',  cost: 11, cast() { tidalWave(); } },
   EESE:    { name: 'Stone Golem',     kind: 'summon',  cost: 8,  cast() { summon('golem'); } },
-  AWAW:    { name: 'Thunderstorm',    kind: 'attack',  cost: 8,  cast() { storms.push({ left: 10, t: 0 }); } },
+  AWAW:    { name: 'Thunderstorm',    kind: 'attack',  cost: 11, cast() { storms.push({ left: 10, t: 0 }); } },
   // ── 5 · Monstrous ──
-  FEFEF:   { name: 'Meteor',          kind: 'attack',  cost: 12, cast() { meteor(); } },
-  WAWAW:   { name: 'Blizzard',        kind: 'attack',  cost: 12, cast() { blizzard(); } },
+  FEFEF:   { name: 'Meteor',          kind: 'attack',  cost: 13, cast() { meteor(); } },
+  WAWAW:   { name: 'Blizzard',        kind: 'attack',  cost: 13, cast() { blizzard(); } },
   // ── 6 · Omni King ──
   SAFEWS:  { name: 'Crown of All',    kind: 'buff',    cost: 16, cast() { player.omni = 12; player.omniCd = 0; } },
   FFSAFF:  { name: 'Dragon',          kind: 'summon',  cost: 16, cast() { summon('dragon'); } },
   // ── 7 · Doomsday Destroyer ──
-  SFWEASS: { name: 'Doomsday',        kind: 'attack',  cost: 20, cast() { doomsday(); } },
+  SFWEASS: { name: 'Doomsday',        kind: 'attack',  cost: 20, cast() { detonateDoom(); } },
 };
 const SPELL_COUNT = Object.keys(SPELLS).length;
 
@@ -175,7 +181,7 @@ function playerScreenY() { return panelTop * 0.5; }
 let state = 'title'; // 'title' | 'play' | 'reveal' | 'dead' | 'won'
 const player = {};
 let foes = [], shots = [], enemyShots = [], allies = [], zones = [], waves = [], meteors = [];
-let storms = [], dooms = [];
+let storms = [];
 let fx = [], particles = [], floaters = [], chests = [];
 let spawnQueue = [];
 let discovered = new Set();
@@ -186,28 +192,178 @@ const nodePulse = [0, 0, 0, 0, 0];
 
 // spell input
 let seq = [], curNode = null, castPtr = null, finger = null;
-// movement input
-let movePtr = null, movePos = null;
+// movement input (a quick tap on the field shoots an arrow instead of walking)
+let movePtr = null, movePos = null, moveStart = null;
 const keys = {};
+
+// ── terrain ──────────────────────────────────────────────────────────────────
+// A lake with islands (sail there by boat), two castles, and forests you walk around.
+const LAKE = { x: 950, y: 1000, rx: 600, ry: 480 };
+const ISLANDS = [
+  { x: 830,  y: 930,  r: 70 },
+  { x: 1250, y: 1180, r: 60 },
+  { x: 1150, y: 760,  r: 55 },
+];
+const CASTLES = [
+  { name: 'Iron Fortress', x: 1150,  y: 170,  h: 190, t: 18, gates: { S: 130 },         stone: '#6d7078' },
+  { name: 'Ruined Keep',   x: -1050, y: 1050, h: 140, t: 16, gates: { E: 90, N: 80 },   stone: '#6b6258' },
+];
+const FORESTS = [
+  { x: -650,  y: -650, r: 260 },
+  { x: 560,   y: -600, r: 220 },
+  { x: -1250, y: 560,  r: 240 },
+  { x: -420,  y: 380,  r: 150 },
+];
+// Lost scrolls: on each island, and one hidden in the Ruined Keep.
+const SCROLLS = [
+  { x: 830,   y: 930,  combo: 'AWAW' },
+  { x: 1250,  y: 1180, combo: 'WAWAW' },
+  { x: 1150,  y: 760,  combo: 'FFSAFF' },
+  { x: -1050, y: 1030, combo: 'FEFEF' },
+];
+
+// wobbly shoreline so the lake isn't a perfect ellipse
+function lakeRadiusScale(a) { return 1 + 0.06 * Math.sin(3 * a) + 0.04 * Math.sin(5 * a + 1); }
+function inLake(x, y) {
+  const dx = (x - LAKE.x) / LAKE.rx, dy = (y - LAKE.y) / LAKE.ry;
+  const s = lakeRadiusScale(Math.atan2(dy, dx));
+  return dx * dx + dy * dy < s * s;
+}
+function isWater(x, y) {
+  if (!inLake(x, y)) return false;
+  for (const i of ISLANDS) if (Math.hypot(x - i.x, y - i.y) < i.r) return false;
+  return true;
+}
+// point on the shore in a given direction from the lake centre
+function shorePoint(dirX, dirY, inset) {
+  const a = Math.atan2(dirY / LAKE.ry, dirX / LAKE.rx);
+  const s = lakeRadiusScale(a) * inset;
+  return { x: LAKE.x + Math.cos(a) * LAKE.rx * s, y: LAKE.y + Math.sin(a) * LAKE.ry * s };
+}
+// the dock faces the shrine
+const DOCK = shorePoint(-LAKE.x, -LAKE.y, 1.0);
+const BOAT_HOME = shorePoint(-LAKE.x, -LAKE.y, 0.95);
+
+const walls = [];   // axis-aligned rectangles
+const solids = [];  // circles: trees, rocks, towers
+for (const c of CASTLES) {
+  const { x, y, h, t } = c;
+  // each side is a full wall, or two halves around a centred gate
+  const side = (key, rx, ry, w, hh, horizontal) => {
+    const gap = c.gates[key];
+    if (!gap) { walls.push({ x: rx, y: ry, w, h: hh }); return; }
+    if (horizontal) {
+      const half = (w - gap) / 2;
+      walls.push({ x: rx, y: ry, w: half, h: hh }, { x: rx + half + gap, y: ry, w: half, h: hh });
+    } else {
+      const half = (hh - gap) / 2;
+      walls.push({ x: rx, y: ry, w, h: half }, { x: rx, y: ry + half + gap, w, h: half });
+    }
+  };
+  side('N', x - h, y - h, 2 * h, t, true);
+  side('S', x - h, y + h - t, 2 * h, t, true);
+  side('W', x - h, y - h, t, 2 * h, false);
+  side('E', x + h - t, y - h, t, 2 * h, false);
+  for (const sx of [-1, 1]) for (const sy of [-1, 1]) solids.push({ x: x + sx * h, y: y + sy * h, r: 28, kind: 'tower', stone: c.stone });
+}
+function inCastle(x, y, pad) {
+  return CASTLES.some(c => Math.abs(x - c.x) < c.h + pad && Math.abs(y - c.y) < c.h + pad);
+}
 
 // scenery, generated once
 const deco = [];
 (function makeScenery() {
   const R = mulberry32(1337);
-  while (deco.length < 420) {
+  const clear = (x, y, r) => {
+    if (Math.abs(x) > WORLD - 20 || Math.abs(y) > WORLD - 20) return false;
+    if (Math.hypot(x, y) < 230) return false;
+    if (BOSSES.some(b => Math.hypot(x - b.x, y - b.y) < 200 || Math.hypot(x - b.x, y - (b.y + b.r + 60)) < 90)) return false;
+    if (inCastle(x, y, 70)) return false;
+    const dx = (x - LAKE.x) / (LAKE.rx + 70), dy = (y - LAKE.y) / (LAKE.ry + 70);
+    if (dx * dx + dy * dy < 1.25) return false;
+    if (SCROLLS.some(s => Math.hypot(x - s.x, y - s.y) < 60)) return false;
+    return !solids.some(s => Math.hypot(x - s.x, y - s.y) < s.r + r + 36); // leave room to walk between
+  };
+  const addTree = (x, y, s) => {
+    const r = 13 * s;
+    if (!clear(x, y, r)) return;
+    solids.push({ x, y, r, kind: 'tree', s, v: R() });
+  };
+  for (const f of FORESTS) {
+    for (let i = 0; i < 260; i++) {
+      const a = R() * TAU, d = Math.sqrt(R()) * f.r;
+      addTree(f.x + Math.cos(a) * d, f.y + Math.sin(a) * d, 0.8 + R() * 0.6);
+    }
+  }
+  for (let i = 0; i < 260; i++) {
+    const x = (R() * 2 - 1) * WORLD, y = (R() * 2 - 1) * WORLD, k = R();
+    if (k < 0.5) addTree(x, y, 0.7 + R() * 0.6);
+    else if (clear(x, y, 10)) solids.push({ x, y, r: 9 * (0.8 + R() * 0.6), kind: 'rock' });
+  }
+  while (deco.length < 220) {
     const x = (R() * 2 - 1) * WORLD, y = (R() * 2 - 1) * WORLD;
-    if (Math.hypot(x, y) < 150) continue;
-    if (BOSSES.some(b => Math.hypot(x - b.x, y - b.y) < 170)) continue;
-    const k = R();
-    deco.push({ x, y, kind: k < 0.45 ? 'tree' : k < 0.7 ? 'rock' : 'grass', s: 0.7 + R() * 0.7, v: R() });
+    if (!isWater(x, y)) deco.push({ x, y, kind: 'grass', s: 0.7 + R() * 0.7 });
+  }
+  // palms on the islands
+  for (const i of ISLANDS) {
+    solids.push({ x: i.x + i.r * 0.45, y: i.y + i.r * 0.35, r: 10, kind: 'palm' });
   }
 })();
+
+// spatial grid so collision checks only look at nearby solids
+const GRID = 200;
+const solidGrid = new Map();
+for (const s of solids) {
+  const k = Math.floor(s.x / GRID) + ',' + Math.floor(s.y / GRID);
+  if (!solidGrid.has(k)) solidGrid.set(k, []);
+  solidGrid.get(k).push(s);
+}
+function solidsNear(x, y) {
+  const gx = Math.floor(x / GRID), gy = Math.floor(y / GRID), out = [];
+  for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) {
+    const list = solidGrid.get((gx + i) + ',' + (gy + j));
+    if (list) out.push(...list);
+  }
+  return out;
+}
+
+function inWall(x, y) {
+  return walls.some(w => x > w.x && x < w.x + w.w && y > w.y && y < w.y + w.h);
+}
+
+// shove a circle out of trees, rocks, towers and castle walls
+function pushOut(e, r) {
+  for (const s of solidsNear(e.x, e.y)) {
+    const dx = e.x - s.x, dy = e.y - s.y, d = Math.hypot(dx, dy), min = s.r + r;
+    if (d < min && d > 0) { e.x = s.x + dx / d * min; e.y = s.y + dy / d * min; }
+  }
+  for (const w of walls) {
+    const px = clamp(e.x, w.x, w.x + w.w), py = clamp(e.y, w.y, w.y + w.h);
+    const dx = e.x - px, dy = e.y - py, d = Math.hypot(dx, dy);
+    if (d >= r) continue;
+    if (d > 0) { e.x = px + dx / d * r; e.y = py + dy / d * r; continue; }
+    // centre is inside the wall: leave by the shortest way out
+    const l = e.x - w.x, rr = w.x + w.w - e.x, t = e.y - w.y, b = w.y + w.h - e.y, m = Math.min(l, rr, t, b);
+    if (m === l) e.x = w.x - r; else if (m === rr) e.x = w.x + w.w + r;
+    else if (m === t) e.y = w.y - r; else e.y = w.y + w.h + r;
+  }
+}
+
+function blockedForFoot(x, y, r) {
+  if (isWater(x, y)) return true;
+  if (inWall(x, y)) return true;
+  return solidsNear(x, y).some(s => Math.hypot(x - s.x, y - s.y) < s.r + r * 0.6);
+}
+
+const boat = { x: 0, y: 0 };
+let scrolls = [];
 
 function resetPlayer() {
   Object.assign(player, {
     x: 0, y: 0, hp: 20, maxHp: 20, mana: 20, maxMana: 20,
     face: { x: 0, y: -1 }, invuln: 0, skin: 0, haste: 0, empower: 0, ward: 0, moving: false,
     omni: 0, omniCd: 0, omniIdx: 0,
+    onBoat: false, boardCd: 0, arrowCd: 0, charging: null, loaded: null,
   });
 }
 
@@ -231,7 +387,7 @@ function makeFoe(kind, x, y) {
 
 function clearCombat() {
   shots = []; enemyShots = []; allies = []; zones = []; waves = []; meteors = [];
-  storms = []; dooms = [];
+  storms = [];
   fx = []; particles = []; floaters = []; spawnQueue = [];
 }
 
@@ -240,6 +396,8 @@ function startGame() {
   clearCombat();
   foes = BOSSES.map(makeBoss);
   chests = foes.map(b => ({ x: b.def.x, y: b.def.y + b.def.r + 60, boss: b, opened: false }));
+  scrolls = SCROLLS.map(s => ({ ...s, taken: false }));
+  boat.x = BOAT_HOME.x; boat.y = BOAT_HOME.y;
   discovered = new Set();
   bossesDown = 0; kills = 0; elapsed = 0; spawnTimer = 2;
   banner = null; castMsg = null; reveal = null; wonShown = false;
@@ -257,6 +415,7 @@ function respawn() {
     b.x = b.def.x; b.y = b.def.y; b.hp = b.maxHp; b.aggro = false;
     b.poison = 0; b.slow = 0; b.kx = b.ky = 0;
   }
+  boat.x = BOAT_HOME.x; boat.y = BOAT_HOME.y;
   state = 'play';
   showBanner('You rise at the shrine', '', 2.5);
 }
@@ -437,12 +596,8 @@ function blizzard() {
   }
 }
 
-// 7-element finale: after a short charge, everything nearby is erased and every
+// 7-element finale (after its long charge): everything nearby is erased and every
 // guardian in range takes a massive hit of the one thing it can't resist.
-function doomsday() {
-  dooms.push({ t: 1.2, max: 1.2 });
-}
-
 function detonateDoom() {
   flash = 1.6;
   shake = 34;
@@ -485,12 +640,6 @@ function updateStorms(dt) {
     shake = Math.max(shake, 4);
   }
   storms = storms.filter(s => s.left > 0);
-
-  for (const d of dooms) {
-    d.t -= dt;
-    if (d.t <= 0) detonateDoom();
-  }
-  dooms = dooms.filter(d => d.t > 0);
 }
 
 const ALLY_LIFE = { wisp: 20, imp: 18, golem: 30, dragon: 30 };
@@ -518,13 +667,46 @@ function castSequence() {
   const tier = key.length;
   castMessage(tier >= 4 ? `${sp.name} · ${TIERS[tier]}` : sp.name, TIER_COLOR[tier]);
   burst(player.x, player.y, ELEMENTS[key[tier - 1]].color, 6 * tier, 100 + 50 * tier);
-  if (tier >= 4) shake = Math.max(shake, (tier - 3) * 4);
-  sp.cast();
+  if (isAttack(sp)) {
+    // attacks load onto the FIRE button; weaving a new one replaces the old
+    player.loaded = { key, left: TIER_SHOTS[tier] };
+    castMessage(`${sp.name} ×${TIER_SHOTS[tier]} · tap FIRE`, TIER_COLOR[tier]);
+  } else {
+    if (tier >= 4) shake = Math.max(shake, (tier - 3) * 4);
+    sp.cast();
+  }
   if (!discovered.has(key)) {
     discovered.add(key);
     showBanner(tier >= 5 ? `${TIERS[tier].toUpperCase()} SPELL!` : 'New spell discovered!',
                `${sp.name} · tier ${tier} ${TIERS[tier]} · ${sp.kind}`, tier >= 5 ? 4 : 3);
   }
+}
+
+// Press FIRE: quick spells go instantly, strong ones root you while they charge.
+function fireLoaded() {
+  const L = player.loaded;
+  if (!L || player.charging || state !== 'play') return;
+  const tier = L.key.length;
+  L.left--;
+  if (L.left <= 0) player.loaded = null;
+  const windup = TIER_WINDUP[tier];
+  if (windup > 0) player.charging = { key: L.key, t: windup, max: windup };
+  else releaseSpell(L.key);
+}
+
+function releaseSpell(key) {
+  const tier = key.length;
+  if (tier >= 4) shake = Math.max(shake, (tier - 3) * 4);
+  burst(player.x, player.y, TIER_COLOR[tier], 4 * tier, 80 + 40 * tier);
+  SPELLS[key].cast();
+}
+
+function shootArrow(wx, wy) {
+  if (player.arrowCd > 0 || player.charging) return;
+  player.arrowCd = 0.3;
+  const dx = wx - player.x, dy = wy - player.y, d = Math.hypot(dx, dy) || 1;
+  player.face = { x: dx / d, y: dy / d };
+  launch(player.x, player.y, player.face, { dmg: 1, type: 'arrow', speed: 720, r: 5, life: 0.9 });
 }
 
 // ── update ───────────────────────────────────────────────────────────────────
@@ -558,7 +740,9 @@ function spawnFoes(dt) {
   const x = clamp(player.x + Math.cos(a) * d, -WORLD, WORLD);
   const y = clamp(player.y + Math.sin(a) * d, -WORLD, WORLD);
   if (Math.hypot(x, y) < 220) return;
-  foes.push(makeFoe(pickFoeKind(x, y), x, y));
+  const kind = pickFoeKind(x, y);
+  if ((kind !== 'bat' && isWater(x, y)) || blockedForFoot(x, y, 16)) return;
+  foes.push(makeFoe(kind, x, y));
 }
 
 function bossAttack(b) {
@@ -618,6 +802,7 @@ function updateFoes(dt) {
     }
     if (f.freeze > 0) { f.freeze -= dt; continue; } // frozen solid: no moving, biting or shooting
     const dp = Math.hypot(player.x - f.x, player.y - f.y);
+    const px = f.x, py = f.y;
     if (f.boss) {
       updateBoss(f, dt, dp);
     } else {
@@ -630,6 +815,10 @@ function updateFoes(dt) {
     const damp = Math.max(0, 1 - 7 * dt);
     f.kx *= damp; f.ky *= damp;
     f.x = clamp(f.x, -WORLD, WORLD); f.y = clamp(f.y, -WORLD, WORLD);
+    if (f.kind !== 'bat') {
+      if (isWater(f.x, f.y)) { f.x = px; f.y = py; } // only bats fly over the lake
+      pushOut(f, f.r);
+    }
 
     if (dp < f.r + PLAYER_R + 2 && f.hitCd <= 0) {
       hurtPlayer(f.def.dmg);
@@ -659,6 +848,7 @@ function updateFoes(dt) {
 function updateShots(dt) {
   for (const s of shots) {
     s.x += s.vx * dt; s.y += s.vy * dt; s.life -= dt;
+    if (inWall(s.x, s.y)) { s.life = 0; burst(s.x, s.y, '#999', 4, 100); continue; }
     for (const f of foes) {
       if (s.life <= 0) break;
       if (f.dead || s.hit.has(f)) continue;
@@ -677,6 +867,7 @@ function updateShots(dt) {
 
   for (const s of enemyShots) {
     s.x += s.vx * dt; s.y += s.vy * dt; s.life -= dt;
+    if (inWall(s.x, s.y)) { s.life = 0; continue; }
     if (Math.hypot(player.x - s.x, player.y - s.y) < s.r + PLAYER_R) { hurtPlayer(s.dmg); s.life = 0; }
   }
   enemyShots = enemyShots.filter(s => s.life > 0);
@@ -789,13 +980,16 @@ function updateEffects(dt) {
   floaters = floaters.filter(t => t.life > 0);
 }
 
+function showScroll(combo, title) {
+  state = 'reveal';
+  reveal = { combo, name: SPELLS[combo].name, title, t: 0 };
+  movePtr = null; movePos = null; moveStart = null;
+  castPtr = null; finger = null; seq = [];
+  player.charging = null;
+}
 function openChest(c) {
   c.opened = true;
-  const combo = c.boss.def.reward;
-  state = 'reveal';
-  reveal = { combo, name: SPELLS[combo].name, t: 0 };
-  movePtr = null; movePos = null;
-  castPtr = null; finger = null; seq = [];
+  showScroll(c.boss.def.reward, 'AN ANCIENT SCROLL');
 }
 
 function closeReveal() {
@@ -818,7 +1012,8 @@ function update(dt) {
   if (keys.KeyS || keys.ArrowDown)  my += 1;
   if (keys.KeyA || keys.ArrowLeft)  mx -= 1;
   if (keys.KeyD || keys.ArrowRight) mx += 1;
-  if (movePos) {
+  // a held finger only walks once it's clearly a hold or a drag, not a tap
+  if (movePos && moveStart && (moveStart.moved || performance.now() - moveStart.t > 180)) {
     const dx = movePos.x - W / 2, dy = movePos.y - playerScreenY(), d = Math.hypot(dx, dy);
     if (d > 14) { mx += dx / d; my += dy / d; }
   }
@@ -826,18 +1021,30 @@ function update(dt) {
   mx += t.x; my += t.y;
   // analog: a gentle tilt walks slowly, anything else is capped at full speed
   let ml = Math.hypot(mx, my);
-  player.moving = ml > 0.02;
+  player.moving = ml > 0.02 && !player.charging; // charging a big spell roots you
   if (player.moving) {
     mx /= ml; my /= ml;
     ml = Math.min(1, ml);
-    const sp = 170 * ml * (player.haste > 0 ? 1.6 : 1);
-    player.x = clamp(player.x + mx * sp * dt, -WORLD, WORLD);
-    player.y = clamp(player.y + my * sp * dt, -WORLD, WORLD);
+    movePlayer(mx, my, (player.onBoat ? 230 : 170) * ml * (player.haste > 0 ? 1.6 : 1) * dt);
     player.face = { x: mx, y: my };
     if (player.haste > 0 && Math.random() < 0.5) {
       particles.push({ x: player.x, y: player.y + 10, vx: 0, vy: 0, r: 3, life: 0.6, decay: 2, color: TYPE_COLOR.air });
     }
   }
+
+  // board the boat by walking into it
+  player.boardCd = Math.max(0, player.boardCd - dt);
+  if (!player.onBoat && player.boardCd <= 0 && dist(player, boat) < 52) {
+    player.onBoat = true;
+    player.x = boat.x; player.y = boat.y;
+    castMessage('All aboard! Sail to land to step off', '#bfe6ff');
+  }
+
+  if (player.charging) {
+    player.charging.t -= dt;
+    if (player.charging.t <= 0) { const k = player.charging.key; player.charging = null; releaseSpell(k); }
+  }
+  player.arrowCd = Math.max(0, player.arrowCd - dt);
 
   player.invuln  = Math.max(0, player.invuln - dt);
   player.skin    = Math.max(0, player.skin - dt);
@@ -861,6 +1068,44 @@ function update(dt) {
   for (const c of chests) {
     if (!c.opened && c.boss.dead && state === 'play' && dist(c, player) < 44) openChest(c);
   }
+  for (const sc of scrolls) {
+    if (!sc.taken && state === 'play' && dist(sc, player) < 34) {
+      sc.taken = true;
+      showScroll(sc.combo, 'A LOST SCROLL');
+    }
+  }
+}
+
+// Walk (or sail) one step, sliding along obstacles.
+function movePlayer(dx, dy, step) {
+  const nx = clamp(player.x + dx * step, -WORLD, WORLD);
+  const ny = clamp(player.y + dy * step, -WORLD, WORLD);
+  if (player.onBoat) {
+    // the boat stays on water; steering into land steps you ashore
+    const ahead = { x: nx + dx * 14, y: ny + dy * 14 };
+    if (isWater(ahead.x, ahead.y)) {
+      player.x = boat.x = nx; player.y = boat.y = ny;
+      return;
+    }
+    // step ashore straight ahead, or a little to either side if that spot is taken
+    const base = Math.atan2(dy, dx);
+    for (const off of [0, 0.4, -0.4, 0.8, -0.8]) {
+      for (const reach of [36, 50]) {
+        const lx = player.x + Math.cos(base + off) * reach, ly = player.y + Math.sin(base + off) * reach;
+        if (blockedForFoot(lx, ly, PLAYER_R)) continue;
+        player.onBoat = false;
+        player.boardCd = 1.2;
+        player.x = lx; player.y = ly;
+        return;
+      }
+    }
+    return;
+  }
+  // on foot: no wading into the lake; slide along one axis if the other is blocked
+  if (!isWater(nx, ny)) { player.x = nx; player.y = ny; }
+  else if (!isWater(nx, player.y)) player.x = nx;
+  else if (!isWater(player.x, ny)) player.y = ny;
+  pushOut(player, PLAYER_R);
 }
 
 // ── tilt steering ────────────────────────────────────────────────────────────
@@ -915,6 +1160,16 @@ function tiltVector() {
   return { x: axis(tilt.raw.x - tilt.base.x), y: axis(tilt.raw.y - tilt.base.y) };
 }
 
+function fireButton() {
+  const r = Math.max(28, Math.min(36, W * 0.085));
+  return { x: W - 16 - r, y: H - 16 - r, r };
+}
+function fireButtonHit(x, y) {
+  if (!player.loaded) return false;
+  const b = fireButton();
+  return Math.hypot(x - b.x, y - b.y) < b.r + 8;
+}
+
 const isTouch = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
 function tiltLabelRect() {
   const s = Math.min(110, W * 0.26);
@@ -961,6 +1216,7 @@ canvas.addEventListener('pointerdown', e => {
     else { tilt.asked = false; tilt.warned = false; } // try again on this tap's release
     return;
   }
+  if (fireButtonHit(x, y)) { fireLoaded(); return; }
   if (castPtr === null && inCastZone(x, y)) {
     castPtr = e.pointerId;
     seq = [];
@@ -969,13 +1225,17 @@ canvas.addEventListener('pointerdown', e => {
   } else if (movePtr === null) {
     movePtr = e.pointerId;
     movePos = { x, y };
+    moveStart = { x, y, t: performance.now(), moved: false };
   }
   try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
 });
 
 canvas.addEventListener('pointermove', e => {
   if (e.pointerId === castPtr) { const p = localPos(e); castMove(p.x, p.y); }
-  else if (e.pointerId === movePtr) movePos = localPos(e);
+  else if (e.pointerId === movePtr) {
+    movePos = localPos(e);
+    if (moveStart && Math.hypot(movePos.x - moveStart.x, movePos.y - moveStart.y) > 14) moveStart.moved = true;
+  }
 });
 
 function endPointer(e, cancelled) {
@@ -983,8 +1243,15 @@ function endPointer(e, cancelled) {
     if (state === 'play' && !cancelled) castSequence();
     seq = []; castPtr = null; finger = null; curNode = null;
   }
-  if (e.pointerId === movePtr) { movePtr = null; movePos = null; }
+  if (e.pointerId === movePtr) {
+    // a quick tap on the field shoots an arrow at that spot
+    if (!cancelled && state === 'play' && moveStart && !moveStart.moved && performance.now() - moveStart.t < 250) {
+      shootArrow(player.x + moveStart.x - W / 2, player.y + moveStart.y - playerScreenY());
+    }
+    movePtr = null; movePos = null; moveStart = null;
+  }
 }
+
 canvas.addEventListener('pointerup', e => {
   // a finished tap is what iOS accepts for the motion-sensor prompt
   if (isTouch && !tilt.asked) { tilt.asked = true; startTilt(); }
@@ -1003,7 +1270,8 @@ window.addEventListener('keydown', e => {
     seq.push(el);
     nodePulse[NODE_ORDER.indexOf(el)] = 1;
   }
-  if (confirm && castPtr === null) castSequence();
+  if (confirm && castPtr === null) { if (seq.length) castSequence(); else fireLoaded(); }
+  if (e.code === 'KeyF') fireLoaded();
   if ((e.code === 'Backspace' || e.code === 'Escape') && castPtr === null) seq = [];
 });
 window.addEventListener('keyup', e => { keys[e.code] = false; });
@@ -1099,23 +1367,150 @@ function drawGround(camX, camY) {
   ctx.strokeRect(-WORLD, -WORLD, WORLD * 2, WORLD * 2);
 }
 
-function drawDeco(camX, camY) {
-  for (const d of deco) {
-    if (d.x < camX - 60 || d.x > camX + W + 60 || d.y < camY - 60 || d.y > camY + H + 60) continue;
+function inView(x, y, pad, camX, camY) {
+  return x > camX - pad && x < camX + W + pad && y > camY - pad && y < camY + H + pad;
+}
+
+function lakePath(grow) {
+  ctx.beginPath();
+  for (let i = 0; i <= 72; i++) {
+    const a = i / 72 * TAU, k = lakeRadiusScale(a);
+    const x = LAKE.x + Math.cos(a) * (LAKE.rx * k + grow), y = LAKE.y + Math.sin(a) * (LAKE.ry * k + grow);
+    i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+  }
+  ctx.closePath();
+}
+
+function drawLake(camX, camY) {
+  if (!inView(LAKE.x, LAKE.y, Math.max(LAKE.rx, LAKE.ry) + 80, camX, camY)) return;
+  lakePath(14); ctx.fillStyle = '#6b6044'; ctx.fill();          // muddy bank
+  lakePath(0);  ctx.fillStyle = '#123a5c'; ctx.fill();
+  lakePath(-40); ctx.fillStyle = '#0f3150'; ctx.fill();
+  // drifting ripples
+  ctx.strokeStyle = 'rgba(160,210,255,0.18)';
+  ctx.lineWidth = 2;
+  for (let i = 0; i < 40; i++) {
+    const a = i * 2.39, d = 0.15 + (i * 0.618 % 0.8);
+    const x = LAKE.x + Math.cos(a) * LAKE.rx * d + Math.sin(elapsed * 0.6 + i) * 10;
+    const y = LAKE.y + Math.sin(a) * LAKE.ry * d;
+    if (!isWater(x, y)) continue;
+    ctx.beginPath(); ctx.moveTo(x - 10, y); ctx.quadraticCurveTo(x, y - 4, x + 10, y); ctx.stroke();
+  }
+  for (const i of ISLANDS) {
+    circle(i.x, i.y, i.r + 8, 'rgba(230,210,150,0.35)');
+    circle(i.x, i.y, i.r, '#c9b27a');
+    circle(i.x + 6, i.y + 6, i.r * 0.7, '#8fa15a');
+  }
+  // dock
+  const dx = DOCK.x - LAKE.x, dy = DOCK.y - LAKE.y, d = Math.hypot(dx, dy);
+  ctx.save();
+  ctx.translate(DOCK.x, DOCK.y);
+  ctx.rotate(Math.atan2(dy / d, dx / d));
+  ctx.fillStyle = '#7a5532';
+  ctx.fillRect(-60, -14, 90, 28);
+  ctx.strokeStyle = '#4e3520'; ctx.lineWidth = 2;
+  for (let k = -55; k < 30; k += 12) { ctx.beginPath(); ctx.moveTo(k, -14); ctx.lineTo(k, 14); ctx.stroke(); }
+  ctx.restore();
+}
+
+function drawBoat() {
+  if (player.onBoat) return; // drawn under the player instead
+  drawBoatAt(boat.x, boat.y, Math.atan2(LAKE.y - boat.y, LAKE.x - boat.x));
+}
+function drawBoatAt(x, y, ang) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(ang);
+  ctx.fillStyle = 'rgba(0,0,0,0.25)';
+  ctx.beginPath(); ctx.ellipse(3, 5, 34, 15, 0, 0, TAU); ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(36, 0); ctx.quadraticCurveTo(20, -16, -28, -13); ctx.lineTo(-30, 13); ctx.quadraticCurveTo(20, 16, 36, 0);
+  ctx.fillStyle = '#8a5a2e'; ctx.fill();
+  ctx.strokeStyle = '#4e3218'; ctx.lineWidth = 3; ctx.stroke();
+  ctx.fillStyle = '#6b431f'; ctx.fillRect(-22, -9, 44, 18);
+  ctx.restore();
+}
+
+function drawCastles(camX, camY) {
+  for (const c of CASTLES) {
+    if (!inView(c.x, c.y, c.h + 60, camX, camY)) continue;
+    // flagstone courtyard
+    ctx.fillStyle = 'rgba(120,115,110,0.22)';
+    ctx.fillRect(c.x - c.h, c.y - c.h, c.h * 2, c.h * 2);
+    ctx.strokeStyle = 'rgba(0,0,0,0.12)'; ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let k = -c.h; k <= c.h; k += 40) { ctx.moveTo(c.x + k, c.y - c.h); ctx.lineTo(c.x + k, c.y + c.h); ctx.moveTo(c.x - c.h, c.y + k); ctx.lineTo(c.x + c.h, c.y + k); }
+    ctx.stroke();
+    ctx.fillStyle = '#ddd';
+    ctx.font = 'bold 12px Georgia, serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(c.name, c.x, c.y - c.h - 14);
+  }
+  for (const w of walls) {
+    if (!inView(w.x + w.w / 2, w.y + w.h / 2, Math.max(w.w, w.h), camX, camY)) continue;
+    ctx.fillStyle = 'rgba(0,0,0,0.3)';
+    ctx.fillRect(w.x + 4, w.y + 5, w.w, w.h);
+    ctx.fillStyle = '#6d6a66';
+    ctx.fillRect(w.x, w.y, w.w, w.h);
+    // crenellations
+    ctx.fillStyle = '#86827c';
+    const horiz = w.w > w.h, len = horiz ? w.w : w.h;
+    for (let k = 4; k < len - 6; k += 16) {
+      if (horiz) ctx.fillRect(w.x + k, w.y + 2, 8, w.h - 4);
+      else ctx.fillRect(w.x + 2, w.y + k, w.w - 4, 8);
+    }
+  }
+}
+
+function drawSolids(camX, camY) {
+  for (const d of solids) {
+    if (!inView(d.x, d.y, 60, camX, camY)) continue;
     if (d.kind === 'tree') {
       circle(d.x + 4, d.y + 6, 22 * d.s, 'rgba(0,0,0,0.3)');
       circle(d.x, d.y, 22 * d.s, d.v < 0.5 ? '#1f3a24' : '#24422a');
       circle(d.x - 6 * d.s, d.y - 6 * d.s, 12 * d.s, '#2f5535');
     } else if (d.kind === 'rock') {
-      circle(d.x, d.y, 11 * d.s, '#3a3d44');
-      circle(d.x - 3 * d.s, d.y - 3 * d.s, 5 * d.s, '#4b4f58');
-    } else {
-      ctx.strokeStyle = '#2c4a2f';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      for (let i = -1; i <= 1; i++) { ctx.moveTo(d.x + i * 4, d.y + 5); ctx.lineTo(d.x + i * 6, d.y - 6 * d.s); }
-      ctx.stroke();
+      circle(d.x, d.y, d.r * 1.15, '#3a3d44');
+      circle(d.x - d.r * 0.3, d.y - d.r * 0.3, d.r * 0.5, '#4b4f58');
+    } else if (d.kind === 'palm') {
+      ctx.strokeStyle = '#7a5a30'; ctx.lineWidth = 4;
+      ctx.beginPath(); ctx.moveTo(d.x, d.y + 10); ctx.lineTo(d.x + 3, d.y - 10); ctx.stroke();
+      ctx.fillStyle = '#3f8a3a';
+      for (let i = 0; i < 5; i++) {
+        const a = i * TAU / 5 + 0.3;
+        ctx.beginPath(); ctx.ellipse(d.x + 3 + Math.cos(a) * 12, d.y - 10 + Math.sin(a) * 12, 13, 5, a, 0, TAU); ctx.fill();
+      }
+    } else if (d.kind === 'tower') {
+      circle(d.x + 4, d.y + 6, d.r, 'rgba(0,0,0,0.3)');
+      circle(d.x, d.y, d.r, '#6d6a66', '#4a4744', 3);
+      circle(d.x, d.y, d.r * 0.6, '#86827c');
     }
+  }
+}
+
+function drawGrass(camX, camY) {
+  ctx.strokeStyle = '#2c4a2f';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  for (const d of deco) {
+    if (!inView(d.x, d.y, 20, camX, camY)) continue;
+    for (let i = -1; i <= 1; i++) { ctx.moveTo(d.x + i * 4, d.y + 5); ctx.lineTo(d.x + i * 6, d.y - 6 * d.s); }
+  }
+  ctx.stroke();
+}
+
+function drawScrolls() {
+  for (const sc of scrolls) {
+    if (sc.taken) continue;
+    const y = sc.y - 6 + Math.sin(elapsed * 3 + sc.x) * 3;
+    const g = ctx.createRadialGradient(sc.x, y, 0, sc.x, y, 40);
+    g.addColorStop(0, 'rgba(255,230,150,0.45)'); g.addColorStop(1, 'rgba(255,230,150,0)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(sc.x, y, 40, 0, TAU); ctx.fill();
+    ctx.fillStyle = '#efe0b8';
+    ctx.fillRect(sc.x - 12, y - 8, 24, 16);
+    circle(sc.x - 12, y, 8, '#d8c48f');
+    circle(sc.x + 12, y, 8, '#d8c48f');
+    ctx.fillStyle = '#a33'; ctx.fillRect(sc.x - 2, y - 8, 4, 16);
   }
 }
 
@@ -1352,13 +1747,14 @@ function drawAlly(a) {
 
 function drawPlayer() {
   const { x, y } = player;
+  if (player.onBoat) drawBoatAt(x, y + 6, Math.atan2(player.face.y, player.face.x));
   if (player.invuln > 0 && Math.floor(player.invuln * 20) % 2) return;
   if (player.empower > 0) {
     const g = ctx.createRadialGradient(x, y, 0, x, y, 40);
     g.addColorStop(0, 'rgba(255,90,42,0.45)'); g.addColorStop(1, 'rgba(255,90,42,0)');
     ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, 40, 0, TAU); ctx.fill();
   }
-  circle(x + 3, y + 12, 13, 'rgba(0,0,0,0.3)');
+  if (!player.onBoat) circle(x + 3, y + 12, 13, 'rgba(0,0,0,0.3)');
   // robe
   ctx.beginPath(); ctx.moveTo(x - 15, y + 14); ctx.lineTo(x, y - 8); ctx.lineTo(x + 15, y + 14); ctx.closePath();
   ctx.fillStyle = '#4b2d7a'; ctx.fill();
@@ -1394,6 +1790,18 @@ function drawPlayer() {
 }
 
 function drawShot(s) {
+  if (s.type === 'arrow') {
+    const sp = Math.hypot(s.vx, s.vy) || 1, ux = s.vx / sp, uy = s.vy / sp;
+    ctx.strokeStyle = '#d8c8a0'; ctx.lineWidth = 2.5; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(s.x - ux * 22, s.y - uy * 22); ctx.lineTo(s.x, s.y); ctx.stroke();
+    ctx.fillStyle = '#ddd';
+    ctx.beginPath(); ctx.moveTo(s.x + ux * 7, s.y + uy * 7);
+    ctx.lineTo(s.x - uy * 4, s.y + ux * 4); ctx.lineTo(s.x + uy * 4, s.y - ux * 4); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = '#c33'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(s.x - ux * 22 - uy * 4, s.y - uy * 22 + ux * 4); ctx.lineTo(s.x - ux * 18, s.y - uy * 18);
+    ctx.moveTo(s.x - ux * 22 + uy * 4, s.y - uy * 22 - ux * 4); ctx.lineTo(s.x - ux * 18, s.y - uy * 18); ctx.stroke();
+    return;
+  }
   const g = ctx.createRadialGradient(s.x, s.y, 0, s.x, s.y, s.r * 2.2);
   g.addColorStop(0, '#fff'); g.addColorStop(0.35, s.color); g.addColorStop(1, 'rgba(0,0,0,0)');
   ctx.fillStyle = g;
@@ -1412,13 +1820,23 @@ function drawEffects() {
       circle(bx, by, 4, z.type === 'fire' ? `rgba(255,200,90,${a * 2})` : `rgba(160,255,110,${a * 1.5})`);
     }
   }
-  for (const d of dooms) {
-    // the sky darkens and a blood-red circle tightens around the caster
-    const k = 1 - d.t / d.max;
-    ctx.fillStyle = `rgba(20,0,8,${k * 0.5})`;
-    ctx.fillRect(player.x - 3000, player.y - 3000, 6000, 6000);
-    circle(player.x, player.y, 1000 * (1 - k) + 40, null, `rgba(255,51,85,${0.4 + k * 0.6})`, 4 + k * 8);
-    circle(player.x, player.y, 40 + k * 30, `rgba(255,246,176,${k})`);
+  const ch = player.charging;
+  if (ch) {
+    // a ring tightens around the caster as the spell charges
+    const k = 1 - ch.t / ch.max, tier = ch.key.length, col = TIER_COLOR[tier];
+    if (tier === 7) {
+      ctx.fillStyle = `rgba(20,0,8,${k * 0.5})`;
+      ctx.fillRect(player.x - 3000, player.y - 3000, 6000, 6000);
+      circle(player.x, player.y, 1000 * (1 - k) + 40, null, `rgba(255,51,85,${0.4 + k * 0.6})`, 4 + k * 8);
+    } else {
+      ctx.globalAlpha = 0.4 + k * 0.6;
+      circle(player.x, player.y, 30 + (1 - k) * 25 * tier, null, col, 2 + k * 4);
+      ctx.globalAlpha = 1;
+    }
+    for (let i = 0; i < tier; i++) {
+      const a = elapsed * 6 + i * TAU / tier, d = 34 * (1 - k * 0.6);
+      circle(player.x + Math.cos(a) * d, player.y + Math.sin(a) * d, 3 + k * 3, ELEMENTS[ch.key[i]].color);
+    }
   }
   for (const w of waves) {
     const a = 1 - w.r / w.maxR;
@@ -1481,7 +1899,12 @@ function drawWorld() {
   ctx.translate(-camX, -camY);
   drawGround(camX, camY);
   drawShrine();
-  drawDeco(camX, camY);
+  drawLake(camX, camY);
+  drawGrass(camX, camY);
+  drawCastles(camX, camY);
+  drawSolids(camX, camY);
+  drawBoat();
+  drawScrolls();
   for (const c of chests) drawChest(c);
   for (const f of foes) {
     if (f.dead) continue;
@@ -1528,6 +1951,7 @@ function drawHUD() {
   }
 
   drawMinimap();
+  drawFireButton();
 
   if (isTouch) {
     const r = tiltLabelRect();
@@ -1561,11 +1985,45 @@ function drawHUD() {
   }
 }
 
+function drawFireButton() {
+  const L = player.loaded, ch = player.charging;
+  if (!L && !ch) return;
+  const b = fireButton();
+  const key = ch ? ch.key : L.key, tier = key.length, col = TIER_COLOR[tier];
+  const pulse = ch ? 0 : Math.sin(elapsed * 5) * 3;
+  circle(b.x, b.y, b.r + 6 + pulse, 'rgba(0,0,0,0.35)');
+  const g = ctx.createRadialGradient(b.x, b.y - 6, 2, b.x, b.y, b.r);
+  g.addColorStop(0, '#fff'); g.addColorStop(0.3, col); g.addColorStop(1, 'rgba(40,20,60,0.95)');
+  circle(b.x, b.y, b.r, g, col, 3);
+  if (ch) {
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 5;
+    ctx.beginPath(); ctx.arc(b.x, b.y, b.r + 4, -Math.PI / 2, -Math.PI / 2 + TAU * (1 - ch.t / ch.max)); ctx.stroke();
+  }
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#111';
+  ctx.font = 'bold 13px system-ui, sans-serif';
+  ctx.fillText(ch ? '…' : 'FIRE', b.x, b.y + 1);
+  ctx.font = 'bold 11px system-ui, sans-serif';
+  ctx.fillText(L ? `×${L.left}` : '', b.x, b.y + 14);
+  ctx.fillStyle = col;
+  ctx.font = '11px system-ui, sans-serif';
+  ctx.textAlign = 'right';
+  ctx.fillText(SPELLS[key].name, W - 10, b.y - b.r - 12);
+}
+
 function drawMinimap() {
   const s = Math.min(110, W * 0.26), x = W - s - 12, y = 12, k = s / (WORLD * 2);
   const mx = v => x + (v + WORLD) * k, my = v => y + (v + WORLD) * k;
   ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(x, y, s, s);
   ctx.strokeStyle = 'rgba(199,125,255,0.5)'; ctx.lineWidth = 1; ctx.strokeRect(x, y, s, s);
+  // terrain
+  for (const f of FORESTS) circle(mx(f.x), my(f.y), f.r * k, 'rgba(40,110,60,0.55)');
+  ctx.beginPath(); ctx.ellipse(mx(LAKE.x), my(LAKE.y), LAKE.rx * k, LAKE.ry * k, 0, 0, TAU);
+  ctx.fillStyle = 'rgba(40,110,200,0.7)'; ctx.fill();
+  for (const i of ISLANDS) circle(mx(i.x), my(i.y), Math.max(1.5, i.r * k), '#c9b27a');
+  for (const c of CASTLES) { ctx.strokeStyle = '#aaa'; ctx.strokeRect(mx(c.x - c.h), my(c.y - c.h), c.h * 2 * k, c.h * 2 * k); }
+  for (const sc of scrolls) if (!sc.taken) circle(mx(sc.x), my(sc.y), 2, '#efe0b8');
+  circle(mx(boat.x), my(boat.y), 2, '#b07a40');
   circle(mx(0), my(0), 3, '#c77dff');
   for (const c of chests) {
     if (c.boss.dead && !c.opened) circle(mx(c.x), my(c.y), 3.5, '#ffd24a');
@@ -1706,7 +2164,9 @@ function drawTitle() {
   const lines = [
     'Slide across the five elements to weave a spell — up to seven. Slide off an element and back on to use it again.',
     'Release to cast. Most patterns just fizzle; you have to find the ones that work.',
-    'Tilt your phone to walk (or drag on the field, or use WASD). The angle you start at counts as level.',
+    'Hold or drag on the field to walk (WASD on a keyboard). Tap the field to shoot an arrow.',
+    'Attack spells load onto the FIRE button. Big spells root you in place while they charge.',
+    'Find the boat on the lake shore and sail out to the islands.',
     'Guardians only fall to the right kind of magic. Their chests hold forgotten spells. Nothing is written down — remember them.',
   ];
   for (const l of lines) y = wrapText(l, W / 2, y, maxW, 20) + 8;
@@ -1733,7 +2193,7 @@ function drawReveal() {
   let y = Math.max(60, panelTop * 0.18);
   ctx.fillStyle = '#ffd24a';
   ctx.font = 'bold 16px system-ui, sans-serif';
-  ctx.fillText('AN ANCIENT SCROLL', W / 2, y);
+  ctx.fillText(reveal.title, W / 2, y);
   y += 22;
   ctx.fillStyle = TIER_COLOR[combo.length];
   ctx.font = 'bold 13px system-ui, sans-serif';
