@@ -148,7 +148,7 @@ const TYPE_COLOR = {
   // keep these 6-digit: the boss aura appends a 2-digit alpha
   fire: '#ff5a2a', water: '#3ab0ff', earth: '#b5834a', air: '#f5e663',
   lightning: '#88ffff', poison: '#7dff4a', spirit: '#c77dff', holy: '#fff6b0',
-  arrow: '#e8dcc0',
+  arrow: '#e8dcc0', prism: '#ffffff', mirror: '#e6ccff',
 };
 
 // Power scales hard with chain length. Tier name is indexed by combo length.
@@ -158,38 +158,61 @@ const TIER_COLOR = ['', '', '#bbb', '#8fd0ff', '#b98cff', '#ff8a3a', '#ffd24a', 
 // several quick shots; strong ones give fewer and root you while they charge.
 const TIER_SHOTS  = [0, 0, 5, 3, 2, 1, 1, 1];
 const TIER_WINDUP = [0, 0, 0, 0.25, 0.7, 1.2, 1.6, 2.2]; // seconds standing still per shot
-const isAttack = sp => sp.kind === 'attack' || sp.kind === 'poison';
+// Spells that aim go on the FIRE button; everything else happens on release.
+const isAttack = sp => sp.kind === 'attack' || sp.kind === 'poison' || sp.kind === 'control';
 
 // Every combo that does something. Anything else fizzles.
+// Nothing fires by itself: every hit comes from a press of FIRE (or an arrow).
 const SPELLS = {
-  // ── 2 · Minor: cheap pokes ──
-  FF:      { name: 'Firebolt',        kind: 'attack',  cost: 3,  cast() { shoot({ dmg: 1.5, type: 'fire', speed: 520, r: 7 }); } },
+  // ── 2 · Minor: cheap pokes and tricks ──
+  FF:      { name: 'Firebolt',        kind: 'attack',  cost: 3,  cast() { shoot({ dmg: 1.5, type: 'fire', speed: 520, r: 7, fx: 'burn' }); } },
   WW:      { name: 'Frost Shard',     kind: 'attack',  cost: 3,  cast() { shoot({ dmg: 1, type: 'water', speed: 600, r: 6, fx: 'slow' }); } },
   EE:      { name: 'Stone Spike',     kind: 'attack',  cost: 3,  cast() { shoot({ dmg: 2, type: 'earth', speed: 380, r: 8 }); } },
-  AA:      { name: 'Gust',            kind: 'attack',  cost: 3,  cast() { aoe(player.x, player.y, 150, 0.5, 'air', 300); } },
+  AA:      { name: 'Gust',            kind: 'attack',  cost: 3,  cast() { aoe(player.x, player.y, 150, 0.5, 'air', 320); } },
   EW:      { name: 'Venom Dart',      kind: 'poison',  cost: 3,  cast() { shoot({ dmg: 0.3, type: 'poison', speed: 560, r: 6, fx: 'poison' }); } },
+  SS:      { name: 'Soul Siphon',     kind: 'attack',  cost: 3,  cast() { shoot({ dmg: 1.5, type: 'spirit', speed: 560, r: 6, fx: 'drain' }); } },
+  FE:      { name: 'Ember Trap',      kind: 'attack',  cost: 3,  cast() { layTrap(); } },
+  WE:      { name: 'Quagmire',        kind: 'control', cost: 3,  cast() { const p = targetPoint(420, 140); zones.push({ x: p.x, y: p.y, r: 85, life: 4, max: 4, tick: 0, type: 'mud' }); } },
   WS:      { name: 'Mend',            kind: 'heal',    cost: 3,  cast() { healPlayer(3); } },
   ES:      { name: 'Stoneskin',       kind: 'defence', cost: 3,  cast() { player.skin = 8; } },
   AS:      { name: 'Haste',           kind: 'buff',    cost: 2,  cast() { player.haste = 6; } },
+  SA:      { name: 'Blink',           kind: 'move',    cost: 2,  cast() { blink(); } },
   // ── 3 · Adept: real spells ──
   AWA:     { name: 'Chain Lightning', kind: 'attack',  cost: 7,  cast() { chainLightning(3.5, 5); } },
   FFA:     { name: 'Fireball',        kind: 'attack',  cost: 7,  cast() { shoot({ dmg: 3, type: 'fire', speed: 450, r: 11, fx: 'explode', boom: 3.5, boomR: 100 }); } },
   SSA:     { name: 'Spirit Lance',    kind: 'attack',  cost: 7,  cast() { shoot({ dmg: 4.5, type: 'spirit', speed: 760, r: 8, pierce: 3 }); } },
+  FAF:     { name: 'Flame Wave',      kind: 'attack',  cost: 7,  cast() { cone(player.x, player.y, aimAngle(), 180, 0.6, 2.5, 'fire', 'burn'); } },
   EWS:     { name: 'Plague Cloud',    kind: 'poison',  cost: 7,  cast() { plagueCloud(); } },
+  WWA:     { name: 'Ice Lance',       kind: 'control', cost: 6,  cast() { shoot({ dmg: 2, type: 'water', speed: 650, r: 8, fx: 'freeze' }); } },
+  EEA:     { name: 'Earthquake',      kind: 'control', cost: 6,  cast() { quake(); } },
+  SFS:     { name: 'Terror',          kind: 'control', cost: 6,  cast() { areaCC(player.x, player.y, 260, 'fear', 3.5, '#b070ff'); } },
+  EWE:     { name: 'Hex',             kind: 'control', cost: 6,  cast() { shoot({ dmg: 0.5, type: 'poison', speed: 520, r: 8, fx: 'hex' }); } },
   SWS:     { name: 'Ward',            kind: 'defence', cost: 5,  cast() { player.ward = 4; } },
+  SWA:     { name: 'Mirror Shield',   kind: 'defence', cost: 6,  cast() { player.mirror = 5; } },
+  EAE:     { name: 'Stone Wall',      kind: 'defence', cost: 6,  cast() { stoneWall(); } },
+  SSW:     { name: 'Rejuvenate',      kind: 'heal',    cost: 5,  cast() { player.regen = 8; } },
   FSF:     { name: 'Empower',         kind: 'buff',    cost: 5,  cast() { player.empower = 10; } },
-  SAS:     { name: 'Wisp',            kind: 'summon',  cost: 5,  cast() { summon('wisp'); } },
-  FSE:     { name: 'Fire Imp',        kind: 'summon',  cost: 5,  cast() { summon('imp'); } },
+  SAS:     { name: 'Healing Wisp',    kind: 'summon',  cost: 5,  cast() { summon('wisp'); } },
+  FSE:     { name: 'Decoy Imp',       kind: 'summon',  cost: 5,  cast() { summon('imp'); } },
   // ── 4 · Greater: way more than a 3 ──
   WWWA:    { name: 'Tidal Wave',      kind: 'attack',  cost: 11, cast() { tidalWave(); } },
-  EESE:    { name: 'Stone Golem',     kind: 'summon',  cost: 8,  cast() { summon('golem'); } },
   AWAW:    { name: 'Thunderstorm',    kind: 'attack',  cost: 11, cast() { storms.push({ left: 10, t: 0 }); } },
+  AEEA:    { name: 'Vortex',          kind: 'control', cost: 10, cast() { const p = targetPoint(500, 200); zones.push({ x: p.x, y: p.y, r: 260, life: 2.8, max: 2.8, tick: 0, type: 'vortex' }); } },
+  SWSW:    { name: 'Confusion',       kind: 'control', cost: 9,  cast() { areaCC(player.x, player.y, 300, 'confuse', 5, '#ff8ad8'); } },
+  ASSA:    { name: 'Time Warp',       kind: 'time',    cost: 9,  cast() { timeWarp = 6; } },
+  WWSS:    { name: 'Healing Spring',  kind: 'heal',    cost: 9,  cast() { zones.push({ x: player.x, y: player.y, r: 95, life: 8, max: 8, tick: 0, type: 'spring' }); } },
+  EESE:    { name: 'Stone Guardian',  kind: 'summon',  cost: 8,  cast() { summon('golem'); } },
   // ── 5 · Monstrous ──
   FEFEF:   { name: 'Meteor',          kind: 'attack',  cost: 13, cast() { meteor(); } },
   WAWAW:   { name: 'Blizzard',        kind: 'attack',  cost: 13, cast() { blizzard(); } },
+  EESEE:   { name: 'Petrify',         kind: 'control', cost: 12, cast() { areaCC(player.x, player.y, 330, 'stone', 6, '#aaa'); } },
+  SASAS:   { name: 'Time Stop',       kind: 'time',    cost: 14, cast() { timeStop = 4; } },
+  SWWWS:   { name: 'Sanctuary',       kind: 'heal',    cost: 14, cast() { healPlayer(player.maxHp); player.sanct = 5; } },
   // ── 6 · Omni King ──
-  SAFEWS:  { name: 'Crown of All',    kind: 'buff',    cost: 16, cast() { player.omni = 12; player.omniCd = 0; } },
-  FFSAFF:  { name: 'Dragon',          kind: 'summon',  cost: 16, cast() { summon('dragon'); } },
+  SAFEWS:  { name: 'Crown of All',    kind: 'buff',    cost: 16, cast() { player.omni = 10; } },
+  FFSAFF:  { name: 'Dragon',          kind: 'summon',  cost: 16, shots: 4, windup: 0.35,
+             cast() { summon('dragon'); }, fire() { dragonBreath(); } },
+  FSFSFS:  { name: 'Phoenix',         kind: 'defence', cost: 15, cast() { player.phoenix = 60; } },
   // ── 7 · Doomsday Destroyer ──
   SFWEASS: { name: 'Doomsday',        kind: 'attack',  cost: 20, cast() { detonateDoom(); } },
 };
@@ -290,7 +313,8 @@ function playerScreenY() { return panelTop * 0.5; }
 let state = 'title'; // 'title' | 'play' | 'reveal' | 'dead' | 'won'
 const player = {};
 let foes = [], shots = [], enemyShots = [], allies = [], zones = [], waves = [], meteors = [];
-let storms = [];
+let storms = [], traps = [], tempSolids = [];
+let timeWarp = 0, timeStop = 0; // seconds left of slow-mo / frozen time
 let fx = [], particles = [], floaters = [], chests = [];
 let spawnQueue = [];
 let discovered = new Set();
@@ -329,6 +353,8 @@ const SCROLLS = [
   { x: 1250,  y: 1180, combo: 'WAWAW' },
   { x: 1150,  y: 760,  combo: 'FFSAFF' },
   { x: -1050, y: 1030, combo: 'FEFEF' },
+  { x: -1250, y: 560,  combo: 'SASAS' },  // deep in the western forest
+  { x: 560,   y: -600, combo: 'FSFSFS' }, // deep in the northern forest
 ];
 
 // wobbly shoreline so the lake isn't a perfect ellipse
@@ -442,7 +468,7 @@ function inWall(x, y) {
 
 // shove a circle out of trees, rocks, towers and castle walls
 function pushOut(e, r) {
-  for (const s of solidsNear(e.x, e.y)) {
+  for (const s of solidsNear(e.x, e.y).concat(tempSolids)) {
     const dx = e.x - s.x, dy = e.y - s.y, d = Math.hypot(dx, dy), min = s.r + r;
     if (d < min && d > 0) { e.x = s.x + dx / d * min; e.y = s.y + dy / d * min; }
   }
@@ -461,7 +487,7 @@ function pushOut(e, r) {
 function blockedForFoot(x, y, r) {
   if (isWater(x, y)) return true;
   if (inWall(x, y)) return true;
-  return solidsNear(x, y).some(s => Math.hypot(x - s.x, y - s.y) < s.r + r * 0.6);
+  return solidsNear(x, y).concat(tempSolids).some(s => Math.hypot(x - s.x, y - s.y) < s.r + r * 0.6);
 }
 
 const boat = { x: 0, y: 0 };
@@ -471,7 +497,7 @@ function resetPlayer() {
   Object.assign(player, {
     x: 0, y: 0, hp: 20, maxHp: 20, mana: 20, maxMana: 20,
     face: { x: 0, y: -1 }, invuln: 0, skin: 0, haste: 0, empower: 0, ward: 0, moving: false,
-    omni: 0, omniCd: 0, omniIdx: 0,
+    omni: 0, omniIdx: 0, mirror: 0, regen: 0, sanct: 0, phoenix: 0,
     onBoat: false, boardCd: 0, arrowCd: 0, charging: null, loaded: null,
   });
 }
@@ -496,7 +522,8 @@ function makeFoe(kind, x, y) {
 
 function clearCombat() {
   shots = []; enemyShots = []; allies = []; zones = []; waves = []; meteors = [];
-  storms = [];
+  storms = []; traps = []; tempSolids = [];
+  timeWarp = 0; timeStop = 0;
   fx = []; particles = []; floaters = []; spawnQueue = [];
 }
 
@@ -567,15 +594,16 @@ function damageFoe(f, dmg, type) {
   if (f.dead) return;
   let mult = 1;
   if (f.boss) {
-    if (!f.def.weak.includes(type)) {
+    if (!f.def.weak.includes(type) && type !== 'prism' && type !== 'mirror') {
       SFX.immune();
       if (f.txtCd <= 0) { floatText(f.x, f.y - f.r - 10, 'IMMUNE', '#999', 15); f.txtCd = 0.6; }
       ring(f.x, f.y, f.r + 6, 'rgba(200,200,200,0.6)', 0.2);
       return;
     }
   } else {
-    mult = f.def.mult[type] ?? 1;
+    mult = f.def.mult[type] ?? (type === 'prism' ? 1.5 : 1);
   }
+  if (f.hex > 0 || f.stone > 0) mult *= 1.5;
   if (player.empower > 0) mult *= 2;
   const d = dmg * mult;
   f.hp -= d;
@@ -585,6 +613,7 @@ function damageFoe(f, dmg, type) {
   floatText(f.x + rnd(-8, 8), f.y - f.r - 6, fmt(d) + (weak && !f.boss ? '!' : ''),
             weak ? '#ffe14a' : mult < 0.99 ? '#aaa' : '#fff', weak ? 17 : 13);
   if (f.hp <= 0) killFoe(f);
+  return d;
 }
 
 function killFoe(f) {
@@ -618,7 +647,7 @@ function aoe(x, y, rad, dmg, type, push) {
 }
 
 function hurtPlayer(d) {
-  if (state !== 'play' || player.invuln > 0 || player.omni > 0) return;
+  if (state !== 'play' || player.invuln > 0 || player.omni > 0 || player.sanct > 0) return;
   if (player.ward > 0) {
     player.ward--;
     SFX.block();
@@ -634,6 +663,18 @@ function hurtPlayer(d) {
   shake = Math.max(shake, 6);
   burst(player.x, player.y, '#f44', 8, 180);
   floatText(player.x, player.y - 30, '-' + fmt(d), '#f55', 16);
+  if (player.hp <= 0 && player.phoenix > 0) {
+    // Phoenix: rise from the ashes once, in a burst of flame
+    player.phoenix = 0;
+    player.hp = player.maxHp;
+    player.invuln = 2;
+    aoe(player.x, player.y, 200, 6, 'fire', 360);
+    burst(player.x, player.y, '#ffb04a', 80, 520);
+    flash = Math.max(flash, 0.6);
+    SFX.explode(true);
+    showBanner('The Phoenix rises!', '', 2.5);
+    return;
+  }
   if (player.hp <= 0) {
     player.hp = 0;
     state = 'dead';
@@ -645,7 +686,7 @@ function hurtPlayer(d) {
 
 function healPlayer(n) {
   player.hp = Math.min(player.maxHp, player.hp + n);
-  floatText(player.x, player.y - 30, '+' + n, '#6f6', 16);
+  floatText(player.x, player.y - 30, '+' + fmt(n), '#6f6', 16);
   burst(player.x, player.y, '#6f6', 14, 150);
 }
 
@@ -730,17 +771,102 @@ function detonateDoom() {
   burst(player.x, player.y, '#fff', 80, 700);
 }
 
-// Crown of All: invulnerable, and fires bolts that cycle through every damage type.
+// Crown of All: while it lasts you can't be hurt, and every arrow you fire is a
+// prism bolt that counts as every element (so it can hurt any guardian).
 const OMNI_TYPES = ['fire', 'water', 'earth', 'air', 'lightning', 'poison', 'spirit', 'holy'];
-function omniFire(dt) {
-  if (player.omni <= 0) return;
-  player.omniCd -= dt;
-  if (player.omniCd > 0) return;
-  player.omniCd = 0.15;
-  const type = OMNI_TYPES[player.omniIdx++ % OMNI_TYPES.length];
-  const a = aimFrom(player, 650);
-  if (!a.t) return;
-  launch(player.x, player.y, a, { dmg: 8, type, speed: 720, r: 10, pierce: 1 });
+
+function aimAngle() { const a = aimFrom(player, 400); return Math.atan2(a.y, a.x); }
+
+// Crowd control. Guardians shrug off fear, confusion and hex, and take the rest for less time.
+const CC_LABEL = { stun: 'STUNNED', root: 'ROOTED', fear: 'FLEES', confuse: 'CONFUSED', hex: 'HEXED', stone: 'STONE', freeze: 'FROZEN' };
+function applyCC(f, kind, dur) {
+  if (f.dead) return;
+  if (f.boss) {
+    if (kind === 'fear' || kind === 'confuse' || kind === 'hex') {
+      if (f.txtCd <= 0) { floatText(f.x, f.y - f.r - 10, 'RESISTS', '#999', 14); f.txtCd = 0.6; }
+      return;
+    }
+    dur *= 0.4;
+  }
+  if (!(f[kind] > 0)) floatText(f.x, f.y - f.r - 18, CC_LABEL[kind], '#e0d0ff', 12);
+  f[kind] = Math.max(f[kind] || 0, dur);
+  if (kind === 'confuse') f.wander = rnd(0, TAU);
+}
+function areaCC(x, y, r, kind, dur, color) {
+  for (const f of foes) if (!f.dead && Math.hypot(f.x - x, f.y - y) < r + f.r) applyCC(f, kind, dur);
+  ring(x, y, r, color, 0.6);
+  burst(x, y, color, 30, 300);
+}
+
+function quake() {
+  shake = Math.max(shake, 10);
+  for (const f of foes) {
+    if (f.dead || Math.hypot(f.x - player.x, f.y - player.y) > 220 + f.r) continue;
+    damageFoe(f, 1.5, 'earth');
+    applyCC(f, 'stun', 1.6);
+  }
+  for (let i = 0; i < 3; i++) ring(player.x, player.y, 80 + i * 70, TYPE_COLOR.earth, 0.4 + i * 0.15);
+  burst(player.x, player.y, TYPE_COLOR.earth, 40, 320);
+}
+
+// Fan-shaped blast in front of the caster.
+function cone(x, y, ang, range, half, dmg, type, effect) {
+  for (const f of foes) {
+    if (f.dead) continue;
+    const dx = f.x - x, dy = f.y - y, d = Math.hypot(dx, dy);
+    if (d > range + f.r) continue;
+    let da = Math.atan2(dy, dx) - ang;
+    da = Math.atan2(Math.sin(da), Math.cos(da));
+    if (Math.abs(da) > half + f.r / Math.max(d, 1)) continue;
+    damageFoe(f, dmg, type);
+    if (effect === 'burn') { f.burn = Math.max(f.burn || 0, 3); }
+  }
+  fx.push({ kind: 'cone', x, y, ang, range, half, color: TYPE_COLOR[type], life: 0.35, max: 0.35 });
+}
+
+function layTrap() {
+  if (traps.length >= 6) traps.shift();
+  traps.push({ x: player.x, y: player.y + 6, arm: 0.6, life: 40 });
+  castMessage('Trap set', TYPE_COLOR.fire);
+}
+
+// Jump a short way in the direction you're facing, never into water or walls.
+function blink() {
+  if (player.onBoat) { castMessage('Can’t blink from a boat', '#bbb'); return; }
+  const fx0 = player.x, fy0 = player.y;
+  for (let d = 170; d >= 30; d -= 10) {
+    const x = clamp(player.x + player.face.x * d, -WORLD, WORLD), y = clamp(player.y + player.face.y * d, -WORLD, WORLD);
+    if (blockedForFoot(x, y, PLAYER_R)) continue;
+    player.x = x; player.y = y;
+    break;
+  }
+  player.invuln = Math.max(player.invuln, 0.25);
+  burst(fx0, fy0, TYPE_COLOR.spirit, 18, 200);
+  burst(player.x, player.y, TYPE_COLOR.air, 18, 200);
+}
+
+// A short wall of boulders between you and the nearest enemy. Blocks enemies and their shots.
+function stoneWall() {
+  const a = aimFrom(player, 500);
+  const cx = player.x + a.x * 70, cy = player.y + a.y * 70;
+  const px = -a.y, py = a.x;
+  for (let i = -3; i <= 3; i++) {
+    const x = cx + px * i * 26, y = cy + py * i * 26;
+    if (isWater(x, y)) continue;
+    tempSolids.push({ x, y, r: 16, life: 9, kind: 'boulder' });
+    burst(x, y, TYPE_COLOR.earth, 5, 120);
+  }
+  shake = Math.max(shake, 5);
+}
+
+// The dragon breathes a long cone of fire where you aim. Only when you press FIRE.
+function dragonBreath() {
+  const d = allies.find(a => a.kind === 'dragon');
+  const src = d || player;
+  const a = aimFrom(src, 500);
+  cone(src.x, src.y, Math.atan2(a.y, a.x), 300, 0.45, 8, 'fire', 'burn');
+  shake = Math.max(shake, 8);
+  SFX.explode(false);
 }
 
 function updateStorms(dt) {
@@ -761,12 +887,15 @@ function updateStorms(dt) {
   storms = storms.filter(s => s.left > 0);
 }
 
-const ALLY_LIFE = { wisp: 20, imp: 18, golem: 30, dragon: 30 };
-const ALLY_R = { wisp: 9, imp: 9, golem: 18, dragon: 26 };
+// Helpers never attack on their own: the wisp heals, the imp and guardian draw
+// enemies away from you, and the dragon only breathes when you press FIRE.
+const ALLY_LIFE = { wisp: 15, imp: 8, golem: 20, dragon: 30 };
+const ALLY_R = { wisp: 9, imp: 10, golem: 18, dragon: 26 };
+const ALLY_HP = { imp: 10, golem: 40 };
 function summon(kind) {
   const a = rnd(0, TAU);
   allies.push({ kind, x: player.x + Math.cos(a) * 40, y: player.y + Math.sin(a) * 40,
-                life: ALLY_LIFE[kind], max: ALLY_LIFE[kind], cd: 0.4, ang: a, r: ALLY_R[kind] });
+                life: ALLY_LIFE[kind], max: ALLY_LIFE[kind], cd: 0.4, ang: a, r: ALLY_R[kind], hp: ALLY_HP[kind] || 0 });
   burst(player.x + Math.cos(a) * 40, player.y + Math.sin(a) * 40, kind === 'dragon' ? '#ff5a2a' : '#fff', kind === 'dragon' ? 50 : 16, 260);
 }
 
@@ -787,11 +916,14 @@ function castSequence() {
   const tier = key.length;
   castMessage(tier >= 4 ? `${sp.name} · ${TIERS[tier]}` : sp.name, TIER_COLOR[tier]);
   burst(player.x, player.y, ELEMENTS[key[tier - 1]].color, 6 * tier, 100 + 50 * tier);
-  if (isAttack(sp)) {
-    // attacks load onto the FIRE button; weaving a new one replaces the old
-    player.loaded = { key, left: TIER_SHOTS[tier] };
-    castMessage(`${sp.name} ×${TIER_SHOTS[tier]} · tap FIRE`, TIER_COLOR[tier]);
+  if (isAttack(sp) || sp.fire) {
+    // aimed spells load onto the FIRE button; weaving a new one replaces the old
+    if (sp.fire) sp.cast();
+    const n = sp.shots || TIER_SHOTS[tier];
+    player.loaded = { key, left: n };
+    castMessage(`${sp.name} ×${n} · tap FIRE`, TIER_COLOR[tier]);
     SFX.weave(key); SFX.loaded();
+    if (sp.fire) SFX.summon();
   } else {
     if (tier >= 4) shake = Math.max(shake, (tier - 3) * 4);
     SFX.weave(key);
@@ -813,7 +945,7 @@ function fireLoaded() {
   const tier = L.key.length;
   L.left--;
   if (L.left <= 0) player.loaded = null;
-  const windup = TIER_WINDUP[tier];
+  const windup = SPELLS[L.key].windup ?? TIER_WINDUP[tier];
   if (windup > 0) { player.charging = { key: L.key, t: windup, max: windup }; SFX.charge(tier, windup); }
   else releaseSpell(L.key);
 }
@@ -823,15 +955,22 @@ function releaseSpell(key) {
   const tier = key.length;
   if (tier >= 4) shake = Math.max(shake, (tier - 3) * 4);
   burst(player.x, player.y, TIER_COLOR[tier], 4 * tier, 80 + 40 * tier);
-  SPELLS[key].cast();
+  const sp = SPELLS[key];
+  (sp.fire || sp.cast)();
 }
 
 function shootArrow(wx, wy) {
   if (player.arrowCd > 0 || player.charging) return;
-  player.arrowCd = 0.3;
   SFX.arrow();
   const dx = wx - player.x, dy = wy - player.y, d = Math.hypot(dx, dy) || 1;
   player.face = { x: dx / d, y: dy / d };
+  if (player.omni > 0) {
+    // Crown of All: prism bolts, still one per press
+    player.arrowCd = 0.22;
+    launch(player.x, player.y, player.face, { dmg: 3, type: 'prism', speed: 760, r: 8, life: 1 });
+    return;
+  }
+  player.arrowCd = 0.3;
   launch(player.x, player.y, player.face, { dmg: 1, type: 'arrow', speed: 720, r: 5, life: 0.9 });
 }
 
@@ -916,7 +1055,23 @@ function updateBoss(b, dt, dp) {
   }
 }
 
-function updateFoes(dt) {
+// Slow-mo and Time Stop act on enemies and their shots, never on you.
+function timeScale() { return timeStop > 0 ? 0 : timeWarp > 0 ? 0.3 : 1; }
+
+// Who a foe goes after: a taunting helper nearby, otherwise you.
+function foeTarget(f) {
+  let best = null, bd = 360;
+  for (const a of allies) {
+    if (a.kind !== 'imp' && a.kind !== 'golem') continue;
+    const d = Math.hypot(a.x - f.x, a.y - f.y);
+    if (d < bd) { bd = d; best = a; }
+  }
+  return best || player;
+}
+
+function updateFoes(realDt) {
+  const dt = realDt * timeScale();
+  if (dt === 0) return; // time is stopped
   for (const f of foes) {
     if (f.dead) continue;
     f.flash = Math.max(0, f.flash - dt);
@@ -927,16 +1082,38 @@ function updateFoes(dt) {
       if (f.poisonTick <= 0) { f.poisonTick = 0.5; damageFoe(f, f.poisonDps * 0.5, 'poison'); }
       if (f.dead) continue;
     }
-    if (f.freeze > 0) { f.freeze -= dt; continue; } // frozen solid: no moving, biting or shooting
+    if (f.burn > 0) {
+      f.burn -= dt;
+      f.burnTick = (f.burnTick || 0) - dt;
+      if (f.burnTick <= 0) { f.burnTick = 0.5; damageFoe(f, 0.4, 'fire'); }
+      if (f.dead) continue;
+    }
+    for (const k of ['hex', 'fear', 'confuse', 'root']) if (f[k] > 0) f[k] -= dt;
+    // frozen, stunned or turned to stone: no moving, biting or shooting
+    if (f.freeze > 0 || f.stun > 0 || f.stone > 0) {
+      f.freeze = (f.freeze || 0) - dt; f.stun = (f.stun || 0) - dt; f.stone = (f.stone || 0) - dt;
+      continue;
+    }
     const dp = Math.hypot(player.x - f.x, player.y - f.y);
     const px = f.x, py = f.y;
+    let tgt = player;
     if (f.boss) {
       updateBoss(f, dt, dp);
+      if (f.root > 0) { f.x = px; f.y = py; }
     } else {
       if (dp > 1300) { f.dead = true; continue; }
-      const spd = f.spd * (f.slow > 0 ? 0.5 : 1);
-      moveToward(f, player.x, player.y, spd, dt, f.r + PLAYER_R - 2);
-      if (f.kind === 'bat') { f.x += Math.cos(elapsed * 7 + f.wob) * 40 * dt; f.y += Math.sin(elapsed * 9 + f.wob) * 40 * dt; }
+      let spd = f.spd * (f.slow > 0 ? 0.5 : 1) * (f.hex > 0 ? 0.4 : 1);
+      if (f.root > 0) spd = 0;
+      if (f.fear > 0) {
+        moveToward(f, f.x * 2 - player.x, f.y * 2 - player.y, spd * 1.1, dt, 0); // run away
+      } else if (f.confuse > 0) {
+        if (Math.random() < dt * 1.5) f.wander = rnd(0, TAU);
+        f.x += Math.cos(f.wander) * spd * dt; f.y += Math.sin(f.wander) * spd * dt;
+      } else {
+        tgt = foeTarget(f);
+        moveToward(f, tgt.x, tgt.y, spd, dt, f.r + (tgt === player ? PLAYER_R : tgt.r) - 2);
+        if (f.kind === 'bat' && spd > 0) { f.x += Math.cos(elapsed * 7 + f.wob) * 40 * dt; f.y += Math.sin(elapsed * 9 + f.wob) * 40 * dt; }
+      }
     }
     f.x += f.kx * dt; f.y += f.ky * dt;
     const damp = Math.max(0, 1 - 7 * dt);
@@ -947,7 +1124,15 @@ function updateFoes(dt) {
       pushOut(f, f.r);
     }
 
-    if (dp < f.r + PLAYER_R + 2 && f.hitCd <= 0) {
+    // bites: frogs, the frightened and the confused don't bite
+    if (f.hex > 0 || f.fear > 0 || f.confuse > 0) continue;
+    if (tgt !== player) {
+      if (Math.hypot(tgt.x - f.x, tgt.y - f.y) < f.r + tgt.r + 4 && f.hitCd <= 0) {
+        tgt.hp -= f.def.dmg; f.hitCd = 1;
+        burst(tgt.x, tgt.y, '#ccc', 5, 120);
+        if (tgt.hp <= 0) tgt.life = 0;
+      }
+    } else if (dp < f.r + PLAYER_R + 2 && f.hitCd <= 0) {
       hurtPlayer(f.def.dmg);
       f.hitCd = 1;
       knock(f, player.x, player.y, 160);
@@ -981,8 +1166,12 @@ function updateShots(dt) {
       if (f.dead || s.hit.has(f)) continue;
       if (Math.hypot(f.x - s.x, f.y - s.y) < s.r + f.r) {
         s.hit.add(f);
-        damageFoe(f, s.dmg, s.type);
+        const dealt = damageFoe(f, s.dmg, s.type);
         if (s.fx === 'slow') f.slow = 2.5;
+        if (s.fx === 'burn') f.burn = Math.max(f.burn || 0, 2);
+        if (s.fx === 'freeze') applyCC(f, 'freeze', 3);
+        if (s.fx === 'hex') applyCC(f, 'hex', 6);
+        if (s.fx === 'drain' && dealt) healPlayer(dealt * 0.6);
         if (s.fx === 'poison') { f.poison = Math.max(f.poison, 3); f.poisonDps = Math.max(f.poisonDps, 0.6); }
         if (s.fx === 'explode') { SFX.explode(false); aoe(s.x, s.y, s.boomR, s.boom, s.type, 120); burst(s.x, s.y, s.color, 22, 300); }
         else burst(s.x, s.y, s.color, 5, 140);
@@ -992,10 +1181,24 @@ function updateShots(dt) {
   }
   shots = shots.filter(s => s.life > 0);
 
+  const edt = dt * timeScale();
   for (const s of enemyShots) {
-    s.x += s.vx * dt; s.y += s.vy * dt; s.life -= dt;
+    s.x += s.vx * edt; s.y += s.vy * edt; s.life -= edt;
     if (inWall(s.x, s.y)) { s.life = 0; continue; }
-    if (Math.hypot(player.x - s.x, player.y - s.y) < s.r + PLAYER_R) { hurtPlayer(s.dmg); s.life = 0; }
+    if (tempSolids.some(b => Math.hypot(b.x - s.x, b.y - s.y) < b.r + s.r)) { s.life = 0; burst(s.x, s.y, '#999', 4, 100); continue; }
+    const guard = allies.find(a => a.kind === 'golem' && Math.hypot(a.x - s.x, a.y - s.y) < a.r + s.r + 4);
+    if (guard) { guard.hp -= s.dmg; if (guard.hp <= 0) guard.life = 0; s.life = 0; burst(s.x, s.y, '#aaa', 5, 100); continue; }
+    if (Math.hypot(player.x - s.x, player.y - s.y) < s.r + PLAYER_R + (player.mirror > 0 ? 14 : 0)) {
+      if (player.mirror > 0) {
+        // Mirror Shield: send it back as your own shot; reflected magic hurts even guardians
+        const sp = Math.hypot(s.vx, s.vy) || 1;
+        launch(s.x, s.y, { x: -s.vx / sp, y: -s.vy / sp }, { dmg: s.dmg * 2, type: 'mirror', speed: sp * 1.4, r: s.r });
+        SFX.block();
+        s.life = 0;
+        continue;
+      }
+      hurtPlayer(s.dmg); s.life = 0;
+    }
   }
   enemyShots = enemyShots.filter(s => s.life > 0);
 }
@@ -1004,48 +1207,37 @@ function updateAllies(dt) {
   for (const a of allies) {
     a.life -= dt; a.cd -= dt;
     if (a.kind === 'wisp') {
+      // circles you and slowly heals you
       a.ang += 2.2 * dt;
       moveToward(a, player.x + Math.cos(a.ang) * 42, player.y + Math.sin(a.ang) * 42, 400, dt, 0);
       if (a.cd <= 0) {
-        const t = nearestFoe(a.x, a.y, 420);
-        if (t) { launch(a.x, a.y, aimFrom(a, 420), { dmg: 1, type: 'spirit', speed: 520, r: 5 }); a.cd = 0.7; }
+        a.cd = 1;
+        if (player.hp < player.maxHp) { healPlayer(0.8); fx.push({ kind: 'bolt', pts: [{ x: a.x, y: a.y }, { x: player.x, y: player.y }], life: 0.2, max: 0.2, color: '#9f9' }); }
       }
     } else if (a.kind === 'imp') {
-      moveToward(a, player.x - player.face.x * 34 + 20, player.y - player.face.y * 34 - 18, 300, dt, 4);
-      if (a.cd <= 0) {
-        const t = nearestFoe(a.x, a.y, 450);
-        if (t) { launch(a.x, a.y, aimFrom(a, 450), { dmg: 1.5, type: 'fire', speed: 480, r: 6 }); a.cd = 0.9; }
-      }
+      // runs ahead of you and draws enemies to it
+      moveToward(a, player.x + player.face.x * 110, player.y + player.face.y * 110, 200, dt, 4);
+      pushOut(a, a.r);
     } else if (a.kind === 'golem') {
-      const t = nearestFoe(a.x, a.y, 450);
-      if (t) {
-        const d = moveToward(a, t.x, t.y, 110, dt, a.r + t.r);
-        if (d <= a.r + t.r + 8 && a.cd <= 0) {
-          // ground slam: big hit on the target, splash around it
-          aoe(t.x, t.y, 70, 3, 'earth', 200);
-          damageFoe(t, 5, 'earth');
-          knock(t, a.x, a.y, 320);
-          shake = Math.max(shake, 3);
-          a.cd = 0.9;
-        }
-      } else {
-        moveToward(a, player.x, player.y, 130, dt, 55);
-      }
+      // plants itself between you and the nearest enemy; soaks bites and shots
+      const t = nearestFoe(player.x, player.y, 400);
+      const tx = t ? player.x + (t.x - player.x) * 0.45 : player.x + 50, ty = t ? player.y + (t.y - player.y) * 0.45 : player.y;
+      moveToward(a, tx, ty, 120, dt, 4);
+      pushOut(a, a.r);
     } else if (a.kind === 'dragon') {
       a.ang += 1.1 * dt;
       moveToward(a, player.x + Math.cos(a.ang) * 90, player.y + Math.sin(a.ang) * 60 - 40, 260, dt, 0);
-      if (a.cd <= 0) {
-        const t = nearestFoe(a.x, a.y, 600);
-        if (t) {
-          launch(a.x, a.y, aimFrom(a, 600), { dmg: 6, type: 'fire', speed: 560, r: 13, fx: 'explode', boom: 6, boomR: 120 });
-          a.cd = 0.7;
-        }
-      }
+      if (!player.loaded || player.loaded.key !== 'FFSAFF') a.life = Math.min(a.life, 1.5); // out of breath: flies off
     }
   }
   allies = allies.filter(a => {
     if (a.life > 0) return true;
-    burst(a.x, a.y, '#aaa', 10, 120);
+    if (a.kind === 'imp') {
+      // the decoy goes out with a bang
+      aoe(a.x, a.y, 90, 4, 'fire', 220);
+      burst(a.x, a.y, '#ff8a3a', 30, 320);
+      SFX.explode(false);
+    } else burst(a.x, a.y, '#aaa', 10, 120);
     return false;
   });
 }
@@ -1058,13 +1250,51 @@ function updateEffects(dt) {
       for (const f of foes) {
         if (f.dead || Math.hypot(f.x - z.x, f.y - z.y) > z.r + f.r) continue;
         if (z.type === 'fire') { damageFoe(f, 1.5, 'fire'); continue; } // meteor crater
+        if (z.type === 'mud') { applyCC(f, 'root', 0.7); continue; }
+        if (z.type === 'vortex') { damageFoe(f, 0.5, 'air'); continue; }
+        if (z.type === 'spring') continue;
         damageFoe(f, 0.6, 'poison');
         f.poison = Math.max(f.poison, 2);
         f.poisonDps = Math.max(f.poisonDps, 1);
       }
     }
   }
+  for (const z of zones) {
+    if (z.type === 'vortex') {
+      // drag everything inside toward the eye
+      for (const f of foes) {
+        if (f.dead) continue;
+        const dx = z.x - f.x, dy = z.y - f.y, d = Math.hypot(dx, dy);
+        if (d > z.r || d < 6) continue;
+        const pull = (f.boss ? 40 : 260) * dt;
+        f.x += dx / d * Math.min(pull, d); f.y += dy / d * Math.min(pull, d);
+      }
+    }
+    if (z.type === 'spring' && Math.hypot(player.x - z.x, player.y - z.y) < z.r) {
+      player.hp = Math.min(player.maxHp, player.hp + 2.5 * dt);
+      player.mana = Math.min(player.maxMana, player.mana + 1 * dt);
+    }
+  }
   zones = zones.filter(z => z.life > 0);
+
+  for (const t of traps) {
+    t.arm -= dt; t.life -= dt;
+    if (t.arm > 0) continue;
+    if (foes.some(f => !f.dead && Math.hypot(f.x - t.x, f.y - t.y) < f.r + 26)) {
+      aoe(t.x, t.y, 75, 4, 'fire', 260);
+      burst(t.x, t.y, '#ff8a3a', 26, 300);
+      SFX.explode(false);
+      t.life = 0;
+    }
+  }
+  traps = traps.filter(t => t.life > 0);
+
+  for (const b of tempSolids) b.life -= dt;
+  tempSolids = tempSolids.filter(b => {
+    if (b.life > 0) return true;
+    burst(b.x, b.y, TYPE_COLOR.earth, 6, 100);
+    return false;
+  });
 
   for (const w of waves) {
     w.r += w.speed * dt;
@@ -1188,13 +1418,16 @@ function update(dt) {
     player.mana = Math.min(player.maxMana, player.mana + 3 * dt);
   }
 
-  spawnFoes(dt);
+  for (const k of ['omni', 'mirror', 'sanct', 'phoenix', 'regen']) player[k] = Math.max(0, player[k] - dt);
+  if (player.regen > 0) player.hp = Math.min(player.maxHp, player.hp + 1.2 * dt);
+  timeWarp = Math.max(0, timeWarp - dt);
+  timeStop = Math.max(0, timeStop - dt);
+
+  spawnFoes(dt * timeScale());
   updateFoes(dt);
   updateShots(dt);
   updateAllies(dt);
   updateStorms(dt);
-  omniFire(dt);
-  player.omni = Math.max(0, player.omni - dt);
   updateEffects(dt);
 
   for (const c of chests) {
@@ -1739,12 +1972,32 @@ function drawChest(c) {
   }
 }
 
+// status markers drawn over any enemy (already translated to its centre)
+function drawStatus(f, r) {
+  const t = elapsed;
+  if (f.stone > 0) circle(0, 0, r + 1, 'rgba(140,140,140,0.85)', '#666', 2);
+  if (f.burn > 0) for (let i = 0; i < 3; i++) circle(Math.sin(t * 9 + i * 2) * r * 0.6, -r * 0.4 - ((t * 40 + i * 9) % 14), 2.5, '#ffb04a');
+  if (f.root > 0) { ctx.strokeStyle = '#6b4a22'; ctx.lineWidth = 3; ctx.beginPath(); ctx.ellipse(0, r * 0.7, r + 4, 5, 0, 0, TAU); ctx.stroke(); }
+  if (f.stun > 0) for (let i = 0; i < 3; i++) {
+    const a = t * 6 + i * TAU / 3;
+    circle(Math.cos(a) * r * 0.8, -r - 6 + Math.sin(a) * 3, 2.5, '#ffe14a');
+  }
+  ctx.textAlign = 'center';
+  ctx.font = 'bold 14px system-ui, sans-serif';
+  if (f.fear > 0) { ctx.fillStyle = '#c9a0ff'; ctx.fillText('!', 0, -r - 6); }
+  if (f.confuse > 0) { ctx.fillStyle = '#ff8ad8'; ctx.fillText('?', Math.sin(t * 5) * 6, -r - 6); }
+}
+
 function drawFoe(f) {
   const d = f.def, r = f.r, t = elapsed;
   ctx.save();
   ctx.translate(f.x, f.y);
   circle(3, r * 0.7, r * 0.8, 'rgba(0,0,0,0.25)');
-  if (f.kind === 'slime') {
+  if (f.hex > 0) {
+    ctx.beginPath(); ctx.ellipse(0, 2, 11, 8, 0, 0, TAU); ctx.fillStyle = '#4caf50'; ctx.fill();
+    circle(-5, -5, 4, '#4caf50'); circle(5, -5, 4, '#4caf50');
+    circle(-5, -5, 1.8, '#111'); circle(5, -5, 1.8, '#111');
+  } else if (f.kind === 'slime') {
     const sq = Math.sin(t * 6 + f.wob) * 0.1;
     ctx.save(); ctx.scale(1 + sq, 1 - sq);
     ctx.beginPath(); ctx.ellipse(0, 2, r * 1.1, r * 0.9, 0, 0, TAU); ctx.fillStyle = d.color; ctx.fill();
@@ -1792,6 +2045,7 @@ function drawFoe(f) {
   if (f.slow > 0) circle(0, 0, r + 3, null, 'rgba(58,176,255,0.8)', 2);
   if (f.poison > 0) circle(0, 0, r + 5, null, 'rgba(125,255,74,0.7)', 2);
   if (f.freeze > 0) circle(0, 0, r + 2, 'rgba(200,240,255,0.55)', '#e8f8ff', 2);
+  drawStatus(f, r);
   ctx.restore();
 
   if (f.hp < f.maxHp) {
@@ -1866,6 +2120,7 @@ function drawBoss(b) {
   if (b.slow > 0) circle(0, 0, r + 4, null, 'rgba(58,176,255,0.8)', 2);
   if (b.poison > 0) circle(0, 0, r + 7, null, 'rgba(125,255,74,0.7)', 2);
   if (b.freeze > 0) circle(0, 0, r + 2, 'rgba(200,240,255,0.5)', '#e8f8ff', 3);
+  drawStatus(b, r);
   ctx.restore();
 
   if (b.aggro || b.hp < b.maxHp) {
@@ -1954,6 +2209,13 @@ function drawPlayer() {
     ctx.moveTo(x - 11, y - 34); ctx.lineTo(x - 11, y - 44); ctx.lineTo(x - 5, y - 38); ctx.lineTo(x, y - 47);
     ctx.lineTo(x + 5, y - 38); ctx.lineTo(x + 11, y - 44); ctx.lineTo(x + 11, y - 34); ctx.closePath(); ctx.fill();
   }
+  if (player.mirror > 0) {
+    ctx.strokeStyle = `rgba(230,220,255,${0.5 + Math.sin(elapsed * 10) * 0.3})`; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(x, y, 30, 0, TAU); ctx.stroke();
+  }
+  if (player.sanct > 0) circle(x, y, 38, 'rgba(255,246,176,0.18)', 'rgba(255,246,176,0.9)', 3);
+  if (player.regen > 0 && Math.random() < 0.2) particles.push({ x: x + rnd(-12, 12), y: y + 10, vx: 0, vy: -40, r: 2.5, life: 0.8, decay: 1.5, color: '#8f8' });
+  if (player.phoenix > 0) circle(x, y + 14, 5 + Math.sin(elapsed * 4), '#ff8a3a');
   if (player.ward > 0) {
     circle(x, y, 30, 'rgba(199,125,255,0.12)', 'rgba(199,125,255,0.8)', 2);
     for (let i = 0; i < player.ward; i++) {
@@ -1982,8 +2244,38 @@ function drawShot(s) {
   ctx.beginPath(); ctx.arc(s.x, s.y, s.r * 2.2, 0, TAU); ctx.fill();
 }
 
+function drawZone(z) {
+  const a = Math.min(1, z.life);
+  if (z.type === 'mud') {
+    circle(z.x, z.y, z.r, `rgba(90,60,30,${0.55 * a})`, `rgba(60,40,20,${0.8 * a})`, 3);
+    for (let i = 0; i < 6; i++) circle(z.x + Math.cos(i * 1.7) * z.r * 0.55, z.y + Math.sin(i * 2.3) * z.r * 0.5, 5 + Math.sin(elapsed * 3 + i) * 2, `rgba(120,85,45,${a})`);
+  } else if (z.type === 'vortex') {
+    ctx.strokeStyle = `rgba(220,240,255,${0.5 * a})`; ctx.lineWidth = 3;
+    for (let i = 0; i < 4; i++) {
+      ctx.beginPath();
+      for (let k = 0; k < 30; k++) {
+        const rr = z.r * (1 - k / 30), ang = elapsed * 4 + i * TAU / 4 + k * 0.25;
+        const x = z.x + Math.cos(ang) * rr, y = z.y + Math.sin(ang) * rr;
+        k ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+      }
+      ctx.stroke();
+    }
+    circle(z.x, z.y, 14, '#0a0a14', '#cfe8ff', 2);
+  } else if (z.type === 'spring') {
+    const g = ctx.createRadialGradient(z.x, z.y, 0, z.x, z.y, z.r);
+    g.addColorStop(0, `rgba(120,255,170,${0.4 * a})`); g.addColorStop(1, 'rgba(60,200,140,0)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(z.x, z.y, z.r, 0, TAU); ctx.fill();
+    circle(z.x, z.y, z.r, null, `rgba(140,255,190,${0.6 * a})`, 2);
+    for (let i = 0; i < 6; i++) {
+      const y = z.y + z.r * 0.5 - ((elapsed * 30 + i * 17) % (z.r));
+      circle(z.x + Math.cos(i * 1.9) * z.r * 0.5, y, 3, `rgba(200,255,220,${a})`);
+    }
+  }
+}
+
 function drawEffects() {
   for (const z of zones) {
+    if (z.type === 'mud' || z.type === 'vortex' || z.type === 'spring') { drawZone(z); continue; }
     const a = Math.min(1, z.life) * 0.35;
     const g = ctx.createRadialGradient(z.x, z.y, 0, z.x, z.y, z.r);
     if (z.type === 'fire') { g.addColorStop(0, `rgba(255,110,40,${a * 1.5})`); g.addColorStop(1, 'rgba(120,30,10,0)'); }
@@ -2031,8 +2323,16 @@ function drawEffects() {
       ctx.globalAlpha = a;
       circle(e.x, e.y, e.r * (1.1 - a * 0.3), null, e.color, 3);
       ctx.globalAlpha = 1;
+    } else if (e.kind === 'cone') {
+      ctx.globalAlpha = a * 0.6;
+      ctx.fillStyle = e.color;
+      ctx.beginPath(); ctx.moveTo(e.x, e.y);
+      ctx.arc(e.x, e.y, e.range * (1.1 - a * 0.3), e.ang - e.half, e.ang + e.half);
+      ctx.closePath(); ctx.fill();
+      ctx.globalAlpha = 1;
     } else if (e.kind === 'bolt') {
-      ctx.strokeStyle = `rgba(160,255,255,${a})`;
+      ctx.strokeStyle = e.color || `rgba(160,255,255,${a})`;
+      ctx.globalAlpha = e.color ? a : 1;
       ctx.lineWidth = 3;
       ctx.beginPath();
       for (let i = 0; i < e.pts.length - 1; i++) {
@@ -2042,6 +2342,7 @@ function drawEffects() {
         ctx.lineTo(q.x, q.y);
       }
       ctx.stroke();
+      ctx.globalAlpha = 1;
     }
   }
   for (const s of enemyShots) {
@@ -2077,6 +2378,18 @@ function drawWorld() {
   drawGrass(camX, camY);
   drawCastles(camX, camY);
   drawSolids(camX, camY);
+  for (const b of tempSolids) {
+    ctx.globalAlpha = Math.min(1, b.life);
+    circle(b.x + 3, b.y + 5, b.r, 'rgba(0,0,0,0.3)');
+    circle(b.x, b.y, b.r, '#7a6a55', '#4e4236', 3);
+    circle(b.x - 4, b.y - 4, b.r * 0.4, '#958268');
+    ctx.globalAlpha = 1;
+  }
+  for (const t of traps) {
+    const on = t.arm <= 0;
+    circle(t.x, t.y, 9, '#3a2a1a', on ? '#ff8a3a' : '#776', 2);
+    if (on && Math.sin(elapsed * 8) > 0) circle(t.x, t.y, 3, '#ffb04a');
+  }
   drawBoat();
   drawScrolls();
   for (const c of chests) drawChest(c);
@@ -2116,7 +2429,13 @@ function drawHUD() {
   if (player.skin > 0)    buffs.push([`Stoneskin ${Math.ceil(player.skin)}`, TYPE_COLOR.earth]);
   if (player.haste > 0)   buffs.push([`Haste ${Math.ceil(player.haste)}`, TYPE_COLOR.air]);
   if (player.empower > 0) buffs.push([`Empower ${Math.ceil(player.empower)}`, TYPE_COLOR.fire]);
-  if (player.omni > 0)    buffs.push([`Crown of All ${Math.ceil(player.omni)}`, TIER_COLOR[6]]);
+  if (player.omni > 0)    buffs.push([`Crown ${Math.ceil(player.omni)}`, TIER_COLOR[6]]);
+  if (player.mirror > 0)  buffs.push([`Mirror ${Math.ceil(player.mirror)}`, TYPE_COLOR.mirror]);
+  if (player.sanct > 0)   buffs.push([`Sanctuary ${Math.ceil(player.sanct)}`, TYPE_COLOR.holy]);
+  if (player.regen > 0)   buffs.push([`Regen ${Math.ceil(player.regen)}`, '#8f8']);
+  if (player.phoenix > 0) buffs.push([`Phoenix ${Math.ceil(player.phoenix)}`, '#ff8a3a']);
+  if (timeStop > 0)       buffs.push([`Time Stop ${Math.ceil(timeStop)}`, '#fff']);
+  else if (timeWarp > 0)  buffs.push([`Slow-mo ${Math.ceil(timeWarp)}`, '#9cf']);
   let bx = 14;
   for (const [t, c] of buffs) {
     ctx.fillStyle = c;
@@ -2478,6 +2797,8 @@ function render() {
   }
   drawWorld();
   if (flash > 0) { ctx.fillStyle = `rgba(255,246,176,${flash * 0.7})`; ctx.fillRect(0, 0, W, H); }
+  if (state === 'play' && timeStop > 0) { ctx.fillStyle = 'rgba(200,200,220,0.28)'; ctx.fillRect(0, 0, W, H); }
+  else if (state === 'play' && timeWarp > 0) { ctx.fillStyle = 'rgba(60,120,255,0.13)'; ctx.fillRect(0, 0, W, H); }
   if (state === 'reveal') { drawReveal(); return; }
   drawHUD();
   drawPentagram();
