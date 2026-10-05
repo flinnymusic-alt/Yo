@@ -538,6 +538,7 @@ function resetPlayer() {
     omni: 0, omniIdx: 0, mirror: 0, regen: 0, sanct: 0, phoenix: 0,
     onBoat: false, boardCd: 0, arrowCd: 0, charging: null, loaded: null,
   });
+  resetCharge();
 }
 
 function makeBoss(def) {
@@ -639,6 +640,27 @@ function aimFrom(src, range) {
   return { x: player.face.x, y: player.face.y, t: null };
 }
 
+// ── magic energy (battle) ──
+// Every kind of magic has a little energy circle. Each use drains it a bit; it
+// refills slowly. Below 40% that kind loses power (down to 40% damage when empty).
+const CHARGE_TYPES = ['fire', 'water', 'earth', 'air', 'lightning', 'poison', 'spirit', 'holy'];
+const CHARGE_LOW = 0.4, CHARGE_REGEN = 0.05, CHARGE_COST = 0.14;
+function resetCharge() {
+  player.charge = Object.fromEntries(CHARGE_TYPES.map(t => [t, 1]));
+  player.chargeT = {};
+}
+function chargeMult(type) {
+  const c = player.charge ? player.charge[type] : 1;
+  return c >= CHARGE_LOW ? 1 : 0.4 + 0.6 * c / CHARGE_LOW;
+}
+// one drain per kind per moment, so a blast that hits a crowd costs about the same as a single hit
+function drainCharge(type) {
+  if (!player.charge) resetCharge();
+  if (elapsed - (player.chargeT[type] ?? -9) < 0.35) return;
+  player.chargeT[type] = elapsed;
+  player.charge[type] = Math.max(0, player.charge[type] - CHARGE_COST);
+}
+
 function damageFoe(f, dmg, type) {
   if (f.dead) return;
   if (f.unit && shielded(f)) {
@@ -658,16 +680,14 @@ function damageFoe(f, dmg, type) {
     mult = f.def.mult[type] ?? (type === 'prism' ? 1.5 : 1);
   }
   if (f.hex > 0 || f.stone > 0) mult *= 1.5;
-  // Turrets, titans and bases adapt: the same kind of magic over and over does
-  // less each time (down to a quarter); mixing kinds keeps every hit at full strength.
-  if (f.unit && (f.kind === 'turret' || f.kind === 'titan' || f.kind === 'nexus')) {
-    const res = f.resist || (f.resist = {});
-    const adapt = Math.max(0.25, Math.pow(0.8, res[type] || 0));
-    res[type] = (res[type] || 0) + 1;
-    mult *= adapt;
-    if (adapt < 0.65 && (f.resTxtCd || 0) <= 0) {
-      floatText(f.x, f.y - f.r - 30, `resisting ${type} · mix it up!`, '#bbb', 12);
-      f.resTxtCd = 1.2;
+  // Battle: each kind of magic has its own energy; drained kinds hit softer
+  if (mode === 'battle' && CHARGE_TYPES.includes(type)) {
+    const cm = chargeMult(type);
+    mult *= cm;
+    drainCharge(type);
+    if (cm < 0.8 && (player.chargeTxtCd || 0) <= 0) {
+      floatText(player.x, player.y - 44, `${type} is drained · mix it up!`, TYPE_COLOR[type], 12);
+      player.chargeTxtCd = 1.5;
     }
   }
   if (player.empower > 0) mult *= 2;
@@ -1528,6 +1548,8 @@ function update(dt) {
   }
 
   for (const k of ['omni', 'mirror', 'sanct', 'phoenix', 'regen']) player[k] = Math.max(0, player[k] - dt);
+  if (player.charge) for (const t of CHARGE_TYPES) player.charge[t] = Math.min(1, player.charge[t] + CHARGE_REGEN * dt);
+  if (player.chargeTxtCd > 0) player.chargeTxtCd -= dt;
   if (player.regen > 0) player.hp = Math.min(player.maxHp, player.hp + 1.2 * dt);
   timeWarp = Math.max(0, timeWarp - dt);
   timeStop = Math.max(0, timeStop - dt);
@@ -1944,8 +1966,6 @@ function battleOver(baseFell) {
 
 function updateUnit(u, dt) {
   u.cd -= dt;
-  if (u.resist) for (const k in u.resist) u.resist[k] = Math.max(0, u.resist[k] - dt * 0.6); // resistance fades
-  if (u.resTxtCd > 0) u.resTxtCd -= dt;
   u.flash = Math.max(0, u.flash - dt);
   u.txtCd -= dt;
   if (u.slamT > 0) {
@@ -2338,6 +2358,7 @@ canvas.addEventListener('pointerdown', e => {
     return;
   }
   if (orderHit(x, y)) { toggleOrder(); return; }
+  if (mixToggleHit(x, y)) { mixOpen = !mixOpen; return; }
   if (mixHit(x, y)) { mixPtr = e.pointerId; setMixAt(x, y); try { canvas.setPointerCapture(e.pointerId); } catch (_) {} return; }
   const bb = buildButtonHit(x, y);
   if (bb) { buildChoice(bb.key); return; }
@@ -3384,6 +3405,7 @@ function drawHUD() {
 
   drawMinimap();
   drawBuildButtons();
+  drawCharges();
   drawMixTri();
   {
     const r = soundRect();
@@ -3474,15 +3496,22 @@ function drawBattleStatus(x, y) {
 // The mix triangle: drag the dot toward the minion kinds you want more of.
 // Each corner is a kind; arrows around it show who beats whom.
 function mixTri() {
-  const s = Math.min(92, W * 0.22), x = 44 + s / 2, y = 172, h = s * 0.866;
+  const s = Math.min(92, W * 0.22), x = 44 + s / 2, y = 222, h = s * 0.866;
   return { s, pts: { flyer: { x, y }, archer: { x: x + s / 2, y: y + h }, brute: { x: x - s / 2, y: y + h } }, cx: x, cy: y + h * 0.62 };
 }
 function mixPoint() {
   const T = mixTri(), m = teams.blue.mix;
   return { x: MINION_KINDS.reduce((a, k) => a + T.pts[k].x * m[k], 0), y: MINION_KINDS.reduce((a, k) => a + T.pts[k].y * m[k], 0) };
 }
-function mixHit(x, y) {
+let mixOpen = false;
+function mixToggleRect() { return { x: 14, y: 176, w: 74, h: 22 }; }
+function mixToggleHit(x, y) {
   if (mode !== 'battle' || !teams) return false;
+  const r = mixToggleRect();
+  return x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
+}
+function mixHit(x, y) {
+  if (mode !== 'battle' || !teams || !mixOpen) return false;
   const T = mixTri();
   return x > T.pts.brute.x - 16 && x < T.pts.archer.x + 16 && y > T.pts.flyer.y - 18 && y < T.pts.brute.y + 26;
 }
@@ -3497,8 +3526,37 @@ function setMixAt(x, y) {
   if (c < 0) { const t = a + b; a /= t; b /= t; c = 0; }
   teams.blue.mix = { flyer: a, archer: b, brute: c };
 }
-function drawMixTri() {
+function drawCharges() {
+  if (mode !== 'battle' || !player.charge) return;
+  const r = 7.5, gap = 4, y = 160;
+  let x = 14 + r;
+  for (const t of CHARGE_TYPES) {
+    const c = player.charge[t], low = c < CHARGE_LOW, col = TYPE_COLOR[t];
+    circle(x, y, r, 'rgba(0,0,0,0.6)', low ? 'rgba(255,90,90,0.9)' : 'rgba(255,255,255,0.25)', low ? 1.5 : 1);
+    if (c > 0.01) {
+      ctx.globalAlpha = low ? 0.45 : 1;
+      ctx.fillStyle = col;
+      ctx.beginPath(); ctx.moveTo(x, y); ctx.arc(x, y, r - 1.5, -Math.PI / 2, -Math.PI / 2 + TAU * c); ctx.closePath(); ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+    x += r * 2 + gap;
+  }
+}
+
+function drawMixToggle() {
   if (mode !== 'battle' || !teams) return;
+  const r = mixToggleRect();
+  roundRect(r.x, r.y, r.w, r.h, 11);
+  ctx.fillStyle = mixOpen ? 'rgba(74,168,255,0.85)' : 'rgba(10,14,28,0.75)'; ctx.fill();
+  ctx.strokeStyle = TEAM_COLOR.blue; ctx.lineWidth = 1.5; ctx.stroke();
+  ctx.fillStyle = mixOpen ? '#08111e' : '#cfe6ff';
+  ctx.font = 'bold 11px system-ui, sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText(mixOpen ? '▲ Mix · hide' : '▲ Minion mix', r.x + r.w / 2, r.y + 15);
+}
+
+function drawMixTri() {
+  drawMixToggle();
+  if (mode !== 'battle' || !teams || !mixOpen) return;
   const T = mixTri(), P = T.pts;
   ctx.beginPath(); ctx.moveTo(P.flyer.x, P.flyer.y); ctx.lineTo(P.archer.x, P.archer.y); ctx.lineTo(P.brute.x, P.brute.y); ctx.closePath();
   ctx.fillStyle = 'rgba(10,14,28,0.7)'; ctx.fill();
@@ -3602,7 +3660,13 @@ function drawBattleMap() {
   for (const list of [friends, foes]) for (const u of list) {
     if (u.dead) continue;
     const c = TEAM_COLOR[u.team];
-    if (u.structure) { ctx.fillStyle = c; const s = u.kind === 'nexus' ? 7 : 4; ctx.fillRect(mx(u.x) - s / 2, my(u.y) - s / 2, s, s); }
+    if (u.kind === 'sigil') {
+      // a bright diamond (white rim while walled), pulsing so you can find it
+      const sx = mx(u.x), sy = my(u.y), d = 4.5 + Math.sin(elapsed * 5) * 1;
+      ctx.beginPath(); ctx.moveTo(sx, sy - d); ctx.lineTo(sx + d, sy); ctx.lineTo(sx, sy + d); ctx.lineTo(sx - d, sy); ctx.closePath();
+      ctx.fillStyle = c; ctx.fill();
+      ctx.strokeStyle = u.wall > 0 ? '#fff' : '#ffd24a'; ctx.lineWidth = 1.5; ctx.stroke();
+    } else if (u.structure) { ctx.fillStyle = c; const s = u.kind === 'nexus' ? 7 : 4; ctx.fillRect(mx(u.x) - s / 2, my(u.y) - s / 2, s, s); }
     else circle(mx(u.x), my(u.y), u.kind === 'titan' ? 2.8 : u.kind === 'wizard' ? 2 : 1, c);
   }
   circle(mx(player.x), my(player.y), 2.5, '#fff');
