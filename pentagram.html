@@ -239,7 +239,7 @@ const SPELLS = {
   FEFEF:   { name: 'Meteor',          kind: 'attack',  cost: 13, cast() { meteor(); } },
   WAWAW:   { name: 'Blizzard',        kind: 'attack',  cost: 13, cast() { blizzard(); } },
   EESEE:   { name: 'Petrify',         kind: 'control', cost: 12, cast() { areaCC(player.x, player.y, 330, 'stone', 6, '#aaa'); } },
-  SASAS:   { name: 'Time Stop',       kind: 'time',    cost: 14, cast() { if (versus) castMessage('Time magic is banned in duels', '#ccc'); else timeStop = 4; } },
+  SASAS:   { name: 'Time Stop',       kind: 'time',    cost: 14, cast() { if (versus) castMessage('Time magic is banned in duels', '#ccc'); else timeStop = 6.5; } },
   SWWWS:   { name: 'Sanctuary',       kind: 'heal',    cost: 14, cast() { healPlayer(player.maxHp); player.sanct = 5; } },
   // ── 6 · Omni King ──
   SAFEWS:  { name: 'Crown of All',    kind: 'buff',    cost: 16, cast() { player.omni = 10; } },
@@ -833,7 +833,7 @@ function damageFoe(f, dmg, rawType, fromHelper) {
     }
   }
   if (player.empower > 0 && !fromHelper) mult *= 2;
-  const d = dmg * mult;
+  const d = f.unit ? minionHit(f, dmg * mult) : dmg * mult;
   f.hp -= d;
   if (rawType !== 'poison') SFX.hit();
   f.flash = 0.12;
@@ -2015,17 +2015,18 @@ function movePlayer(dx, dy, step) {
 // runs out (most points wins) or a home base is destroyed (its destroyer wins).
 // Three ways to score:
 //  · Ground: towers joined by laser lines enclose each side's ground. The
-//    side holding more ground when the match ends scores 150.
+//    side holding more ground when the match ends scores 140.
 //  · Kills: 1 per minion, 3 per wizard, 5 per titan, 5 per tower.
 //  · Sigils: each side has one sigil in its own ground. Destroying the
-//    other side's scores 30; it reappears elsewhere behind a 15s wall.
+//    other side's scores 50 and earns a bonus build; it reappears elsewhere
+//    behind a 15s wall. Destroying a base scores 60 and ends the match.
 // Build turns alternate: on yours, build a turret (claims open ground) or a titan.
 let difficulty = 'easy';
 let friends = [];   // blue units and structures (your side)
 let bshots = [];    // shots from units and towers
 let teams = null;
 let links = [];     // laser walls between friendly towers
-const MATCH_TIME = 300, BUILD_EVERY = 10, SIGIL_WALL = 15, GROUND_BONUS = 150, BASE_BONUS = 40;
+const MATCH_TIME = 300, BUILD_EVERY = 10, SIGIL_WALL = 15, GROUND_BONUS = 140, BASE_BONUS = 60;
 const FRONT_X = WORLD * 0.32; // the line (±) behind which each side holds 30% of the oval at the start
 const TEAM_COLOR = { blue: '#4aa8ff', red: '#ff4a5a' };
 const UNITS = {
@@ -2040,12 +2041,26 @@ const UNITS = {
   // turrets sting but don't dominate; a few focused hits bring one down
   turret: { name: 'Turret', pts: 5, hp: 45,  spd: 0,  r: 24, range: 260, dmg: 2.2, cd: 1.4, aggro: 260, ranged: true, structure: true },
   nexus:  { name: 'Base',   pts: 0, hp: 250, spd: 0,  r: 55, range: 300, dmg: 2.5, cd: 1.6, aggro: 300, ranged: true, structure: true },
-  sigil:  { name: 'Sigil',  pts: 30, hp: 40, spd: 0,  r: 20, range: 0,   dmg: 0,   cd: 99,  aggro: 0,   structure: true, passive: true },
+  sigil:  { name: 'Sigil',  pts: 50, hp: 40, spd: 0,  r: 20, range: 0,   dmg: 0,   cd: 99,  aggro: 0,   structure: true, passive: true },
 };
 for (const k in UNITS) { UNITS[k].mult = {}; UNITS[k].color = '#ccc'; }
 const MINION_KINDS = ['wisp', 'archer', 'imp', 'brute', 'flyer']; // pentagram order: S W F E A
 const MINION_OF = { spirit: 'wisp', water: 'archer', fire: 'imp', earth: 'brute', air: 'flyer' };
 const isMinion = u => MINION_KINDS.includes(u.kind);
+// Minions get rattled when hit (slower attacks for a moment, so ganging up
+// pays), and tire as they march and fight: weaker hits, softer armour,
+// slower feet.
+const STAGGER_PER_HIT = 0.15, STAGGER_MAX = 0.6, STAGGER_FADE = 0.3; // per second
+const TIRE_PER_PX = 1 / 3200, TIRE_PER_SWING = 0.03;
+const tiredAtk = u => 1 - 0.4 * (u.tired || 0);   // up to -40% damage
+const tiredDef = u => 1 + 0.4 * (u.tired || 0);   // up to +40% damage taken
+const tiredSpd = u => 1 - 0.35 * (u.tired || 0);  // up to -35% speed
+// a minion takes a hit: tiredness makes it hurt more, and it's rattled
+function minionHit(u, dmg) {
+  if (!isMinion(u)) return dmg;
+  u.stagger = Math.min(STAGGER_MAX, (u.stagger || 0) + STAGGER_PER_HIT);
+  return dmg * tiredDef(u);
+}
 // unit against unit: the five-element cycle decides
 function matchup(attElem, defUnit) { return elemMult(attElem, defUnit && defUnit.elem); }
 
@@ -2157,11 +2172,15 @@ function computeTerritory() {
   }
 }
 
-function canBuildAt(x, y) {
-  if (cellOwner(x, y) !== 0) return false;
-  if (!inArena(x, y, 60)) return false;
+// Turrets go anywhere open: neutral ground or your own, not the enemy's,
+// and not on top of a tree, rock or another building.
+function canBuildAt(x, y, team = 'blue') {
+  const own = cellOwner(x, y);
+  if (own === -1 || own === (team === 'blue' ? 2 : 1)) return false;
+  if (!inArena(x, y, 26)) return false;
+  if (solidsNear(x, y).some(o => Math.hypot(o.x - x, o.y - y) < o.r + 22)) return false;
   // (a duel's wizard stand-in isn't a building, so it never blocks its own turret)
-  return !friends.concat(foes).some(u => !u.dead && u.structure && !u.proxyOf && Math.hypot(u.x - x, u.y - y) < 140);
+  return !friends.concat(foes).some(u => !u.dead && u.structure && !u.proxyOf && Math.hypot(u.x - x, u.y - y) < u.r + 30);
 }
 
 function buildTurret(team, x, y, elem) {
@@ -2189,7 +2208,7 @@ function redBuild() {
     const i = Math.floor(Math.random() * COLS), j = 1 + Math.floor(Math.random() * (ROWS - 2));
     if (terr[j * COLS + i] !== 0) continue;
     const c = cellCenter(i, j);
-    if (!canBuildAt(c.x, c.y)) continue;
+    if (!canBuildAt(c.x, c.y, 'red')) continue;
     const g = polyArea(teamShape('red', c)) - base;
     if (g > 20000) good.push(c);
     if (g > gain) { gain = g; best = c; }
@@ -2326,6 +2345,8 @@ function objectiveFor(u) {
 function unitAttack(u, tgt) {
   if (u.cd > 0 || u.hex > 0 || u.def.passive) return;
   u.cd = u.def.cd;
+  const atk = tiredAtk(u);
+  if (isMinion(u)) u.tired = Math.min(1, (u.tired || 0) + TIRE_PER_SWING);
   if (u.def.ranged) {
     const dx = tgt.x - u.x, dy = tgt.y - u.y, d = Math.hypot(dx, dy) || 1;
     const big = u.structure, sp = big ? 360 : 420;
@@ -2333,7 +2354,7 @@ function unitAttack(u, tgt) {
     const small = u.kind === 'archer';
     const oy = u.kind === 'turret' ? -u.r * 1.35 : 0; // turrets fire from their crystal
     bshots.push({ team: u.team, src: u.elem, elem: u.elem, x: u.x + dx / d * u.r, y: u.y + oy + dy / d * u.r, vx: dx / d * sp, vy: dy / d * sp,
-                  dmg: u.def.dmg * (boom ? 1.3 : 1), r: big ? 9 : boom ? 9 : small ? 4 : 6, life: 1.8, boom, arrow: small,
+                  dmg: u.def.dmg * atk * (boom ? 1.3 : 1), r: big ? 9 : boom ? 9 : small ? 4 : 6, life: 1.8, boom, arrow: small,
                   color: TYPE_COLOR[u.elem] || TEAM_COLOR[u.team], spin: rnd(0, TAU) });
     u.fireFlash = 0.18;
     return;
@@ -2344,7 +2365,7 @@ function unitAttack(u, tgt) {
     u.slamAt = { x: tgt.x, y: tgt.y, tgt };
     return;
   }
-  hitUnit(tgt, u.def.dmg * matchup(u.elem, tgt));
+  hitUnit(tgt, u.def.dmg * atk * matchup(u.elem, tgt));
 }
 
 function titanSlam(u) {
@@ -2375,7 +2396,7 @@ function hitUnit(t, dmg) {
     if (t.txtCd <= 0) { floatText(t.x, t.y - t.r - 10, shieldText(t), '#bde', 13); t.txtCd = 0.8; }
     return;
   }
-  t.hp -= dmg;
+  t.hp -= minionHit(t, dmg);
   t.flash = 0.12;
   if (t.hp <= 0) unitFell(t);
 }
@@ -2391,7 +2412,9 @@ function unitFell(u) {
     teams[u.team].sigilT = 3;
     shake = Math.max(shake, 10);
     SFX.bossDown();
-    showBanner(by === 'blue' ? 'You broke the red sigil! +30' : 'Red broke your sigil! +30 to red', 'A new one will appear', 3);
+    showBanner(by === 'blue' ? `You broke the red sigil! +${u.def.pts}` : `Red broke your sigil! +${u.def.pts} to red`, 'Bonus build turn for ' + (by === 'blue' ? 'you!' : 'red'), 3);
+    teams.bonus = teams.bonus || { blue: 0, red: 0 };
+    teams.bonus[by]++;
   }
   if (u.kind === 'nexus') { battleOver(u.team); return; }
   if (u.kind === 'turret') {
@@ -2409,7 +2432,7 @@ function groundLeader() {
 }
 
 // The match ends when the clock runs out or a base falls. Destroying a base
-// scores 40; the 150 for the most ground is paid now; then most points wins.
+// scores 60; the 140 for the most ground is paid now; then most points wins.
 function battleOver(baseFell) {
   if (state !== 'play' && state !== 'dead') return;
   if (baseFell) teams[otherTeam(baseFell)].score += BASE_BONUS;
@@ -2428,7 +2451,8 @@ function battleOver(baseFell) {
 }
 
 function updateUnit(u, dt) {
-  u.cd -= dt;
+  if (u.stagger > 0) u.stagger = Math.max(0, u.stagger - STAGGER_FADE * dt);
+  u.cd -= dt * (1 - (u.stagger || 0)); // rattled: attacks come slower
   if (u.fireFlash > 0) u.fireFlash -= dt;
   u.flash = Math.max(0, u.flash - dt);
   u.txtCd -= dt;
@@ -2494,10 +2518,11 @@ function updateUnit(u, dt) {
     }
   }
   if (tx !== null) {
-    const spd = u.spd * (u.slow > 0 ? 0.5 : 1) * (u.hex > 0 ? 0.4 : 1) * (u.root > 0 ? 0 : 1);
+    const spd = u.spd * (u.slow > 0 ? 0.5 : 1) * (u.hex > 0 ? 0.4 : 1) * (u.root > 0 ? 0 : 1) * tiredSpd(u);
     const ox = u.x, oy = u.y;
     moveToward(u, tx, ty, spd, dt, 0);
     const moved = Math.hypot(u.x - ox, u.y - oy);
+    if (isMinion(u)) u.tired = Math.min(1, (u.tired || 0) + moved * TIRE_PER_PX);
     u.walk += moved;
     u.face = u.x !== ox ? Math.sign(u.x - ox) : u.face || 1;
     if (u.kind === 'titan' && moved > 0 && Math.floor(u.walk / 34) !== Math.floor((u.walk - moved) / 34)) {
@@ -2646,13 +2671,30 @@ function updateBattle(dt) {
         T.pending = { t: BUILD_EVERY - 1 };
         showBanner('Your build turn!', 'Turret: stand on open ground · or send a Titan', 3);
         SFX.discover();
-      } else if (versus && rivalP && !rivalP.dead && net.role === 'host') {
+      } else if (rivalPlaying()) {
         T.pendingRed = { t: BUILD_EVERY - 1 };
         netEvents.push(['banner', 'Your build turn!', 'Turret: stand on open ground · or send a Titan', 3]);
       } else redBuild();
       T.build.team = otherTeam(T.build.team);
       T.build.t = BUILD_EVERY;
     }
+  }
+  // a broken sigil earns its breaker an extra build turn
+  T.bonus = T.bonus || { blue: 0, red: 0 };
+  if (T.bonus.blue > 0 && !T.pending) {
+    T.bonus.blue--;
+    T.pending = { t: BUILD_EVERY - 1 };
+    showBanner('Bonus build!', 'For breaking the sigil: a turret or a titan', 3);
+    SFX.discover();
+  }
+  if (T.bonus.red > 0) {
+    if (rivalPlaying()) {
+      if (!T.pendingRed) {
+        T.bonus.red--;
+        T.pendingRed = { t: BUILD_EVERY - 1 };
+        netEvents.push(['banner', 'Bonus build!', 'For breaking the sigil: a turret or a titan', 3]);
+      }
+    } else { T.bonus.red--; redBuild(); }
   }
   if (T.pending) T.build.t = Math.max(T.build.t, T.pending.t + 1); // red waits for you to finish
   if (T.pendingRed) {
@@ -2748,13 +2790,13 @@ function buildButtons() {
 function buildChoice(key) {
   if (!teams || !teams.pending || state !== 'play') return false;
   if (net.role === 'guest') {
-    if (key === 'turret' && !canBuildAt(player.x, player.y)) { castMessage('Stand on open ground (no colour), away from towers, to build a turret', '#ccc'); return true; }
+    if (key === 'turret' && !canBuildAt(player.x, player.y)) { castMessage('Can’t build here: not in red ground or on a tree, rock or tower', '#ccc'); return true; }
     // the turn ends when the host confirms it (if the spot is refused, you can still try again)
     net.send({ t: 'build', key, elem: teams.buildElem });
     return true;
   }
   if (key === 'turret') {
-    if (!canBuildAt(player.x, player.y)) { castMessage('Stand on open ground (no colour), away from towers, to build a turret', '#ccc'); return true; }
+    if (!canBuildAt(player.x, player.y)) { castMessage('Can’t build here: not in red ground or on a tree, rock or tower', '#ccc'); return true; }
     buildTurret('blue', player.x, player.y, teams.buildElem);
   } else buildTitan('blue', teams.buildElem);
   teams.pending = null;
@@ -2914,8 +2956,8 @@ function hostReceive(m) {
       if (teams.pendingRed && !rivalP.dead) {
         teams.buildElemRed = ELEM_CYCLE.includes(m.elem) ? m.elem : 'fire';
         if (m.key === 'turret') {
-          if (canBuildAt(rivalP.x, rivalP.y)) { buildTurret('red', rivalP.x, rivalP.y, teams.buildElemRed); teams.pendingRed = null; }
-          else netEvents.push(['msg', 'Stand on open ground (no colour), away from towers, to build a turret', '#ccc']);
+          if (canBuildAt(rivalP.x, rivalP.y, 'red')) { buildTurret('red', rivalP.x, rivalP.y, teams.buildElemRed); teams.pendingRed = null; }
+          else netEvents.push(['msg', 'Can’t build here: not in red ground or on a tree, rock or tower', '#ccc']);
         } else { buildTitan('red', teams.buildElemRed); teams.pendingRed = null; }
       }
       break;
@@ -2925,6 +2967,10 @@ function hostReceive(m) {
     case 'bye': friendLeft(); break;
   }
 }
+
+// a duel's red side is in your friend's hands (even while their wizard
+// respawns) until they leave; then the computer takes over
+function rivalPlaying() { return versus && net.role === 'host' && rivalP && !(rivalP.dead && rivalP.respawnT > 1e8); }
 
 function friendLeft() {
   if (!versus) return;
@@ -2967,7 +3013,7 @@ function makeSnapshot() {
       u.id, u.team === 'blue' ? 0 : 1, UNIT_KINDS.indexOf(u.kind), Math.round(u.x), Math.round(u.y), r1(u.hp), r1(u.maxHp),
       u.elem ? ELEM_CYCLE.indexOf(u.elem) : -1, r1(u.wall), Math.round(u.walk || 0), r1(u.slamT), u.face || 1, r1(u.fireFlash),
       u.retreat ? 1 : 0, r1(Math.max(0, u.cd || 0) / (u.def.cd || 1)),
-      STATUS_KEYS.map(k => r1(u[k] > 0 ? u[k] : 0)),
+      STATUS_KEYS.map(k => r1(u[k] > 0 ? u[k] : 0)), r1(u.tired),
     ]),
     bs: bshots.map(s => [s.team === 'blue' ? 0 : 1, Math.round(s.x), Math.round(s.y), Math.round(s.vx), Math.round(s.vy), s.r, s.elem || '', s.arrow ? 1 : 0]),
     sh: both(shots, redSide.shots).map(s => [Math.round(s.x), Math.round(s.y), Math.round(s.vx), Math.round(s.vy), r1(s.r), s.type]),
@@ -3044,12 +3090,12 @@ function guestReceive(m) {
   // units: keep the same objects so they glide between pictures
   const seen = new Set(), F = [], E = [];
   for (const a of m.u) {
-    const [id, team, ki, x, y, hp, mhp, ei, wall, walk, slam, face, ff, ret, cdf, st] = a;
+    const [id, team, ki, x, y, hp, mhp, ei, wall, walk, slam, face, ff, ret, cdf, st, tired] = a;
     const kind = UNIT_KINDS[ki], def = UNITS[kind];
     let u = guestUnits.get(id);
     if (!u) { u = { id, unit: true, kind, def, x: X(x), y, wob: rnd(0, TAU), slot: rnd(0, TAU), kx: 0, ky: 0, structure: !!def.structure, r: def.r }; guestUnits.set(id, u); }
     Object.assign(u, { team: flipTeam(team ? 'red' : 'blue'), tx: X(x), ty: y, hp, maxHp: mhp, elem: ei >= 0 ? ELEM_CYCLE[ei] : null,
-                       wall, walk, slamT: slam, face: -face, fireFlash: ff, retreat: !!ret, cd: cdf * def.cd, dead: false });
+                       wall, walk, slamT: slam, face: -face, fireFlash: ff, retreat: !!ret, cd: cdf * def.cd, tired: tired || 0, dead: false });
     STATUS_KEYS.forEach((k, i) => u[k] = st[i]);
     seen.add(id);
     (u.team === 'blue' ? F : E).push(u);
@@ -4266,6 +4312,11 @@ function drawUnit(u) {
   const w = u.structure ? r * 2.4 : Math.max(24, r * 2), y = u.y - r - (u.kind === 'nexus' ? r * 1.2 + 14 : u.kind === 'turret' ? r * 0.6 + 14 : 14);
   ctx.fillStyle = 'rgba(0,0,0,0.65)'; ctx.fillRect(u.x - w / 2, y, w, 5);
   ctx.fillStyle = c; ctx.fillRect(u.x - w / 2, y, w * Math.max(0, u.hp / u.maxHp), 5);
+  if (u.tired > 0.15) {
+    // stamina: drains as the minion tires
+    ctx.fillStyle = 'rgba(0,0,0,0.65)'; ctx.fillRect(u.x - w / 2, y + 6, w, 3);
+    ctx.fillStyle = u.tired > 0.6 ? '#ff9a3a' : '#ffd24a'; ctx.fillRect(u.x - w / 2, y + 6, w * (1 - u.tired), 3);
+  }
 }
 
 function drawCritter(a) {
@@ -4722,11 +4773,9 @@ function drawHUD() {
   }
   ctx.fillStyle = '#ccc';
   ctx.font = '12px system-ui, sans-serif';
-  if (mode === 'battle' && teams) {
-    const m = Math.floor(teams.time / 60), sec = Math.floor(teams.time % 60).toString().padStart(2, '0');
-    ctx.fillText(`${m}:${sec} left   ·   most ground at the end: +${GROUND_BONUS}`, 14, 90);
-  } else ctx.fillText(`Spells ${discovered.size}/${SPELL_COUNT}   Guardians ${bossesDown}/${BOSSES.length}`, 14, 90);
-  if (mode === 'battle') drawBattleStatus(14, 110); else drawHunt(14, 108);
+  if (mode === 'battle' && teams) drawMatchClock(14, 102);
+  else ctx.fillText(`Spells ${discovered.size}/${SPELL_COUNT}   Guardians ${bossesDown}/${BOSSES.length}`, 14, 90);
+  if (mode === 'battle') drawBattleStatus(14, 124); else drawHunt(14, 108);
 
   const buffs = [];
   if (player.ward > 0)    buffs.push([`Ward ×${player.ward}`, TYPE_COLOR.spirit]);
@@ -4821,6 +4870,36 @@ function drawFireButton() {
 }
 
 // how much ground each side holds, and whose build turn is next
+// the match clock: big, and it warms up as time runs out
+function clockText(t) { return `${Math.floor(t / 60)}:${Math.floor(t % 60).toString().padStart(2, '0')}`; }
+function drawMatchClock(x, y) {
+  const t = teams.time, late = t <= 30, end = t <= 10;
+  const txt = clockText(Math.ceil(t));
+  ctx.font = 'bold 26px system-ui, sans-serif';
+  ctx.textAlign = 'left';
+  const tw = ctx.measureText(txt).width;
+  roundRect(x - 6, y - 25, tw + 12, 32, 8);
+  ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fill();
+  ctx.strokeStyle = end ? '#ff4a5a' : late ? '#ffd24a' : 'rgba(255,255,255,0.25)'; ctx.lineWidth = 1.5; ctx.stroke();
+  const pulse = end ? 0.6 + 0.4 * Math.abs(Math.sin(elapsed * 6)) : 1;
+  ctx.globalAlpha = pulse;
+  ctx.fillStyle = end ? '#ff6a6a' : late ? '#ffd24a' : '#fff';
+  ctx.fillText(txt, x, y);
+  ctx.globalAlpha = 1;
+  ctx.font = '11px system-ui, sans-serif'; ctx.fillStyle = '#aaa';
+  ctx.fillText(`left · most ground at the end +${GROUND_BONUS}`, x + tw + 12, y - 4);
+  // the last ten seconds count down in the middle of the field
+  if (end && state === 'play') {
+    ctx.textAlign = 'center';
+    ctx.font = `bold ${Math.round(64 + 20 * (1 - (t % 1)))}px system-ui, sans-serif`;
+    ctx.globalAlpha = 0.55 + 0.4 * (t % 1);
+    ctx.lineWidth = 6; ctx.strokeStyle = 'rgba(0,0,0,0.7)';
+    ctx.strokeText(Math.ceil(t), W / 2, panelTop * 0.42);
+    ctx.fillStyle = '#ff6a6a';
+    ctx.fillText(Math.ceil(t), W / 2, panelTop * 0.42);
+    ctx.globalAlpha = 1;
+  }
+}
 function drawBattleStatus(x, y) {
   if (!teams) return;
   const total = FIELD_CELLS, w = Math.min(170, W * 0.42);
@@ -4832,7 +4911,7 @@ function drawBattleStatus(x, y) {
   ctx.textAlign = 'left';
   ctx.fillStyle = '#ccc';
   ctx.fillText(`Ground ${Math.round(b * 100)}% / ${Math.round(r * 100)}%`, x, y + 12);
-  const bt = teams.pending ? 'Your build: choose!' : `Build: ${teams.build.team === 'blue' ? 'you' : 'red'} in ${Math.ceil(teams.build.t)}s`;
+  const bt = teams.pending ? `Your build: choose! ${Math.ceil(teams.pending.t)}s` : `Build: ${teams.build.team === 'blue' ? 'you' : 'red'} in ${Math.ceil(teams.build.t)}s`;
   ctx.fillStyle = teams.pending ? '#ffd24a' : '#aaa';
   ctx.fillText(bt, x, y + 26);
 }
@@ -4969,6 +5048,17 @@ function drawBuildButtons() {
     circle(c.x, c.y, c.r + (on ? 3 : 0), on ? TYPE_COLOR[c.elem] + '55' : 'rgba(10,14,28,0.9)', TYPE_COLOR[c.elem], on ? 3 : 1.5);
     drawGlyph(ELEM_GLYPH[c.elem], c.x, c.y, 20, TYPE_COLOR[c.elem]);
   }
+  // how long you have to choose
+  {
+    const bs = buildButtons(), bx = bs[0].x, bw = bs[1].x + bs[1].w - bx, by = buildChips()[0].y - 15 - 34;
+    const left = Math.max(0, teams.pending.t), frac = left / (BUILD_EVERY - 1), hurry = left <= 3;
+    roundRect(bx, by, bw, 24, 8);
+    ctx.fillStyle = 'rgba(10,14,28,0.9)'; ctx.fill();
+    roundRect(bx, by, Math.max(16, bw * frac), 24, 8);
+    ctx.fillStyle = hurry ? 'rgba(255,74,90,0.75)' : 'rgba(255,210,74,0.55)'; ctx.fill();
+    ctx.textAlign = 'center'; ctx.font = 'bold 15px system-ui, sans-serif'; ctx.fillStyle = '#fff';
+    ctx.fillText(`Choose: turret or titan · ${Math.ceil(left)}s`, bx + bw / 2, by + 17);
+  }
   const e = teams.buildElem, ch = buildChips()[0], weak = elemWeakTo(e).map(x => ELEM_NAME[x]).join(' & ');
   ctx.textAlign = 'center'; ctx.font = '11px system-ui, sans-serif'; ctx.fillStyle = '#ddd';
   ctx.fillText(`${ELEM_NAME[e]}: strong vs ${ELEM_NAME[elemBeats(e)]} · weak vs ${weak}`, W / 2, ch.y + ch.r + 15);
@@ -4983,7 +5073,7 @@ function drawBuildButtons() {
     ctx.fillText(`${turret ? 'Build' : 'Send'} ${ELEM_NAME[teams.buildElem]} ${turret ? 'Turret' : 'Titan'}`, bb.x + bb.w / 2, bb.y + 20);
     ctx.font = '10px system-ui, sans-serif';
     ctx.fillStyle = '#aaa';
-    ctx.fillText(turret ? (ok ? 'here, on open ground' : 'walk onto open ground') : `turn ends in ${Math.ceil(teams.pending.t)}s`, bb.x + bb.w / 2, bb.y + 36);
+    ctx.fillText(turret ? (ok ? 'right here' : 'not here: move to open ground') : 'from your base', bb.x + bb.w / 2, bb.y + 36);
   }
 }
 
