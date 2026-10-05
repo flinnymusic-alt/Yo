@@ -4107,6 +4107,11 @@ canvas.addEventListener('pointerdown', e => {
   e.preventDefault();
   audioInit();
   const { x, y } = localPos(e);
+  if (state === 'title' && menuPage === 'howto') {
+    const b = titleButtons.find(b => x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h);
+    if (b) b.go(); else howtoDrag = { id: e.pointerId, y, s: howtoScroll };
+    return;
+  }
   if (tapOverlay(x, y)) return;
   if (ordersOpen && ordersHit(x, y)) return; // the open orders panel comes first
   if (soundHit(x, y)) { toggleSound(); return; }
@@ -4139,6 +4144,7 @@ canvas.addEventListener('pointerdown', e => {
 
 let mixPtr = null;
 canvas.addEventListener('pointermove', e => {
+  if (howtoDrag && e.pointerId === howtoDrag.id) { howtoScroll = clamp(howtoDrag.s - (localPos(e).y - howtoDrag.y), 0, howtoMax); return; }
   if (e.pointerId === mixPtr) { const p = localPos(e); setMixAt(p.x, p.y); return; }
   if (e.pointerId === castPtr) { const p = localPos(e); castMove(p.x, p.y); }
   else if (e.pointerId === movePtr) {
@@ -4148,6 +4154,7 @@ canvas.addEventListener('pointermove', e => {
 });
 
 function endPointer(e, cancelled) {
+  if (howtoDrag && e.pointerId === howtoDrag.id) howtoDrag = null;
   if (e.pointerId === mixPtr) mixPtr = null;
   if (e.pointerId === castPtr) {
     if (state === 'play' && !cancelled) castSequence();
@@ -4170,6 +4177,7 @@ canvas.addEventListener('pointerup', e => {
 });
 canvas.addEventListener('pointercancel', e => endPointer(e, true));
 canvas.addEventListener('contextmenu', e => e.preventDefault());
+canvas.addEventListener('wheel', e => { if (state === 'title' && menuPage === 'howto') { howtoScroll = clamp(howtoScroll + e.deltaY, 0, howtoMax); e.preventDefault(); } }, { passive: false });
 
 window.addEventListener('keydown', e => {
   if (e.target && e.target.closest && e.target.closest('#lobby')) return; // typing a room code
@@ -6807,6 +6815,138 @@ function drawMenuHero(cx, cy, s, dt) {
   menuFx = menuFx.filter(f => f.life > 0 && f.x < W + 20);
 }
 
+// ── how to play: a scrolling page of plain, short instructions ──
+let howtoScroll = 0, howtoMax = 0, howtoDrag = null;
+const HOWTO = [
+  ['h', 'The story'],
+  ['p', 'Parallel universes are converging. Pick your universe, Wizard or Space, and fight to keep it from being overwritten.'],
+  ['h', 'Move'],
+  ['p', 'Tilt your phone to walk.'],
+  ['p', 'No tilt? Hold your finger on the field and drag the way you want to go.'],
+  ['p', 'Walk into the boat to sail across the lake.'],
+  ['h', 'Shoot'],
+  ['p', 'Tap the field to fire an arrow at that spot. Hold to keep firing.'],
+  ['h', 'Cast a spell'],
+  ['star'],
+  ['p', 'The star at the bottom of the screen has five elements: Spirit, Water, Fire, Earth and Air.'],
+  ['p', 'Put your finger on one, slide through others, then lift your finger to cast. Each element you touch adds a rune, up to 7.'],
+  ['p', 'Most patterns fizzle. When one works you have discovered a spell. Remember it!'],
+  ['p', 'Attack spells load onto the FIRE button. Tap FIRE to send them. Big ones make you stand still while they charge.'],
+  ['p', 'Spells cost mana, the blue bar. It refills over time, fastest at your fountain.'],
+  ['h', 'How spells are built'],
+  ['p', '1st rune: what the spell is made of.'],
+  ['p', '2nd rune: its shape.'],
+  ['shapes'],
+  ['p', '3rd rune: an upgrade. Fire hits harder, Water lasts longer, Earth is bigger, Air adds shots, Spirit confuses or heals.'],
+  ['p', '4th rune: a finish, one extra trick. Swap the last two runes and you get a different spell.'],
+  ['p', 'A few special spells break the pattern. Chests and scrolls teach them.'],
+  ['h', 'Power'],
+  ['p', 'Longer spells are far stronger: 2 Minor, 3 Adept, 4 Greater, 5 Monstrous, 6 Omni King, 7 Doomsday.'],
+  ['p', 'Using more different elements, and repeating them unevenly, adds extra power. You can see it beside the runes (like ×1.4).'],
+  ['h', 'Elements'],
+  ['cycle'],
+  ['p', 'Each element does double damage to the next one around the circle: Water beats Fire, Fire beats Air, Air beats Earth, Earth beats Spirit, Spirit beats Water.'],
+  ['h', 'Adventure'],
+  ['p', 'Explore the land. Open chests and find scrolls to learn spells.'],
+  ['p', 'Defeat the five guardians. Each can only be hurt by certain elements, so find its weakness.'],
+  ['h', 'Battle'],
+  ['p', 'Your base is on the left, red’s is on the right. Most points after 5 minutes wins.'],
+  ['points'],
+  ['p', 'Every 10 seconds someone gets a build turn. Pick an element, then build a turret where you stand (it claims ground) or send a titan.'],
+  ['p', 'Breaking the enemy sigil also gives you a bonus build.'],
+  ['p', 'Minion mix: drag the dot to choose which minions you send. FOLLOW keeps your army with you, SPREAD lets it push. Army orders: attack or protect.'],
+  ['p', 'Each element has an energy circle. Using one drains it, so mix your elements up.'],
+  ['p', 'Your mana refills slowly in enemy ground. Minions tire as they march, so fight in groups.'],
+  ['h', 'Tips'],
+  ['p', 'Try every pair of elements first. Two-rune spells are quick and cheap.'],
+  ['p', 'A whisper: “Fire, then fire again…”'],
+];
+function drawHowTo(y, bx, bw) {
+  menuButton({ title: 'How to Play', color: '#ffd24a', x: bx, y, w: bw, h: 44 });
+  const top = y + 56, bottom = H - 66;
+  ctx.save();
+  ctx.beginPath(); ctx.rect(0, top, W, bottom - top); ctx.clip();
+  roundRect(bx - 6, top, bw + 12, bottom - top, 12); ctx.fillStyle = 'rgba(10,8,30,0.78)'; ctx.fill();
+  let yy = top + 6 - howtoScroll;
+  const L = bx + 8, Wd = bw - 16;
+  for (const [kind, text] of HOWTO) {
+    if (kind === 'h') {
+      yy += 16;
+      ctx.textAlign = 'left'; ctx.fillStyle = '#ffd24a'; ctx.font = `22px ${SERIF_BIG}`;
+      ctx.fillText(text.toUpperCase(), L, yy + 18);
+      ctx.strokeStyle = 'rgba(255,210,74,0.35)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(L, yy + 26); ctx.lineTo(L + Wd, yy + 26); ctx.stroke();
+      yy += 36;
+    } else if (kind === 'p') {
+      ctx.textAlign = 'left'; ctx.fillStyle = '#c77dff'; ctx.font = `15px ${SERIF}`;
+      ctx.fillText('•', L + 2, yy + 14);
+      ctx.fillStyle = '#efe9f8';
+      yy = wrapText(text, L + 18, yy + 14, Wd - 18, 20) - 6;
+    } else if (kind === 'star') {
+      // the casting star, with a sample swipe drawn on it
+      const cx = W / 2, cy = yy + 70, R = 54;
+      const pt = i => { const a = -Math.PI / 2 + i * TAU / 5; return [cx + Math.cos(a) * R, cy + Math.sin(a) * R]; };
+      ctx.strokeStyle = 'rgba(199,125,255,0.4)'; ctx.lineWidth = 1.5; ctx.beginPath();
+      for (let i = 0; i <= 5; i++) { const [px, py] = pt((i * 2) % 5); i ? ctx.lineTo(px, py) : ctx.moveTo(px, py); }
+      ctx.stroke();
+      const order = ['S', 'W', 'F', 'E', 'A'];
+      const k = (elapsed * 0.6) % 1;                         // a swipe: Earth then Water (Venom Dart)
+      ctx.strokeStyle = '#ffd24a'; ctx.lineWidth = 3; ctx.lineCap = 'round';
+      const [ax, ay] = pt(3), [bx2, by2] = pt(1);
+      ctx.globalAlpha = 0.8; ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(ax + (bx2 - ax) * k, ay + (by2 - ay) * k); ctx.stroke(); ctx.globalAlpha = 1;
+      order.forEach((r, i) => { const [px, py] = pt(i); circle(px, py, 15, 'rgba(10,8,30,0.9)', ELEMENTS[r].color, 2); drawGlyph(r, px, py, 16, ELEMENTS[r].color); });
+      ctx.textAlign = 'center'; ctx.font = `italic 12px ${SERIF}`; ctx.fillStyle = '#ccc';
+      ctx.fillText('Slide Earth → Water, then lift: Venom Dart', cx, cy + R + 30);
+      yy += 160;
+    } else if (kind === 'shapes') {
+      // the five shapes
+      const items = [['F', 'Bolt'], ['E', 'Wall'], ['W', 'Pool'], ['A', 'Burst'], ['S', 'Creature']], cw = Wd / 5;
+      items.forEach(([r, name], i) => {
+        const cx = L + cw * (i + 0.5);
+        circle(cx, yy + 22, 16, 'rgba(10,8,30,0.9)', ELEMENTS[r].color, 2);
+        drawGlyph(r, cx, yy + 22, 17, ELEMENTS[r].color);
+        ctx.textAlign = 'center'; ctx.fillStyle = '#efe9f8'; ctx.font = `13px ${SERIF}`;
+        ctx.fillText(name, cx, yy + 56);
+      });
+      yy += 68;
+    } else if (kind === 'cycle') {
+      // the element circle, with arrows to what each one beats
+      const cx = W / 2, cy = yy + 74, R = 56;
+      const pos = ELEM_CYCLE.map((e, i) => { const a = -Math.PI / 2 + i * TAU / 5; return [cx + Math.cos(a) * R, cy + Math.sin(a) * R]; });
+      ctx.strokeStyle = 'rgba(255,255,255,0.6)'; ctx.lineWidth = 2; ctx.fillStyle = 'rgba(255,255,255,0.8)';
+      for (let i = 0; i < 5; i++) {
+        const [x1, y1] = pos[i], [x2, y2] = pos[(i + 1) % 5], dx = x2 - x1, dy = y2 - y1, d = Math.hypot(dx, dy), ux = dx / d, uy = dy / d;
+        const sx = x1 + ux * 20, sy = y1 + uy * 20, ex = x2 - ux * 22, ey = y2 - uy * 22;
+        ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(ex, ey); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(ex + ux * 6, ey + uy * 6); ctx.lineTo(ex - uy * 5, ey + ux * 5); ctx.lineTo(ex + uy * 5, ey - ux * 5); ctx.closePath(); ctx.fill();
+      }
+      ELEM_CYCLE.forEach((e, i) => { const [px, py] = pos[i]; circle(px, py, 16, 'rgba(10,8,30,0.95)', TYPE_COLOR[e], 2); drawGlyph(ELEM_GLYPH[e], px, py, 17, TYPE_COLOR[e]); });
+      ctx.textAlign = 'center'; ctx.font = `italic 12px ${SERIF}`; ctx.fillStyle = '#ccc';
+      ctx.fillText('each arrow points at what it beats', cx, cy + R + 32);
+      yy += 160;
+    } else if (kind === 'points') {
+      // a little table of what scores
+      const rows = [['Minion', '1'], ['Wizard', '3'], ['Titan or turret', '5'], ['Enemy sigil (+ a bonus build)', '50'], ['Enemy base (ends the match)', '60'], ['Most ground at the end', '140']];
+      ctx.font = `14px ${SERIF}`;
+      for (const [what, pts] of rows) {
+        ctx.textAlign = 'left'; ctx.fillStyle = '#efe9f8'; ctx.fillText(what, L + 18, yy + 14);
+        ctx.textAlign = 'right'; ctx.fillStyle = '#ffd24a'; ctx.fillText(pts, L + Wd, yy + 14);
+        yy += 20;
+      }
+      yy += 6;
+    }
+  }
+  howtoMax = Math.max(0, yy + howtoScroll - bottom + 16);
+  howtoScroll = clamp(howtoScroll, 0, howtoMax);
+  ctx.restore();
+  // a hint that there's more below
+  if (howtoScroll < howtoMax - 4) {
+    ctx.textAlign = 'center'; ctx.fillStyle = 'rgba(255,210,74,0.8)'; ctx.font = `13px ${SERIF}`;
+    ctx.fillText('▼ scroll for more', W / 2, bottom - 6 + Math.sin(elapsed * 4) * 2);
+  }
+  titleButtons = [{ title: 'Back', color: '#c9c3d8', x: bx + bw / 2 - 70, y: H - 56, w: 140, h: 40, go: () => goMenu('main') }];
+  menuButton(titleButtons[0]);
+}
+
 let lastTitleT = 0;
 function drawTitle() {
   const now = performance.now() / 1000, dt = Math.min(0.05, lastTitleT ? now - lastTitleT : 0.016);
@@ -6826,6 +6966,7 @@ function drawTitle() {
   ctx.font = `italic 15px ${SERIF}`;
   y = wrapText('Parallel universes are converging. Fight to preserve yours.', W / 2, y, bw, 19) + 14;
 
+  if (menuPage === 'howto') { drawHowTo(y, bx, bw); return; }
   if (menuPage === 'battle') {
     y += 6;
     const bh = Math.min(84, Math.max(54, (H - y - 80) / 4 - gap));
@@ -6857,24 +6998,17 @@ function drawTitle() {
   const heroButton = { x: bx, y, w: half, h: ph, go: () => { menuCast = 0.8; SFX.release(mySkin === 'space' ? 'FA' : 'FF'); } };
   y += ph + 16;
   // where to play
-  const bh = Math.min(76, Math.max(58, (H - y - 70) / 2 - gap));
+  const bh = Math.min(76, Math.max(54, (H - y - 64) / 2.6 - gap));
   const modes = [
     { title: 'Adventure', color: '#c77dff', go: startGame },
     { title: 'Battle', color: TEAM_COLOR.blue, go: () => goMenu('battle') },
   ];
   const modeButtons = modes.map((o, i) => ({ ...o, x: bx, y: y + i * (bh + gap), w: bw, h: bh }));
-  y += modes.length * (bh + gap) + 8;
+  y += modes.length * (bh + gap) + 4;
+  modeButtons.push({ title: 'How to Play', color: '#ffd24a', x: bx + bw * 0.12, y, w: bw * 0.76, h: Math.max(30, bh * 0.5), go: () => { howtoScroll = 0; goMenu('howto'); } });
   // Adventure first, so Enter starts it
   titleButtons = [...modeButtons, ...lookButtons, heroButton];
   for (const b of modeButtons.concat(lookButtons)) menuButton(b);
-  // how to play, if there's room
-  ctx.textAlign = 'center';
-  ctx.fillStyle = '#bbb';
-  ctx.font = `13px ${SERIF}`;
-  const tips = ['Slide across the five elements to weave a spell, release to cast. Most patterns fizzle: find the ones that work.',
-                'Tilt or drag to walk · touch the field to shoot · attack spells load onto FIRE.'];
-  for (const l of tips) { if (y + 40 > H) break; y = wrapText(l, W / 2, y + 6, bw, 17) + 2; }
-  if (y + 24 < H) { ctx.fillStyle = '#ffb08a'; ctx.font = `italic 13px ${SERIF}`; wrapText('A whisper: “Fire, then fire again…”', W / 2, y + 10, bw, 17); }
 }
 
 function drawReveal() {
