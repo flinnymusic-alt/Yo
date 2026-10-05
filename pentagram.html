@@ -658,6 +658,18 @@ function damageFoe(f, dmg, type) {
     mult = f.def.mult[type] ?? (type === 'prism' ? 1.5 : 1);
   }
   if (f.hex > 0 || f.stone > 0) mult *= 1.5;
+  // Turrets, titans and bases adapt: the same kind of magic over and over does
+  // less each time (down to a quarter); mixing kinds keeps every hit at full strength.
+  if (f.unit && (f.kind === 'turret' || f.kind === 'titan' || f.kind === 'nexus')) {
+    const res = f.resist || (f.resist = {});
+    const adapt = Math.max(0.25, Math.pow(0.8, res[type] || 0));
+    res[type] = (res[type] || 0) + 1;
+    mult *= adapt;
+    if (adapt < 0.65 && (f.resTxtCd || 0) <= 0) {
+      floatText(f.x, f.y - f.r - 30, `resisting ${type} · mix it up!`, '#bbb', 12);
+      f.resTxtCd = 1.2;
+    }
+  }
   if (player.empower > 0) mult *= 2;
   const d = dmg * mult;
   f.hp -= d;
@@ -1932,6 +1944,8 @@ function battleOver(baseFell) {
 
 function updateUnit(u, dt) {
   u.cd -= dt;
+  if (u.resist) for (const k in u.resist) u.resist[k] = Math.max(0, u.resist[k] - dt * 0.6); // resistance fades
+  if (u.resTxtCd > 0) u.resTxtCd -= dt;
   u.flash = Math.max(0, u.flash - dt);
   u.txtCd -= dt;
   if (u.slamT > 0) {
