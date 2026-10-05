@@ -2964,6 +2964,7 @@ function hostReceive(m) {
     case 'mix': if (m.mix) teams.red.mix = Object.fromEntries(MINION_KINDS.map(k => [k, Math.max(0, +m.mix[k] || 0)])); break;
     case 'order': teams.redOrder = m.v === 'follow' ? 'follow' : 'spread'; break;
     case 'orders': if (m.grp === 'minion' || m.grp === 'titan') teams.redOrders[m.grp] = m.v; break;
+    case 'skin': teams.redSkin = m.v === 'space' ? 'space' : 'wizard'; break;
     case 'bye': friendLeft(); break;
   }
 }
@@ -3004,7 +3005,7 @@ function packHero(p, disc) {
 function makeSnapshot() {
   const T = teams, both = (a, b) => a.concat(b);
   return {
-    t: 'snap',
+    t: 'snap', sk: mySkin,
     st: state, res: T.result, eb: T.endedBy || null, bf: T.baseFell || null, gt: T.groundTo || null,
     sc: [T.blue.score, T.red.score], time: r1(T.time),
     bt: [T.build.team, r1(T.build.t)], pr: T.pendingRed ? r1(T.pendingRed.t) : null,
@@ -3054,6 +3055,7 @@ function startVersusGuest(send) {
     order: 'spread', orders: { minion: 'attackTurrets', titan: 'attackTurrets' }, buildElem: 'water',
   };
   guestUnits = new Map(); otherHero = null;
+  net.send({ t: 'skin', v: mySkin });
   state = 'play';
   showBanner('Duel!', 'You’re the wizard on the left', 4);
 }
@@ -3080,8 +3082,9 @@ function guestReceive(m) {
   if (me.tp !== player.tp || me.dead) { player.x = X(me.x); player.y = me.y; player.tp = me.tp; } // respawned or blinked
   if (me.dead) { if (state === 'play') { state = 'dead'; } overlayT = 5 - me.rt; }
   else if (state === 'dead') state = 'play';
+  teams.redSkin = m.sk === 'space' ? 'space' : 'wizard'; // the host's look is the red side's
   // the host's wizard
-  otherHero = unpackHero(m.host, otherHero || { robe: '#7a2d2d', hat: '#c03a3a' });
+  otherHero = unpackHero(m.host, otherHero || { robe: '#7a2d2d', hat: '#c03a3a', isRival: true });
   otherHero.x = X(m.host.x); otherHero.y = m.host.y; otherHero.face = { x: -m.host.fx, y: m.host.fy };
   // scores and turns (flipped: you are "blue")
   teams.blue.score = m.sc[1]; teams.red.score = m.sc[0]; teams.time = m.time;
@@ -4161,12 +4164,199 @@ function drawBoss(b) {
 }
 
 // battle units, drawn in their team's colour
+// ── looks: Wizard or Space ──
+// In Adventure it's just how your hero looks. In Battle it's a side: your
+// team takes your look and the enemy is the other one (in a duel, each
+// player's side shows the look they picked).
+let mySkin = 'wizard';
+try { if (localStorage.getItem('pentagram-skin') === 'space') mySkin = 'space'; } catch (_) {}
+function setSkin(v) {
+  mySkin = v === 'space' ? 'space' : 'wizard';
+  try { localStorage.setItem('pentagram-skin', mySkin); } catch (_) {}
+  SFX.buff();
+}
+function skinOf(team) {
+  if (mode !== 'battle' || !teams || team === 'blue') return mySkin;
+  if (versus) return teams.redSkin || 'wizard';
+  return mySkin === 'space' ? 'wizard' : 'space';
+}
+function heroSkin(p) {
+  if (mode !== 'battle') return mySkin;
+  return skinOf(p.isRival || p === otherHero ? 'red' : 'blue');
+}
+
+// a spacefarer in a white suit; accent is the team colour, gun glows with the next spell
+function drawAstronaut(x, y, s, accent, visor, face, gunColor) {
+  const fx = face ? face.x : 1, fy = face ? face.y : 0, side = fx >= 0 ? 1 : -1;
+  ctx.save(); ctx.translate(x, y); ctx.scale(s, s);
+  // backpack and legs
+  roundRect(-side * 14, -8, 9, 16, 3); ctx.fillStyle = '#8a93a6'; ctx.fill();
+  ctx.fillStyle = '#c9cfdb'; ctx.fillRect(-8, 8, 6, 7); ctx.fillRect(2, 8, 6, 7);
+  ctx.fillStyle = '#5a6272'; ctx.fillRect(-9, 13, 8, 3); ctx.fillRect(1, 13, 8, 3);
+  // suit
+  roundRect(-10, -6, 20, 17, 6); ctx.fillStyle = '#eef1f7'; ctx.fill();
+  ctx.strokeStyle = '#9aa3b5'; ctx.lineWidth = 1.5; ctx.stroke();
+  ctx.fillStyle = accent; ctx.fillRect(-10, 3, 20, 3);
+  circle(-3, -1, 2, accent); circle(3, -1, 1.5, '#7dff9a');
+  // blaster
+  ctx.fillStyle = '#4a5060'; ctx.fillRect(side > 0 ? 8 : -20, -2, 12, 5);
+  ctx.fillRect(side > 0 ? 12 : -14, 2, 3, 4);
+  circle(side > 0 ? 21 : -21, 0.5, 3, gunColor);
+  // helmet with a tinted visor turned the way you face
+  circle(0, -15, 11, '#f6f8fc', '#9aa3b5', 2);
+  ctx.beginPath(); ctx.ellipse(fx * 3, -15 + fy * 1.5, 7.5, 5.5, 0, 0, TAU);
+  const g = ctx.createLinearGradient(-7, -20, 7, -10);
+  g.addColorStop(0, '#0d1630'); g.addColorStop(1, visor);
+  ctx.fillStyle = g; ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,0.7)'; ctx.beginPath(); ctx.ellipse(fx * 3 - 3, -18 + fy * 1.5, 2.2, 1.2, -0.5, 0, TAU); ctx.fill();
+  // antenna with a blinking light
+  ctx.strokeStyle = '#9aa3b5'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(-side * 6, -23); ctx.lineTo(-side * 8, -31); ctx.stroke();
+  circle(-side * 8, -32, 2.2, Math.sin(elapsed * 5) > 0 ? accent : '#fff');
+  ctx.restore();
+}
+
+// space versions of the battle units (drawn around 0,0; c = team colour, ec = element colour)
+function drawSpaceBody(u, c, ec, r, t) {
+  const f = u.face || 1;
+  const shadow = (w, y) => { ctx.fillStyle = 'rgba(0,0,0,0.28)'; ctx.beginPath(); ctx.ellipse(1, y, w, w * 0.32, 0, 0, TAU); ctx.fill(); };
+  if (u.kind === 'wisp') {
+    // Drone: a hovering orb with a spinning ring and one eye
+    const fl = Math.sin(t * 3 + u.wob) * 3;
+    shadow(8, r + 6);
+    const g = ctx.createRadialGradient(0, fl + r, 0, 0, fl + r, r);
+    g.addColorStop(0, ec); g.addColorStop(1, ec + '00');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, fl + r, r, 0, TAU); ctx.fill();
+    circle(0, fl, r * 0.75, '#cfd6e4', c, 2);
+    ctx.strokeStyle = ec; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.ellipse(0, fl, r * 1.35, r * 0.4, Math.sin(t * 2 + u.wob) * 0.3, 0, TAU); ctx.stroke();
+    circle(f * 2, fl - 1, r * 0.3, '#10182a'); circle(f * 2, fl - 1, r * 0.17, ec);
+  } else if (u.kind === 'archer') {
+    // Trooper: a little robot with a laser rifle
+    const bob = Math.sin(u.walk * 0.25) * 1.5;
+    shadow(7, 10);
+    ctx.fillStyle = '#6a7284'; ctx.fillRect(-5, 4 + bob, 3, 6); ctx.fillRect(2, 4 + bob, 3, 6);
+    roundRect(-6, -4 + bob, 12, 10, 3); ctx.fillStyle = '#d5dbe6'; ctx.fill(); ctx.strokeStyle = c; ctx.lineWidth = 2; ctx.stroke();
+    circle(0, -8 + bob, 5.5, '#e9edf4', '#8a93a6', 1.5);
+    ctx.fillStyle = ec; ctx.fillRect(f > 0 ? -1 : -4, -10 + bob, 5, 3);
+    ctx.fillStyle = '#3a4050'; ctx.fillRect(f > 0 ? 4 : -16, -1 + bob, 12, 3);
+    circle(f * 16, bob, 1.8, ec);
+  } else if (u.kind === 'imp') {
+    // Rocket bot: a small rocket hopping on its flame
+    const hop = Math.abs(Math.sin(u.walk * 0.3)) * 3, fl = 1 + Math.sin(t * 20 + u.wob) * 0.25;
+    shadow(6, 11);
+    ctx.fillStyle = ec;
+    ctx.beginPath(); ctx.moveTo(-4, 6 - hop); ctx.quadraticCurveTo(0, 6 + 9 * fl - hop, 4, 6 - hop); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(0, -r * 1.3 - hop); ctx.quadraticCurveTo(r * 0.8, -r * 0.3 - hop, r * 0.55, 6 - hop);
+    ctx.lineTo(-r * 0.55, 6 - hop); ctx.quadraticCurveTo(-r * 0.8, -r * 0.3 - hop, 0, -r * 1.3 - hop); ctx.closePath();
+    ctx.fillStyle = '#e9edf4'; ctx.fill(); ctx.strokeStyle = c; ctx.lineWidth = 2; ctx.stroke();
+    ctx.fillStyle = c;
+    for (const sd of [-1, 1]) { ctx.beginPath(); ctx.moveTo(sd * r * 0.5, 0 - hop); ctx.lineTo(sd * r * 1.05, 7 - hop); ctx.lineTo(sd * r * 0.5, 6 - hop); ctx.fill(); }
+    circle(0, -r * 0.35 - hop, 2.6, '#10182a', ec, 1.5);
+  } else if (u.kind === 'brute') {
+    // Heavy mech: a boxy walker on treads
+    const bob = Math.abs(Math.sin(u.walk * 0.18)) * 1.5;
+    shadow(11, 13);
+    roundRect(-r, r * 0.55, r * 2, 6, 3); ctx.fillStyle = '#3a3f4a'; ctx.fill();
+    for (let i = 0; i < 4; i++) circle(-r * 0.75 + i * r * 0.5, r * 0.55 + 3, 1.6, '#8a93a6');
+    roundRect(-r * 0.9, -r * 0.9 - bob, r * 1.8, r * 1.5, 3); ctx.fillStyle = '#7a8296'; ctx.fill();
+    ctx.strokeStyle = c; ctx.lineWidth = 2.5; ctx.stroke();
+    ctx.fillStyle = '#10182a'; ctx.fillRect(-r * 0.6, -r * 0.6 - bob, r * 1.2, r * 0.45);
+    ctx.fillStyle = ec; ctx.fillRect(-r * 0.45, -r * 0.5 - bob, r * 0.9, r * 0.2);
+    circle(-r * 1.05, -r * 0.3 - bob, 3.5, c); circle(r * 1.05, -r * 0.3 - bob, 3.5, c);
+  } else if (u.kind === 'flyer') {
+    // Saucer: a little flying disc with blinking rim lights
+    const fl = Math.sin(t * 4 + u.wob) * 2;
+    shadow(9, 16);
+    ctx.beginPath(); ctx.ellipse(0, fl - 3, r * 0.55, r * 0.5, 0, Math.PI, 0); ctx.fillStyle = ec + 'aa'; ctx.fill();
+    ctx.beginPath(); ctx.ellipse(0, fl, r * 1.4, r * 0.45, 0, 0, TAU); ctx.fillStyle = '#b8c0cf'; ctx.fill();
+    ctx.strokeStyle = c; ctx.lineWidth = 2; ctx.stroke();
+    for (let i = 0; i < 4; i++) circle(-r * 0.9 + i * r * 0.6, fl + 1, 1.5, (Math.floor(t * 6) + i) % 2 ? c : '#fff');
+  } else if (u.kind === 'wizard') {
+    // Commander: an astronaut with a team stripe
+    circle(3, 12, 12, 'rgba(0,0,0,0.3)');
+    drawAstronaut(0, 0, 0.9, c, ec, { x: f, y: 0 }, ec);
+    if (u.retreat) { ctx.fillStyle = '#8f8'; ctx.font = 'bold 11px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.fillText('+', 0, -36); }
+  } else if (u.kind === 'titan') {
+    // Mega mech: a walking war machine with arm cannons that slam down
+    const ph = u.walk * 0.09, step = Math.sin(ph);
+    const swing = u.slamT > 0 ? 1 - Math.max(0, u.slamT - 0.18) / 0.32 : 0;
+    const bob = -Math.abs(step) * 3 + (u.slamT > 0.18 ? -4 : 0);
+    shadow(r * 1.05, r * 1.05);
+    ctx.lineCap = 'round';
+    for (const sd of [-1, 1]) {
+      const lift = Math.max(0, sd * step) * 7;
+      ctx.strokeStyle = '#5a6272'; ctx.lineWidth = r * 0.3;
+      ctx.beginPath(); ctx.moveTo(sd * r * 0.4, r * 0.3 + bob); ctx.lineTo(sd * r * 0.62, r * 0.7 - lift * 0.5); ctx.lineTo(sd * r * 0.45 + sd * step * 4, r * 0.98 - lift); ctx.stroke();
+      ctx.fillStyle = '#3a3f4a'; ctx.fillRect(sd * r * 0.45 + sd * step * 4 - r * 0.22, r * 0.95 - lift, r * 0.44, r * 0.14);
+    }
+    for (const sd of [-1, 1]) {
+      const up = u.slamT > 0 ? 1 - swing : 0;
+      const ax = sd * r * 1.05 + (u.slamT > 0 ? f * swing * r * 0.3 : 0);
+      const ay = u.slamT > 0 ? -r * 1.3 * up + r * 0.8 * swing + bob : r * 0.1 + Math.sin(ph + (sd > 0 ? Math.PI : 0)) * 3 + bob;
+      ctx.strokeStyle = '#6a7284'; ctx.lineWidth = r * 0.3;
+      ctx.beginPath(); ctx.moveTo(sd * r * 0.75, -r * 0.3 + bob); ctx.lineTo(ax, ay); ctx.stroke();
+      roundRect(ax - r * 0.2, ay - r * 0.2, r * 0.4, r * 0.55, 4); ctx.fillStyle = '#4a5060'; ctx.fill();
+      ctx.strokeStyle = c; ctx.lineWidth = 2; ctx.stroke();
+      circle(ax, ay + r * 0.38, r * 0.1, ec);
+    }
+    roundRect(-r * 0.85, -r * 0.8 + bob, r * 1.7, r * 1.25, r * 0.25);
+    ctx.fillStyle = '#8a93a6'; ctx.fill(); ctx.strokeStyle = c; ctx.lineWidth = 3; ctx.stroke();
+    drawGlyph(ELEM_GLYPH[u.elem] || 'S', 0, r * 0.12 + bob, r * 0.45, ec);
+    // cockpit
+    roundRect(-r * 0.5, -r * 1.25 + bob, r, r * 0.55, r * 0.2); ctx.fillStyle = '#5a6272'; ctx.fill();
+    ctx.beginPath(); ctx.ellipse(f * r * 0.08, -r * 1.0 + bob, r * 0.36, r * 0.18, 0, 0, TAU);
+    ctx.fillStyle = u.slamT > 0 ? '#fff' : ec; ctx.fill();
+  } else if (u.kind === 'turret') {
+    // Laser turret: a metal dome with an energy core that charges between shots
+    circle(4, 8, r, 'rgba(0,0,0,0.3)');
+    circle(0, 0, r, '#7a8296', '#4a5060', 3);
+    ctx.fillStyle = '#5a6272'; ctx.fillRect(-r * 0.3, -r * 1.25, r * 0.6, r * 1.2);
+    const ready = 1 - clamp(u.cd / u.def.cd, 0, 1), flashR = (u.fireFlash || 0) > 0 ? 10 : 0;
+    const gr = 10 + ready * 8 + flashR;
+    const g = ctx.createRadialGradient(0, -r * 1.35, 0, 0, -r * 1.35, gr);
+    g.addColorStop(0, '#fff'); g.addColorStop(0.4, ec); g.addColorStop(1, ec + '00');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, -r * 1.35, gr, 0, TAU); ctx.fill();
+    ctx.save(); ctx.translate(0, -r * 1.35); ctx.rotate(t * 2 + u.wob);
+    ctx.strokeStyle = '#dfe5ef'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.ellipse(0, 0, 9, 3.5, 0, 0, TAU); ctx.stroke();
+    ctx.restore();
+    circle(0, -r * 1.35, 4, '#fff', ec, 2);
+    circle(0, 0, r - 3, null, c, 3);
+    if (u.elem) drawGlyph(ELEM_GLYPH[u.elem], 0, 2, r * 0.9, ec);
+  } else if (u.kind === 'nexus') {
+    // Station: a domed base with a dish and a ring of lights
+    const g = ctx.createRadialGradient(0, 0, 10, 0, 0, r * 2.2);
+    g.addColorStop(0, c + '66'); g.addColorStop(1, c + '00');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, r * 2.2, 0, TAU); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(0, r * 0.35, r * 1.1, r * 0.45, 0, 0, TAU); ctx.fillStyle = '#5a6272'; ctx.fill();
+    ctx.strokeStyle = '#3a3f4a'; ctx.lineWidth = 3; ctx.stroke();
+    ctx.beginPath(); ctx.arc(0, r * 0.25, r * 0.8, Math.PI, 0); ctx.closePath();
+    const dg = ctx.createLinearGradient(0, -r * 0.6, 0, r * 0.25);
+    dg.addColorStop(0, '#dfe5ef'); dg.addColorStop(1, '#8a93a6');
+    ctx.fillStyle = dg; ctx.fill(); ctx.strokeStyle = c; ctx.lineWidth = 3; ctx.stroke();
+    for (let i = 0; i < 8; i++) {
+      const a = Math.PI + (i + 0.5) * Math.PI / 8;
+      circle(Math.cos(a) * r * 0.62, r * 0.25 + Math.sin(a) * r * 0.62, 2.5, (Math.floor(t * 4) + i) % 3 ? c : '#fff');
+    }
+    // dish on a mast
+    ctx.strokeStyle = '#9aa3b5'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(0, -r * 0.5); ctx.lineTo(0, -r * 1.3); ctx.stroke();
+    ctx.save(); ctx.translate(0, -r * 1.4); ctx.rotate(Math.sin(t * 0.7) * 0.6);
+    ctx.beginPath(); ctx.arc(0, 0, r * 0.45, 0.15 * Math.PI, 0.85 * Math.PI); ctx.closePath();
+    ctx.fillStyle = '#dfe5ef'; ctx.fill(); ctx.strokeStyle = c; ctx.lineWidth = 2; ctx.stroke();
+    circle(0, r * 0.12, 3, Math.sin(t * 5) > 0 ? c : '#fff');
+    ctx.restore();
+  }
+}
+
 function drawUnit(u) {
   const c = TEAM_COLOR[u.team], t = elapsed, r = u.r;
   ctx.save();
   ctx.translate(u.x, u.y);
   const ec = TYPE_COLOR[u.elem] || c; // element colour
-  if (u.kind === 'imp') {
+  if (u.kind !== 'sigil' && skinOf(u.team) === 'space') drawSpaceBody(u, c, ec, r, t);
+  else if (u.kind === 'imp') {
     const hop = Math.abs(Math.sin(u.walk * 0.3)) * 3;
     ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.beginPath(); ctx.ellipse(1, 11, 7, 2.5, 0, 0, TAU); ctx.fill();
     circle(0, -hop, r * 0.85, '#2a2238', c, 2);
@@ -4415,6 +4605,11 @@ function drawPlayer(p = player) {
     ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, 40, 0, TAU); ctx.fill();
   }
   if (!p.onBoat) circle(x + 3, y + 12, 13, 'rgba(0,0,0,0.3)');
+  const orb = p === player && seq.length ? ELEMENTS[seq[seq.length - 1]].color : '#c77dff';
+  if (heroSkin(p) === 'space') {
+    const accent = mode === 'battle' ? TEAM_COLOR[p.isRival || p === otherHero ? 'red' : 'blue'] : '#c77dff';
+    drawAstronaut(x, y, 1, accent, accent, p.face, orb);
+  } else {
   // robe
   ctx.beginPath(); ctx.moveTo(x - 15, y + 14); ctx.lineTo(x, y - 8); ctx.lineTo(x + 15, y + 14); ctx.closePath();
   ctx.fillStyle = p.robe || '#4b2d7a'; ctx.fill();
@@ -4426,7 +4621,8 @@ function drawPlayer(p = player) {
   // staff
   ctx.strokeStyle = '#8a5a2a'; ctx.lineWidth = 3;
   ctx.beginPath(); ctx.moveTo(x + 14, y + 14); ctx.lineTo(x + 16, y - 18); ctx.stroke();
-  circle(x + 16, y - 20, 4, p === player && seq.length ? ELEMENTS[seq[seq.length - 1]].color : '#c77dff');
+  circle(x + 16, y - 20, 4, orb);
+  }
 
   if (p.skin > 0) circle(x, y, 24, null, 'rgba(181,131,74,0.9)', 4);
   if (p.omni > 0) {
@@ -5299,8 +5495,35 @@ function drawTitle() {
   ctx.font = 'italic 15px Georgia, serif';
   y = wrapText('A whisper: “Fire, then fire again…”', W / 2, y + 2, maxW, 20) + 6;
 
-  // mode choices
+  // your look
   const bw = Math.min(300, W - 48), bh = 50, gap = 10, bx = W / 2 - bw / 2;
+  const looks = [{ v: 'wizard', label: 'Wizard' }, { v: 'space', label: 'Space' }];
+  const lw = (bw - gap) / 2, lh = 54;
+  const lookButtons = looks.map((o, i) => ({ title: o.label, x: bx + i * (lw + gap), y, w: lw, h: lh, look: o.v, go: () => setSkin(o.v) }));
+  for (const b of lookButtons) {
+    const on = mySkin === b.look;
+    roundRect(b.x, b.y, b.w, b.h, 12);
+    ctx.fillStyle = on ? 'rgba(199,125,255,0.22)' : 'rgba(20,14,34,0.92)'; ctx.fill();
+    ctx.strokeStyle = on ? '#ffd24a' : '#555'; ctx.lineWidth = on ? 3 : 1.5; ctx.stroke();
+    // a little preview of the hero
+    const px = b.x + 30, py = b.y + b.h / 2 + 6;
+    if (b.look === 'space') drawAstronaut(px, py, 0.85, '#c77dff', '#4aa8ff', { x: 1, y: 0 }, '#c77dff');
+    else {
+      ctx.beginPath(); ctx.moveTo(px - 12, py + 12); ctx.lineTo(px, py - 6); ctx.lineTo(px + 12, py + 12); ctx.closePath(); ctx.fillStyle = '#4b2d7a'; ctx.fill();
+      circle(px, py - 5, 6.5, '#f1d2b0');
+      ctx.beginPath(); ctx.moveTo(px - 11, py - 8); ctx.lineTo(px + 3, py - 26); ctx.lineTo(px + 11, py - 8); ctx.closePath(); ctx.fillStyle = '#6a3fb0'; ctx.fill();
+    }
+    ctx.textAlign = 'left';
+    ctx.fillStyle = on ? '#fff' : '#aaa';
+    ctx.font = 'bold 16px system-ui, sans-serif';
+    ctx.fillText(b.title, b.x + 56, b.y + 24);
+    ctx.font = '11px system-ui, sans-serif'; ctx.fillStyle = on ? '#ffd24a' : '#777';
+    ctx.fillText(on ? 'chosen' : 'tap to pick', b.x + 56, b.y + 41);
+  }
+  ctx.textAlign = 'center';
+  y += lh + 14;
+
+  // mode choices
   const opts = [
     { title: 'Adventure', sub: 'Explore, hunt the five guardians, find the scrolls', color: '#c77dff', go: startGame },
     { title: 'Battle · Easy', sub: 'Score with ground, kills and sigils · even sides', color: TEAM_COLOR.blue, go: () => startBattle('easy') },
@@ -5319,6 +5542,7 @@ function drawTitle() {
     ctx.font = '12px system-ui, sans-serif';
     ctx.fillText(b.sub, W / 2, b.y + 40);
   }
+  titleButtons.push(...lookButtons); // after the modes, so the first button is still Adventure
   y += opts.length * (bh + gap) + 14;
   if (best > 0) {
     ctx.fillStyle = '#ccc';
