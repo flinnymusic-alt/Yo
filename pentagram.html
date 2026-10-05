@@ -318,6 +318,7 @@ let timeWarp = 0, timeStop = 0; // seconds left of slow-mo / frozen time
 let fx = [], particles = [], floaters = [], chests = [];
 let spawnQueue = [];
 let discovered = new Set();
+let tally = {}, masterHunter = false; // kills per creature kind, for hunting bonuses
 let bossesDown = 0, kills = 0, score = 0, best = 0, elapsed = 0, spawnTimer = 0;
 let banner = null, castMsg = null, reveal = null, wonShown = false;
 let flash = 0, shake = 0, overlayT = 0;
@@ -536,7 +537,7 @@ function startGame() {
   scrolls = SCROLLS.map(s => ({ ...s, taken: false }));
   boat.x = BOAT_HOME.x; boat.y = BOAT_HOME.y;
   discovered = new Set();
-  bossesDown = 0; kills = 0; score = 0; elapsed = 0; spawnTimer = 2;
+  bossesDown = 0; kills = 0; score = 0; elapsed = 0; tally = {}; masterHunter = false; spawnTimer = 2;
   banner = null; castMsg = null; reveal = null; wonShown = false;
   seq = []; curNode = null;
   state = 'play';
@@ -624,11 +625,31 @@ function addScore(n, x, y, big) {
   if (score > best) { best = score; try { localStorage.setItem('pentagram-best', String(best)); } catch (_) {} }
 }
 
+// Hunting bonuses: every 10 of one kind pays out, and 10 of every kind pays big.
+const FOE_NAMES = { slime: 'Slimes', bat: 'Bats', skeleton: 'Skeletons', ember: 'Embers', shade: 'Shades' };
+function huntBonus(f) {
+  const n = tally[f.kind] = (tally[f.kind] || 0) + 1;
+  floatText(f.x, f.y - f.r - 6, `${FOE_NAMES[f.kind]} ${n % 10 || 10}/10`, '#bbb', 11);
+  if (n % 10 === 0) {
+    const bonus = f.def.pts * 10;
+    addScore(bonus, player.x, player.y - 60, true);
+    showBanner(`${n} ${FOE_NAMES[f.kind]}!`, `Hunting bonus +${bonus}`, 2.5);
+    SFX.discover();
+  }
+  if (!masterHunter && Object.keys(FOES).every(k => (tally[k] || 0) >= 10)) {
+    masterHunter = true;
+    addScore(2000, player.x, player.y - 90, true);
+    showBanner('MASTER HUNTER!', '10 of every creature · +2,000', 4);
+    SFX.bossDown();
+  }
+}
+
 function killFoe(f) {
   f.dead = true;
   f.boss ? SFX.bossDown() : SFX.kill();
   kills++;
   addScore(f.boss ? f.def.pts : Math.round(f.def.pts * f.maxHp / f.def.hp), f.x, f.y - f.r - 22, f.boss);
+  if (!f.boss) huntBonus(f);
   burst(f.x, f.y, f.boss ? f.def.color : f.def.color, f.boss ? 70 : 14, f.boss ? 420 : 260);
   if (f.boss) {
     bossesDown++;
@@ -2449,6 +2470,7 @@ function drawHUD() {
   ctx.fillStyle = '#ccc';
   ctx.font = '12px system-ui, sans-serif';
   ctx.fillText(`Spells ${discovered.size}/${SPELL_COUNT}   Guardians ${bossesDown}/${BOSSES.length}`, 14, 90);
+  drawHunt(14, 108);
 
   const buffs = [];
   if (player.ward > 0)    buffs.push([`Ward ×${player.ward}`, TYPE_COLOR.spirit]);
@@ -2465,7 +2487,7 @@ function drawHUD() {
   let bx = 14;
   for (const [t, c] of buffs) {
     ctx.fillStyle = c;
-    ctx.fillText(t, bx, 108);
+    ctx.fillText(t, bx, 140);
     bx += ctx.measureText(t).width + 12;
   }
 
@@ -2504,11 +2526,11 @@ function drawHUD() {
     ctx.globalAlpha = Math.max(0, a);
     ctx.textAlign = 'center';
     ctx.font = 'bold 22px system-ui, sans-serif';
-    ctx.fillStyle = '#000'; ctx.fillText(banner.text, W / 2 + 2, 122);
-    ctx.fillStyle = '#ffe9a8'; ctx.fillText(banner.text, W / 2, 120);
+    ctx.fillStyle = '#000'; ctx.fillText(banner.text, W / 2 + 2, 172);
+    ctx.fillStyle = '#ffe9a8'; ctx.fillText(banner.text, W / 2, 170);
     if (banner.sub) {
       ctx.font = '15px system-ui, sans-serif';
-      ctx.fillStyle = '#ddd'; ctx.fillText(banner.sub, W / 2, 144);
+      ctx.fillStyle = '#ddd'; ctx.fillText(banner.sub, W / 2, 194);
     }
     ctx.globalAlpha = 1;
   }
@@ -2538,6 +2560,26 @@ function drawFireButton() {
   ctx.font = '11px system-ui, sans-serif';
   ctx.textAlign = 'right';
   ctx.fillText(SPELLS[key].name, W - 10, b.y - b.r - 12);
+}
+
+// one small creature dot per kind, filling up toward the next 10
+function drawHunt(x, y) {
+  ctx.font = '10px system-ui, sans-serif';
+  ctx.textAlign = 'left';
+  let cx = x;
+  for (const k of Object.keys(FOES)) {
+    const n = tally[k] || 0, frac = (n % 10) / 10;
+    circle(cx + 6, y - 4, 6, 'rgba(0,0,0,0.5)', FOES[k].color, 1.5);
+    if (frac > 0) {
+      ctx.fillStyle = FOES[k].color;
+      ctx.beginPath(); ctx.moveTo(cx + 6, y - 4); ctx.arc(cx + 6, y - 4, 6, -Math.PI / 2, -Math.PI / 2 + TAU * frac); ctx.closePath(); ctx.fill();
+    }
+    ctx.fillStyle = n >= 10 ? '#ffd24a' : '#bbb';
+    const label = String(n);
+    ctx.fillText(label, cx + 15, y);
+    cx += 22 + ctx.measureText(label).width;
+  }
+  if (masterHunter) { ctx.fillStyle = '#ffd24a'; ctx.fillText('★', cx, y); }
 }
 
 function drawMinimap() {
