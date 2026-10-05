@@ -708,7 +708,7 @@ function startGame() {
   banner = null; castMsg = null; reveal = null; wonShown = false;
   seq = []; curNode = null;
   state = 'play';
-  showBanner('The circle wakes', 'Find the patterns. Remember them.', 3.5);
+  showBanner('The universes are converging', 'Defeat the five guardians to hold yours together', 4);
 }
 
 function respawn() {
@@ -2281,7 +2281,7 @@ function startBattle(diff) {
   placeSigil('blue');
   placeSigil('red');
   state = 'play';
-  showBanner(hard ? 'Battle · Hard' : 'Battle · Easy', 'Most points in 5 minutes wins', 4.5);
+  showBanner(collisionLine(), `${hard ? 'Hard' : 'Easy'} · most points in 5 minutes preserves your universe`, 4.5);
 }
 
 // Who a unit fights: the nearest opponent it can see (walled sigils and bases are ignored).
@@ -2900,7 +2900,7 @@ function startVersusHost(send) {
   teams.redOrder = 'spread';
   teams.redOrders = { minion: 'attackTurrets', titan: 'attackTurrets' };
   teams.pendingRed = null; teams.buildElemRed = 'water';
-  showBanner('Duel!', 'Your friend is the red wizard', 4);
+  showBanner('Duel! Universes collide', 'Your friend leads the red universe', 4);
   net.send({ t: 'start' });
 }
 
@@ -3057,7 +3057,7 @@ function startVersusGuest(send) {
   guestUnits = new Map(); otherHero = null;
   net.send({ t: 'skin', v: mySkin });
   state = 'play';
-  showBanner('Duel!', 'You’re the wizard on the left', 4);
+  showBanner('Duel! Universes collide', 'Your universe is blue, on the left', 4);
 }
 
 function unpackHero(h, into) {
@@ -4170,6 +4170,12 @@ function drawBoss(b) {
 // player's side shows the look they picked).
 let mySkin = 'wizard';
 try { if (localStorage.getItem('pentagram-skin') === 'space') mySkin = 'space'; } catch (_) {}
+// The story: parallel universes are converging, and only one survives where
+// they meet. Your look is your universe.
+const UNIVERSE = { wizard: 'Wizard', space: 'Space' };
+function collisionLine() {
+  return skinOf('red') === skinOf('blue') ? 'A mirror universe collides with yours!' : `The ${UNIVERSE[skinOf('red')]} universe collides with yours!`;
+}
 function setSkin(v) {
   mySkin = v === 'space' ? 'space' : 'wizard';
   try { localStorage.setItem('pentagram-skin', mySkin); } catch (_) {}
@@ -5028,11 +5034,17 @@ function drawHUD() {
     const a = Math.min(1, banner.life, (banner.max - banner.life) * 4);
     ctx.globalAlpha = Math.max(0, a);
     ctx.textAlign = 'center';
-    ctx.font = 'bold 22px system-ui, sans-serif';
+    // shrink long lines so they always fit the screen
+    const fit = (txt, size, weight) => {
+      ctx.font = `${weight}${size}px system-ui, sans-serif`;
+      const w = ctx.measureText(txt).width, room = W - 24;
+      if (w > room) ctx.font = `${weight}${Math.max(10, Math.floor(size * room / w))}px system-ui, sans-serif`;
+    };
+    fit(banner.text, 22, 'bold ');
     ctx.fillStyle = '#000'; ctx.fillText(banner.text, W / 2 + 2, 172);
     ctx.fillStyle = '#ffe9a8'; ctx.fillText(banner.text, W / 2, 170);
     if (banner.sub) {
-      ctx.font = '15px system-ui, sans-serif';
+      fit(banner.sub, 15, '');
       ctx.fillStyle = '#ddd'; ctx.fillText(banner.sub, W / 2, 194);
     }
     ctx.globalAlpha = 1;
@@ -5485,7 +5497,10 @@ function drawTitle() {
   if (tw > W - 32) { fs *= (W - 32) / tw; ctx.font = `bold ${fs}px Georgia, serif`; } // fit narrow phones
   let y = Math.max(70, panelTop * 0.16);
   ctx.fillText('SPACE WIZARD', W / 2, y);
-  y += 34;
+  y += 30;
+  ctx.fillStyle = '#ffd24a';
+  ctx.font = 'italic 15px Georgia, serif';
+  y = wrapText('Parallel universes are converging. Fight to preserve yours.', W / 2, y, Math.min(W - 40, 520), 19) + 12;
   ctx.fillStyle = '#e6e0f0';
   ctx.font = '15px system-ui, sans-serif';
   const lines = [
@@ -5493,6 +5508,7 @@ function drawTitle() {
     'Tilt the phone (or hold and drag) to walk. Touch the field to shoot arrows. Attack spells load onto the FIRE button.',
     'Longer spells follow a pattern: what it’s made of, then its shape, then upgrades.',
   ];
+  if (H < 720) lines.pop(); // short screens: keep the buttons on screen
   for (const l of lines) y = wrapText(l, W / 2, y, maxW, 20) + 8;
   ctx.fillStyle = '#ffb08a';
   ctx.font = 'italic 15px Georgia, serif';
@@ -5641,6 +5657,8 @@ function drawBattleEnd(win) {
   const draw = teams && teams.result === 'draw';
   if (draw) ctx.fillStyle = '#ccc';
   ctx.fillText(draw ? 'DRAW' : win ? 'VICTORY' : 'DEFEAT', W / 2, y);
+  ctx.font = 'italic 15px Georgia, serif';
+  ctx.fillText(draw ? 'The two universes stay locked together…' : win ? 'Your universe is preserved!' : 'Your universe is being overwritten…', W / 2, y - 48);
   ctx.font = 'bold 20px system-ui, sans-serif';
   ctx.fillStyle = TEAM_COLOR.blue; ctx.fillText(`You ${teams.blue.score}`, W / 2 - 70, y + 38);
   ctx.fillStyle = TEAM_COLOR.red; ctx.fillText(`Red ${teams.red.score}`, W / 2 + 70, y + 38);
@@ -5666,6 +5684,8 @@ function drawWon() {
   ctx.font = `bold ${Math.min(40, W / 11)}px Georgia, serif`;
   const y = panelTop * 0.35;
   ctx.fillText('The five guardians have fallen', W / 2, y);
+  ctx.font = 'italic 15px Georgia, serif';
+  ctx.fillText('Your universe holds… for now.', W / 2, y - 40);
   ctx.fillStyle = '#ddd';
   ctx.font = '16px system-ui, sans-serif';
   const m = Math.floor(elapsed / 60), s = Math.floor(elapsed % 60).toString().padStart(2, '0');
