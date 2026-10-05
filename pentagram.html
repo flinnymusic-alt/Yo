@@ -4,6 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <title>Space Wizard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Libre+Caslon+Display&family=Libre+Caslon+Text:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
 <style>
   *, *::before, *::after { box-sizing: border-box; }
   html { background: #0b0a12; color-scheme: dark; }
@@ -17,6 +20,8 @@
 <canvas id="c"></canvas>
 <script>
 const canvas = document.getElementById('c');
+// The canvas only uses a web font once it's loaded, so ask for the Caslons up front.
+try { for (const f of ['16px "Libre Caslon Text"', 'bold 16px "Libre Caslon Text"', 'italic 16px "Libre Caslon Text"', '40px "Libre Caslon Display"']) document.fonts.load(f); } catch (_) {}
 const ctx = canvas.getContext('2d');
 const TAU = Math.PI * 2;
 
@@ -3567,15 +3572,15 @@ function lobbyEl() {
   const st = document.createElement('style');
   st.textContent = `
     #lobby { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(5,3,10,0.75); z-index: 10; touch-action: auto; }
-    #lobby .card { width: min(340px, calc(100vw - 32px)); background: #141024; border: 2px solid #4aa8ff; border-radius: 16px; padding: 20px; color: #e6e0f0; font: 15px system-ui, sans-serif; text-align: center; }
-    #lobby h2 { margin: 0 0 6px; font: bold 22px Georgia, serif; color: #c77dff; }
+    #lobby .card { width: min(340px, calc(100vw - 32px)); background: #141024; border: 2px solid #4aa8ff; border-radius: 16px; padding: 20px; color: #e6e0f0; font: 15px "Big Caslon", "Libre Caslon Text", Georgia, serif; text-align: center; }
+    #lobby h2 { margin: 0 0 6px; font: bold 22px "Big Caslon", "Libre Caslon Display", "Libre Caslon Text", Georgia, serif; color: #c77dff; }
     #lobby .sub { margin: 0 0 14px; color: #aaa; font-size: 13px; }
-    #lobby button { display: block; width: 100%; margin: 8px 0; padding: 12px; border-radius: 10px; border: 2px solid #4aa8ff; background: #1c2a44; color: #fff; font: bold 16px system-ui, sans-serif; }
+    #lobby button { display: block; width: 100%; margin: 8px 0; padding: 12px; border-radius: 10px; border: 2px solid #4aa8ff; background: #1c2a44; color: #fff; font: bold 16px "Big Caslon", "Libre Caslon Text", Georgia, serif; }
     #lobby button.ghost { border-color: #555; background: transparent; color: #bbb; font-weight: normal; }
-    #lobby input { width: 100%; box-sizing: border-box; padding: 12px; border-radius: 10px; border: 2px solid #555; background: #0b0a12; color: #fff; font: bold 22px system-ui, sans-serif; letter-spacing: 4px; text-align: center; text-transform: uppercase; }
+    #lobby input { width: 100%; box-sizing: border-box; padding: 12px; border-radius: 10px; border: 2px solid #555; background: #0b0a12; color: #fff; font: bold 22px "Big Caslon", "Libre Caslon Text", Georgia, serif; letter-spacing: 4px; text-align: center; text-transform: uppercase; }
     #lobby .or { margin: 6px 0; color: #777; font-size: 12px; }
     #lobby .status { min-height: 22px; margin: 10px 0 4px; color: #ffd24a; }
-    #lobby .code { font: bold 34px system-ui, sans-serif; letter-spacing: 6px; color: #fff; }`;
+    #lobby .code { font: bold 34px "Big Caslon", "Libre Caslon Text", Georgia, serif; letter-spacing: 6px; color: #fff; }`;
   document.head.appendChild(st);
   document.body.appendChild(el);
   // taps inside the lobby must reach its buttons and input, not the game
@@ -3743,21 +3748,21 @@ function drawOrders() {
   roundRect(b.x, b.y, b.w, b.h, 6);
   ctx.fillStyle = ordersOpen ? 'rgba(74,168,255,0.85)' : 'rgba(0,0,0,0.55)'; ctx.fill();
   ctx.strokeStyle = 'rgba(74,168,255,0.6)'; ctx.lineWidth = 1; ctx.stroke();
-  ctx.fillStyle = ordersOpen ? '#08111e' : '#cfe6ff'; ctx.font = '11px system-ui, sans-serif'; ctx.textAlign = 'center';
+  ctx.fillStyle = ordersOpen ? '#08111e' : '#cfe6ff'; ctx.font = '11px "Big Caslon", "Libre Caslon Text", Georgia, serif'; ctx.textAlign = 'center';
   ctx.fillText('⚙ Army orders', b.x + b.w / 2, b.y + 16);
   if (!ordersOpen) return;
   const P = ordersPanel();
   ctx.fillStyle = 'rgba(5,3,10,0.5)'; ctx.fillRect(0, 0, W, H);
   roundRect(P.x, P.y, P.w, P.h, 14); ctx.fillStyle = 'rgba(16,20,36,0.97)'; ctx.fill();
   ctx.strokeStyle = TEAM_COLOR.blue; ctx.lineWidth = 2; ctx.stroke();
-  ctx.fillStyle = '#fff'; ctx.font = 'bold 16px system-ui, sans-serif'; ctx.textAlign = 'left';
+  ctx.fillStyle = '#fff'; ctx.font = 'bold 16px "Big Caslon", "Libre Caslon Text", Georgia, serif'; ctx.textAlign = 'left';
   ctx.fillText('Army orders', P.x + 14, P.y + 26);
-  ctx.font = '11px system-ui, sans-serif'; ctx.fillStyle = '#aaa';
+  ctx.font = '11px "Big Caslon", "Libre Caslon Text", Georgia, serif'; ctx.fillStyle = '#aaa';
   ctx.fillText('Used when your army is spread out (not following you).', P.x + 14, P.y + 42);
-  ctx.textAlign = 'center'; ctx.font = 'bold 15px system-ui, sans-serif'; ctx.fillStyle = '#ddd';
+  ctx.textAlign = 'center'; ctx.font = 'bold 15px "Big Caslon", "Libre Caslon Text", Georgia, serif'; ctx.fillStyle = '#ddd';
   ctx.fillText('✕', P.close.x + 13, P.close.y + 18);
   for (const [gi, grp] of ['minion', 'titan'].entries()) {
-    ctx.textAlign = 'left'; ctx.font = 'bold 12px system-ui, sans-serif'; ctx.fillStyle = TEAM_COLOR.blue;
+    ctx.textAlign = 'left'; ctx.font = 'bold 12px "Big Caslon", "Libre Caslon Text", Georgia, serif'; ctx.fillStyle = TEAM_COLOR.blue;
     ctx.fillText(grp === 'minion' ? 'Minions' : 'Titans', P.x + 14, P.y + 60 + gi * 94);
   }
   for (const o of P.opts) {
@@ -3765,7 +3770,7 @@ function drawOrders() {
     roundRect(o.x, o.y, o.w, o.h, 8);
     ctx.fillStyle = on ? (protect ? 'rgba(125,255,74,0.25)' : 'rgba(255,90,90,0.25)') : 'rgba(255,255,255,0.05)'; ctx.fill();
     ctx.strokeStyle = on ? (protect ? '#7dff4a' : '#ff6a6a') : 'rgba(255,255,255,0.2)'; ctx.lineWidth = on ? 2 : 1; ctx.stroke();
-    ctx.fillStyle = on ? '#fff' : '#bbb'; ctx.font = (on ? 'bold ' : '') + '12px system-ui, sans-serif'; ctx.textAlign = 'center';
+    ctx.fillStyle = on ? '#fff' : '#bbb'; ctx.font = (on ? 'bold ' : '') + '12px "Big Caslon", "Libre Caslon Text", Georgia, serif'; ctx.textAlign = 'center';
     ctx.fillText((protect ? '🛡 ' : '⚔ ') + o.label, o.x + o.w / 2, o.y + 20);
   }
 }
@@ -3808,8 +3813,8 @@ function tapOverlay(x, y) {
     return true;
   }
   if (state === 'dead')  { if (overlayT > (mode === 'battle' ? 5 : 0.8)) respawn(); return true; }
-  if (state === 'won')   { if (overlayT > 1.0) { leaveDuel(); state = mode === 'battle' ? 'title' : 'play'; } return true; }
-  if (state === 'lost')  { if (overlayT > 1.0) { leaveDuel(); state = 'title'; } return true; }
+  if (state === 'won')   { if (overlayT > 1.0) { leaveDuel(); state = mode === 'battle' ? 'title' : 'play'; menuPage = 'main'; } return true; }
+  if (state === 'lost')  { if (overlayT > 1.0) { leaveDuel(); state = 'title'; menuPage = 'main'; } return true; }
   if (state === 'reveal') { if (reveal.t > 1.2) closeReveal(); return true; }
   return false;
 }
@@ -4124,7 +4129,7 @@ function drawCastles(camX, camY) {
     for (let k = -c.h; k <= c.h; k += 40) { ctx.moveTo(c.x + k, c.y - c.h); ctx.lineTo(c.x + k, c.y + c.h); ctx.moveTo(c.x - c.h, c.y + k); ctx.lineTo(c.x + c.h, c.y + k); }
     ctx.stroke();
     ctx.fillStyle = '#ddd';
-    ctx.font = 'bold 12px Georgia, serif';
+    ctx.font = 'bold 12px "Big Caslon", "Libre Caslon Display", "Libre Caslon Text", Georgia, serif';
     ctx.textAlign = 'center';
     ctx.fillText(c.name, c.x, c.y - c.h - 14);
   }
@@ -4248,7 +4253,7 @@ function drawChest(c) {
     ctx.fillRect(x - 6, y - 2, 12, 10);
   } else if (!c.opened) {
     ctx.fillStyle = '#ffd24a';
-    ctx.font = 'bold 12px system-ui, sans-serif';
+    ctx.font = 'bold 12px "Big Caslon", "Libre Caslon Text", Georgia, serif';
     ctx.textAlign = 'center';
     ctx.fillText('open me', x, y - 30);
   }
@@ -4265,7 +4270,7 @@ function drawStatus(f, r) {
     circle(Math.cos(a) * r * 0.8, -r - 6 + Math.sin(a) * 3, 2.5, '#ffe14a');
   }
   ctx.textAlign = 'center';
-  ctx.font = 'bold 14px system-ui, sans-serif';
+  ctx.font = 'bold 14px "Big Caslon", "Libre Caslon Text", Georgia, serif';
   if (f.fear > 0) { ctx.fillStyle = '#c9a0ff'; ctx.fillText('!', 0, -r - 6); }
   if (f.confuse > 0) { ctx.fillStyle = '#ff8ad8'; ctx.fillText('?', Math.sin(t * 5) * 6, -r - 6); }
 }
@@ -4411,7 +4416,7 @@ function drawBoss(b) {
     ctx.fillStyle = '#e33'; ctx.fillRect(b.x - w / 2, b.y - r - 34, w * Math.max(0, b.hp / b.maxHp), 7);
   }
   ctx.fillStyle = '#fff';
-  ctx.font = 'bold 13px system-ui, sans-serif';
+  ctx.font = 'bold 13px "Big Caslon", "Libre Caslon Text", Georgia, serif';
   ctx.textAlign = 'center';
   ctx.fillText(d.name, b.x, b.y - r - 40);
 }
@@ -4535,7 +4540,7 @@ function drawSpaceBody(u, c, ec, r, t) {
     // Commander: an astronaut with a team stripe
     circle(3, 12, 12, 'rgba(0,0,0,0.3)');
     drawAstronaut(0, 0, 0.9, c, ec, { x: f, y: 0 }, ec);
-    if (u.retreat) { ctx.fillStyle = '#8f8'; ctx.font = 'bold 11px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.fillText('+', 0, -36); }
+    if (u.retreat) { ctx.fillStyle = '#8f8'; ctx.font = 'bold 11px "Big Caslon", "Libre Caslon Text", Georgia, serif'; ctx.textAlign = 'center'; ctx.fillText('+', 0, -36); }
   } else if (u.kind === 'titan') {
     // Mega mech: a walking war machine with arm cannons that slam down
     const ph = u.walk * 0.09, step = Math.sin(ph);
@@ -4669,7 +4674,7 @@ function drawUnit(u) {
     ctx.strokeStyle = '#8a5a2a'; ctx.lineWidth = 3;
     ctx.beginPath(); ctx.moveTo(-13, 14); ctx.lineTo(-15, -16); ctx.stroke();
     circle(-15, -18, 4.5, ec, c, 1.5); // staff orb in the wizard's element
-    if (u.retreat) { ctx.fillStyle = '#8f8'; ctx.font = 'bold 11px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.fillText('+', 0, -36); }
+    if (u.retreat) { ctx.fillStyle = '#8f8'; ctx.font = 'bold 11px "Big Caslon", "Libre Caslon Text", Georgia, serif'; ctx.textAlign = 'center'; ctx.fillText('+', 0, -36); }
   } else if (u.kind === 'titan') {
     // a lumbering giant: alternating legs, swinging arms, a heaving body,
     // and an overhead two-fisted slam when it attacks
@@ -4747,7 +4752,7 @@ function drawUnit(u) {
       // the protective wall, with its countdown
       ctx.strokeStyle = `rgba(220,230,255,${0.5 + Math.sin(t * 6) * 0.2})`; ctx.lineWidth = 6;
       ctx.beginPath(); ctx.arc(0, 0, r + 26, 0, TAU); ctx.stroke();
-      ctx.fillStyle = '#fff'; ctx.font = 'bold 12px system-ui, sans-serif'; ctx.textAlign = 'center';
+      ctx.fillStyle = '#fff'; ctx.font = 'bold 12px "Big Caslon", "Libre Caslon Text", Georgia, serif'; ctx.textAlign = 'center';
       ctx.fillText(Math.ceil(u.wall) + 's', 0, -r - 34);
     }
   }
@@ -4853,6 +4858,21 @@ function drawAlly(a) {
   ctx.globalAlpha = 1;
 }
 
+function drawWizardFigure(x, y, fx, robe, hat, orb, staffLift = 0) {
+  // robe
+  ctx.beginPath(); ctx.moveTo(x - 15, y + 14); ctx.lineTo(x, y - 8); ctx.lineTo(x + 15, y + 14); ctx.closePath();
+  ctx.fillStyle = robe || '#4b2d7a'; ctx.fill();
+  circle(x, y - 6, 8, '#f1d2b0');
+  // hat
+  ctx.beginPath(); ctx.moveTo(x - 13, y - 10); ctx.lineTo(x + fx * 4, y - 32); ctx.lineTo(x + 13, y - 10); ctx.closePath();
+  ctx.fillStyle = hat || '#6a3fb0'; ctx.fill();
+  ctx.fillStyle = '#ffd24a'; ctx.fillRect(x - 13, y - 12, 26, 3);
+  // staff
+  ctx.strokeStyle = '#8a5a2a'; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.moveTo(x + 14, y + 14 - staffLift); ctx.lineTo(x + 16, y - 18 - staffLift); ctx.stroke();
+  circle(x + 16, y - 20 - staffLift, 4, orb);
+}
+
 function drawPlayer(p = player) {
   const { x, y } = p;
   if (p.onBoat) drawBoatAt(x, y + 6, Math.atan2(p.face.y, p.face.x));
@@ -4868,20 +4888,7 @@ function drawPlayer(p = player) {
   if (heroSkin(p) === 'space') {
     const accent = mode === 'battle' ? TEAM_COLOR[p.isRival || p === otherHero ? 'red' : 'blue'] : '#c77dff';
     drawAstronaut(x, y, 1, accent, accent, p.face, orb);
-  } else {
-  // robe
-  ctx.beginPath(); ctx.moveTo(x - 15, y + 14); ctx.lineTo(x, y - 8); ctx.lineTo(x + 15, y + 14); ctx.closePath();
-  ctx.fillStyle = p.robe || '#4b2d7a'; ctx.fill();
-  circle(x, y - 6, 8, '#f1d2b0');
-  // hat
-  ctx.beginPath(); ctx.moveTo(x - 13, y - 10); ctx.lineTo(x + p.face.x * 4, y - 32); ctx.lineTo(x + 13, y - 10); ctx.closePath();
-  ctx.fillStyle = p.hat || '#6a3fb0'; ctx.fill();
-  ctx.fillStyle = '#ffd24a'; ctx.fillRect(x - 13, y - 12, 26, 3);
-  // staff
-  ctx.strokeStyle = '#8a5a2a'; ctx.lineWidth = 3;
-  ctx.beginPath(); ctx.moveTo(x + 14, y + 14); ctx.lineTo(x + 16, y - 18); ctx.stroke();
-  circle(x + 16, y - 20, 4, orb);
-  }
+  } else drawWizardFigure(x, y, p.face.x, p.robe, p.hat, orb);
 
   if (p.skin > 0) circle(x, y, 24, null, 'rgba(181,131,74,0.9)', 4);
   if (p.omni > 0) {
@@ -5092,7 +5099,7 @@ function drawSharedFx() {
   ctx.textAlign = 'center';
   for (const t of floaters) {
     ctx.globalAlpha = Math.min(1, t.life / t.max * 1.5);
-    ctx.font = `bold ${t.size}px system-ui, sans-serif`;
+    ctx.font = `bold ${t.size}px "Big Caslon", "Libre Caslon Text", Georgia, serif`;
     ctx.fillStyle = '#000';
     ctx.fillText(t.text, t.x + 1, t.y + 1);
     ctx.fillStyle = t.color;
@@ -5201,7 +5208,7 @@ function bar(x, y, w, h, frac, color, label) {
   roundRect(x, y, w, h, h / 2); ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fill();
   if (frac > 0) { roundRect(x, y, Math.max(h, w * frac), h, h / 2); ctx.fillStyle = color; ctx.fill(); }
   ctx.fillStyle = '#fff';
-  ctx.font = 'bold 11px system-ui, sans-serif';
+  ctx.font = 'bold 11px "Big Caslon", "Libre Caslon Text", Georgia, serif';
   ctx.textAlign = 'left';
   ctx.fillText(label, x + 8, y + h - 4);
 }
@@ -5211,11 +5218,11 @@ function drawHUD() {
   bar(14, 14, w, 16, player.hp / player.maxHp, '#d33', `HP ${Math.ceil(player.hp)}/${player.maxHp}`);
   bar(14, 36, w, 16, player.mana / player.maxMana, '#3a7bff', `Mana ${Math.floor(player.mana)}/${player.maxMana}${mode === 'battle' && cellOwner(player.x, player.y) === 2 ? '  · slow in enemy ground' : ''}`);
 
-  ctx.font = '12px system-ui, sans-serif';
+  ctx.font = '12px "Big Caslon", "Libre Caslon Text", Georgia, serif';
   ctx.fillStyle = '#ccc';
   ctx.textAlign = 'left';
   if (mode === 'battle' && teams) {
-    ctx.font = 'bold 16px system-ui, sans-serif';
+    ctx.font = 'bold 16px "Big Caslon", "Libre Caslon Text", Georgia, serif';
     const g = groundLeader();
     const bt = `You ${teams.blue.score}${g === 'blue' ? ` (+${GROUND_BONUS})` : ''}`, rt = `Red ${teams.red.score}${g === 'red' ? ` (+${GROUND_BONUS})` : ''}`;
     ctx.fillStyle = TEAM_COLOR.blue; ctx.fillText(bt, 14, 72);
@@ -5224,11 +5231,11 @@ function drawHUD() {
     ctx.fillStyle = TEAM_COLOR.red; ctx.fillText(rt, 34 + bw, 72);
   } else {
     ctx.fillStyle = '#ffd24a';
-    ctx.font = 'bold 16px system-ui, sans-serif';
+    ctx.font = 'bold 16px "Big Caslon", "Libre Caslon Text", Georgia, serif';
     ctx.fillText(`Score ${score.toLocaleString()}`, 14, 72);
   }
   ctx.fillStyle = '#ccc';
-  ctx.font = '12px system-ui, sans-serif';
+  ctx.font = '12px "Big Caslon", "Libre Caslon Text", Georgia, serif';
   if (mode === 'battle' && teams) drawMatchClock(14, 102);
   else ctx.fillText(`Spells ${discovered.size}/${SPELL_COUNT}   Guardians ${bossesDown}/${BOSSES.length}`, 14, 90);
   if (mode === 'battle') drawBattleStatus(14, 124); else drawHunt(14, 108);
@@ -5262,7 +5269,7 @@ function drawHUD() {
     ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fill();
     ctx.strokeStyle = 'rgba(255,255,255,0.2)'; ctx.lineWidth = 1; ctx.stroke();
     ctx.fillStyle = sfx.on ? '#ddd' : '#888';
-    ctx.font = '11px system-ui, sans-serif';
+    ctx.font = '11px "Big Caslon", "Libre Caslon Text", Georgia, serif';
     ctx.textAlign = 'center';
     ctx.fillText(sfx.on ? '♪ Sound on' : '♪ Sound off', r.x + r.w / 2, r.y + 16);
   }
@@ -5275,7 +5282,7 @@ function drawHUD() {
     ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fill();
     ctx.strokeStyle = ok ? 'rgba(125,255,74,0.6)' : 'rgba(255,255,255,0.2)'; ctx.lineWidth = 1; ctx.stroke();
     ctx.fillStyle = ok ? '#bfffa0' : '#aaa';
-    ctx.font = '11px system-ui, sans-serif';
+    ctx.font = '11px "Big Caslon", "Libre Caslon Text", Georgia, serif';
     ctx.textAlign = 'center';
     ctx.fillText(ok ? 'Tilt on · level' : tilt.denied ? 'Tilt blocked' : waiting ? 'Tilt…' : 'Tilt off · retry', r.x + r.w / 2, r.y + 16);
     if (tilt.listening && !ok && !waiting && !tilt.warned) {
@@ -5290,9 +5297,9 @@ function drawHUD() {
     ctx.textAlign = 'center';
     // shrink long lines so they always fit the screen
     const fit = (txt, size, weight) => {
-      ctx.font = `${weight}${size}px system-ui, sans-serif`;
+      ctx.font = `${weight}${size}px "Big Caslon", "Libre Caslon Text", Georgia, serif`;
       const w = ctx.measureText(txt).width, room = W - 24;
-      if (w > room) ctx.font = `${weight}${Math.max(10, Math.floor(size * room / w))}px system-ui, sans-serif`;
+      if (w > room) ctx.font = `${weight}${Math.max(10, Math.floor(size * room / w))}px "Big Caslon", "Libre Caslon Text", Georgia, serif`;
     };
     fit(banner.text, 22, 'bold ');
     ctx.fillStyle = '#000'; ctx.fillText(banner.text, W / 2 + 2, 172);
@@ -5321,12 +5328,12 @@ function drawFireButton() {
   }
   ctx.textAlign = 'center';
   ctx.fillStyle = '#111';
-  ctx.font = 'bold 13px system-ui, sans-serif';
+  ctx.font = 'bold 13px "Big Caslon", "Libre Caslon Text", Georgia, serif';
   ctx.fillText(ch ? '…' : 'FIRE', b.x, b.y + 1);
-  ctx.font = 'bold 11px system-ui, sans-serif';
+  ctx.font = 'bold 11px "Big Caslon", "Libre Caslon Text", Georgia, serif';
   ctx.fillText(L ? `×${L.left}` : '', b.x, b.y + 14);
   ctx.fillStyle = col;
-  ctx.font = '11px system-ui, sans-serif';
+  ctx.font = '11px "Big Caslon", "Libre Caslon Text", Georgia, serif';
   ctx.textAlign = 'right';
   ctx.fillText(SPELLS[key].name, W - 10, b.y - b.r - 12);
 }
@@ -5337,7 +5344,7 @@ function clockText(t) { return `${Math.floor(t / 60)}:${Math.floor(t % 60).toStr
 function drawMatchClock(x, y) {
   const t = teams.time, late = t <= 30, end = t <= 10;
   const txt = clockText(Math.ceil(t));
-  ctx.font = 'bold 26px system-ui, sans-serif';
+  ctx.font = 'bold 26px "Big Caslon", "Libre Caslon Text", Georgia, serif';
   ctx.textAlign = 'left';
   const tw = ctx.measureText(txt).width;
   roundRect(x - 6, y - 25, tw + 12, 32, 8);
@@ -5348,12 +5355,12 @@ function drawMatchClock(x, y) {
   ctx.fillStyle = end ? '#ff6a6a' : late ? '#ffd24a' : '#fff';
   ctx.fillText(txt, x, y);
   ctx.globalAlpha = 1;
-  ctx.font = '11px system-ui, sans-serif'; ctx.fillStyle = '#aaa';
+  ctx.font = '11px "Big Caslon", "Libre Caslon Text", Georgia, serif'; ctx.fillStyle = '#aaa';
   ctx.fillText(`left · most ground at the end +${GROUND_BONUS}`, x + tw + 12, y - 4);
   // the last ten seconds count down in the middle of the field
   if (end && state === 'play') {
     ctx.textAlign = 'center';
-    ctx.font = `bold ${Math.round(64 + 20 * (1 - (t % 1)))}px system-ui, sans-serif`;
+    ctx.font = `bold ${Math.round(64 + 20 * (1 - (t % 1)))}px "Big Caslon", "Libre Caslon Text", Georgia, serif`;
     ctx.globalAlpha = 0.55 + 0.4 * (t % 1);
     ctx.lineWidth = 6; ctx.strokeStyle = 'rgba(0,0,0,0.7)';
     ctx.strokeText(Math.ceil(t), W / 2, panelTop * 0.42);
@@ -5369,7 +5376,7 @@ function drawBattleStatus(x, y) {
   ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(x, y - 9, w, 9);
   ctx.fillStyle = TEAM_COLOR.blue; ctx.fillRect(x, y - 9, w * b, 9);
   ctx.fillStyle = TEAM_COLOR.red; ctx.fillRect(x + w * (1 - r), y - 9, w * r, 9);
-  ctx.font = '10px system-ui, sans-serif';
+  ctx.font = '10px "Big Caslon", "Libre Caslon Text", Georgia, serif';
   ctx.textAlign = 'left';
   ctx.fillStyle = '#ccc';
   ctx.fillText(`Ground ${Math.round(b * 100)}% / ${Math.round(r * 100)}%`, x, y + 12);
@@ -5439,7 +5446,7 @@ function drawMixToggle() {
   ctx.fillStyle = mixOpen ? 'rgba(74,168,255,0.85)' : 'rgba(10,14,28,0.75)'; ctx.fill();
   ctx.strokeStyle = TEAM_COLOR.blue; ctx.lineWidth = 1.5; ctx.stroke();
   ctx.fillStyle = mixOpen ? '#08111e' : '#cfe6ff';
-  ctx.font = 'bold 11px system-ui, sans-serif'; ctx.textAlign = 'center';
+  ctx.font = 'bold 11px "Big Caslon", "Libre Caslon Text", Georgia, serif'; ctx.textAlign = 'center';
   ctx.fillText(mixOpen ? '▲ Mix · hide' : '▲ Minion mix', r.x + r.w / 2, r.y + 15);
 }
 
@@ -5467,7 +5474,7 @@ function drawMixTri() {
     const e = UNITS[k].elem, q = P[k], ox = q.x - T.cx, oy = q.y - T.cy, ol = Math.hypot(ox, oy);
     circle(q.x, q.y, 8, 'rgba(10,14,28,0.95)', TYPE_COLOR[e], 2);
     drawGlyph(ELEM_GLYPH[e], q.x, q.y, 11, TYPE_COLOR[e]);
-    ctx.fillStyle = '#ddd'; ctx.font = 'bold 10px system-ui, sans-serif'; ctx.textAlign = 'center';
+    ctx.fillStyle = '#ddd'; ctx.font = 'bold 10px "Big Caslon", "Libre Caslon Text", Georgia, serif'; ctx.textAlign = 'center';
     ctx.fillText(`${UNITS[k].name} ${counts[k] || 0}`, q.x + ox / ol * 22, q.y + oy / ol * 20 + 3);
   }
   const m = mixPoint();
@@ -5495,9 +5502,9 @@ function drawOrderButton() {
   circle(b.x, b.y, b.r, follow ? 'rgba(74,168,255,0.85)' : 'rgba(16,22,40,0.9)', TEAM_COLOR.blue, 2.5);
   ctx.textAlign = 'center';
   ctx.fillStyle = follow ? '#08111e' : '#cfe6ff';
-  ctx.font = 'bold 10px system-ui, sans-serif';
+  ctx.font = 'bold 10px "Big Caslon", "Libre Caslon Text", Georgia, serif';
   ctx.fillText(follow ? 'FOLLOW' : 'SPREAD', b.x, b.y - 1);
-  ctx.font = '9px system-ui, sans-serif';
+  ctx.font = '9px "Big Caslon", "Libre Caslon Text", Georgia, serif';
   ctx.fillText(follow ? 'tap: spread' : 'tap: follow', b.x, b.y + 11);
 }
 
@@ -5518,11 +5525,11 @@ function drawBuildButtons() {
     ctx.fillStyle = 'rgba(10,14,28,0.9)'; ctx.fill();
     roundRect(bx, by, Math.max(16, bw * frac), 24, 8);
     ctx.fillStyle = hurry ? 'rgba(255,74,90,0.75)' : 'rgba(255,210,74,0.55)'; ctx.fill();
-    ctx.textAlign = 'center'; ctx.font = 'bold 15px system-ui, sans-serif'; ctx.fillStyle = '#fff';
+    ctx.textAlign = 'center'; ctx.font = 'bold 15px "Big Caslon", "Libre Caslon Text", Georgia, serif'; ctx.fillStyle = '#fff';
     ctx.fillText(`Choose: turret or titan · ${Math.ceil(left)}s`, bx + bw / 2, by + 17);
   }
   const e = teams.buildElem, ch = buildChips()[0], weak = elemWeakTo(e).map(x => ELEM_NAME[x]).join(' & ');
-  ctx.textAlign = 'center'; ctx.font = '11px system-ui, sans-serif'; ctx.fillStyle = '#ddd';
+  ctx.textAlign = 'center'; ctx.font = '11px "Big Caslon", "Libre Caslon Text", Georgia, serif'; ctx.fillStyle = '#ddd';
   ctx.fillText(`${ELEM_NAME[e]}: strong vs ${ELEM_NAME[elemBeats(e)]} · weak vs ${weak}`, W / 2, ch.y + ch.r + 15);
   for (const bb of buildButtons()) {
     const turret = bb.key === 'turret', live = !turret || ok;
@@ -5531,9 +5538,9 @@ function drawBuildButtons() {
     ctx.strokeStyle = live ? TEAM_COLOR.blue : '#555'; ctx.lineWidth = 2; ctx.stroke();
     ctx.textAlign = 'center';
     ctx.fillStyle = live ? '#fff' : '#888';
-    ctx.font = 'bold 15px system-ui, sans-serif';
+    ctx.font = 'bold 15px "Big Caslon", "Libre Caslon Text", Georgia, serif';
     ctx.fillText(`${turret ? 'Build' : 'Send'} ${ELEM_NAME[teams.buildElem]} ${turret ? 'Turret' : 'Titan'}`, bb.x + bb.w / 2, bb.y + 20);
-    ctx.font = '10px system-ui, sans-serif';
+    ctx.font = '10px "Big Caslon", "Libre Caslon Text", Georgia, serif';
     ctx.fillStyle = '#aaa';
     ctx.fillText(turret ? (ok ? 'right here' : 'not here: move to open ground') : 'from your base', bb.x + bb.w / 2, bb.y + 36);
   }
@@ -5541,7 +5548,7 @@ function drawBuildButtons() {
 
 // one small creature dot per kind, filling up toward the next 10
 function drawHunt(x, y) {
-  ctx.font = '10px system-ui, sans-serif';
+  ctx.font = '10px "Big Caslon", "Libre Caslon Text", Georgia, serif';
   ctx.textAlign = 'left';
   let cx = x;
   for (const k of Object.keys(FOES)) {
@@ -5655,7 +5662,7 @@ function drawSlots(list, highlight) {
   if (list.length >= 2) {
     const key = list.join(''), pot = potencyOf(key), lx = x0 + total + 8;
     ctx.textAlign = 'left';
-    ctx.font = 'bold 11px system-ui, sans-serif';
+    ctx.font = 'bold 11px "Big Caslon", "Libre Caslon Text", Georgia, serif';
     ctx.fillStyle = '#aaa';
     ctx.fillText(`cx ${complexityOf(key).toFixed(1)}`, lx, PENT.slotY - 2);
     ctx.fillStyle = pot > 1 ? '#ffd24a' : '#777';
@@ -5713,13 +5720,13 @@ function drawPentagram(ghost) {
     if (count) {
       circle(p.x + s / 2, p.y - s / 2, 9, e.color);
       ctx.fillStyle = '#111';
-      ctx.font = 'bold 11px system-ui, sans-serif';
+      ctx.font = 'bold 11px "Big Caslon", "Libre Caslon Text", Georgia, serif';
       ctx.textAlign = 'center';
       ctx.fillText(count, p.x + s / 2, p.y - s / 2 + 4);
     }
     if (showKeys) {
       ctx.fillStyle = 'rgba(255,255,255,0.45)';
-      ctx.font = '10px system-ui, sans-serif';
+      ctx.font = '10px "Big Caslon", "Libre Caslon Text", Georgia, serif';
       ctx.textAlign = 'center';
       ctx.fillText(`${e.name} [${e.key}]`, p.x, p.y + s / 2 + 12);
     }
@@ -5730,7 +5737,7 @@ function drawPentagram(ghost) {
   if (castMsg && !ghost) {
     ctx.globalAlpha = Math.min(1, castMsg.life * 1.5);
     ctx.textAlign = 'center';
-    ctx.font = 'bold 18px system-ui, sans-serif';
+    ctx.font = 'bold 18px "Big Caslon", "Libre Caslon Text", Georgia, serif';
     ctx.fillStyle = castMsg.color;
     ctx.fillText(castMsg.text, cx, PENT.msgY);
     ctx.globalAlpha = 1;
@@ -5740,92 +5747,149 @@ function drawPentagram(ghost) {
 // ── overlays ─────────────────────────────────────────────────────────────────
 function dim(a) { ctx.fillStyle = `rgba(5,3,10,${a})`; ctx.fillRect(0, 0, W, H); }
 
-function drawTitle() {
-  dim(0.72);
-  const maxW = Math.min(W - 40, 520);
-  ctx.textAlign = 'center';
-  ctx.fillStyle = '#c77dff';
-  let fs = Math.min(52, W / 8);
-  ctx.font = `bold ${fs}px Georgia, serif`;
-  const tw = ctx.measureText('SPACE WIZARD').width;
-  if (tw > W - 32) { fs *= (W - 32) / tw; ctx.font = `bold ${fs}px Georgia, serif`; } // fit narrow phones
-  let y = Math.max(70, panelTop * 0.16);
-  ctx.fillText('SPACE WIZARD', W / 2, y);
-  y += 30;
-  ctx.fillStyle = '#ffd24a';
-  ctx.font = 'italic 15px Georgia, serif';
-  y = wrapText('Parallel universes are converging. Fight to preserve yours.', W / 2, y, Math.min(W - 40, 520), 19) + 12;
-  ctx.fillStyle = '#e6e0f0';
-  ctx.font = '15px system-ui, sans-serif';
-  const lines = [
-    'Slide across the five elements to weave a spell (up to seven). Release to cast. Most patterns fizzle: find the ones that work, and remember them.',
-    'Tilt the phone (or hold and drag) to walk. Touch the field to shoot arrows. Attack spells load onto the FIRE button.',
-    'Longer spells follow a pattern: what it’s made of, then its shape, then upgrades.',
-  ];
-  if (H < 660) lines.pop(); // short screens: keep the buttons on screen
-  for (const l of lines) y = wrapText(l, W / 2, y, maxW, 20) + 8;
-  ctx.fillStyle = '#ffb08a';
-  ctx.font = 'italic 15px Georgia, serif';
-  y = wrapText('A whisper: “Fire, then fire again…”', W / 2, y + 2, maxW, 20) + 6;
+// ── menus ──
+// Main: the title, your hero showing off on the left with Wizard / Space on
+// the right, then Adventure and Battle. Battle opens its own page: Easy,
+// Hard, Very Hard, Battle a Friend, and Back.
+const SERIF = '"Big Caslon", "Libre Caslon Text", Georgia, serif';
+const SERIF_BIG = '"Big Caslon", "Libre Caslon Display", "Libre Caslon Text", Georgia, serif';
+let menuPage = 'main';
+let menuFx = [], menuT = 0, menuCast = 0;
+function goMenu(page) { menuPage = page; SFX.buff(); }
 
-  // your look
-  const bw = Math.min(300, W - 48), bh = 50, gap = 10, bx = W / 2 - bw / 2;
-  const looks = [{ v: 'wizard', label: 'Wizard' }, { v: 'space', label: 'Space' }];
-  const lw = (bw - gap) / 2, lh = 54;
-  const lookButtons = looks.map((o, i) => ({ title: o.label, x: bx + i * (lw + gap), y, w: lw, h: lh, look: o.v, go: () => setSkin(o.v) }));
-  for (const b of lookButtons) {
-    const on = mySkin === b.look;
-    roundRect(b.x, b.y, b.w, b.h, 12);
-    ctx.fillStyle = on ? 'rgba(199,125,255,0.22)' : 'rgba(20,14,34,0.92)'; ctx.fill();
-    ctx.strokeStyle = on ? '#ffd24a' : '#555'; ctx.lineWidth = on ? 3 : 1.5; ctx.stroke();
-    // a little preview of the hero
-    const px = b.x + 30, py = b.y + b.h / 2 + 6;
-    if (b.look === 'space') drawAstronaut(px, py, 0.85, '#c77dff', '#4aa8ff', { x: 1, y: 0 }, '#c77dff');
-    else {
-      ctx.beginPath(); ctx.moveTo(px - 12, py + 12); ctx.lineTo(px, py - 6); ctx.lineTo(px + 12, py + 12); ctx.closePath(); ctx.fillStyle = '#4b2d7a'; ctx.fill();
-      circle(px, py - 5, 6.5, '#f1d2b0');
-      ctx.beginPath(); ctx.moveTo(px - 11, py - 8); ctx.lineTo(px + 3, py - 26); ctx.lineTo(px + 11, py - 8); ctx.closePath(); ctx.fillStyle = '#6a3fb0'; ctx.fill();
-    }
-    ctx.textAlign = 'left';
-    ctx.fillStyle = on ? '#fff' : '#aaa';
-    ctx.font = 'bold 16px system-ui, sans-serif';
-    ctx.fillText(b.title, b.x + 56, b.y + 24);
-    ctx.font = '11px system-ui, sans-serif'; ctx.fillStyle = on ? '#ffd24a' : '#777';
-    ctx.fillText(on ? 'chosen' : 'tap to pick', b.x + 56, b.y + 41);
-  }
+// a menu button: big Caslon title with a line underneath
+function menuButton(b) {
+  const sel = b.selected;
+  roundRect(b.x, b.y, b.w, b.h, 12);
+  ctx.fillStyle = sel ? 'rgba(199,125,255,0.22)' : 'rgba(20,14,34,0.92)'; ctx.fill();
+  ctx.strokeStyle = sel ? '#ffd24a' : b.color; ctx.lineWidth = sel ? 3 : 2; ctx.stroke();
   ctx.textAlign = 'center';
-  y += lh + 14;
-
-  // mode choices
-  // rows: Adventure · Battle (three levels side by side) · vs Friend
-  const bw3 = (bw - gap * 2) / 3, row = i => y + i * (bh + gap);
-  const opts = [
-    { title: 'Adventure', sub: 'Explore, hunt the five guardians, find the scrolls', color: '#c77dff', go: startGame, x: bx, y: row(0), w: bw },
-    { title: 'Easy', sub: 'even sides', color: TEAM_COLOR.blue, go: () => startBattle('easy'), x: bx, y: row(1), w: bw3 },
-    { title: 'Hard', sub: 'outnumbered', color: TEAM_COLOR.red, go: () => startBattle('hard'), x: bx + bw3 + gap, y: row(1), w: bw3 },
-    { title: 'Battle · vs Friend', sub: 'Play a friend online with a room code', color: '#ffd166', go: openLobby, x: bx, y: row(2), w: bw },
-    { title: 'Very Hard', sub: 'smart army', color: '#ff2a8a', go: () => startBattle('vhard'), x: bx + (bw3 + gap) * 2, y: row(1), w: bw3 },
-  ];
-  titleButtons = opts.map(o => ({ ...o, h: bh }));
-  for (const b of titleButtons) {
-    roundRect(b.x, b.y, b.w, b.h, 10);
-    ctx.fillStyle = 'rgba(20,14,34,0.92)'; ctx.fill();
-    ctx.strokeStyle = b.color; ctx.lineWidth = 2; ctx.stroke();
-    ctx.fillStyle = b.color;
-    ctx.font = `bold ${b.w < bw ? 15 : 17}px system-ui, sans-serif`;
-    ctx.fillText(b.title, b.x + b.w / 2, b.y + 22);
+  ctx.fillStyle = b.color;
+  const big = b.size || 22;
+  ctx.font = `${big}px ${SERIF_BIG}`;
+  ctx.fillText(b.title, b.x + b.w / 2, b.y + (b.sub ? b.h / 2 + big * 0.12 : b.h / 2 + big * 0.36));
+  if (b.sub) {
     ctx.fillStyle = '#bbb';
-    ctx.font = `${b.w < bw ? 10 : 12}px system-ui, sans-serif`;
-    ctx.fillText(b.sub, b.x + b.w / 2, b.y + 40);
+    ctx.font = `italic 12px ${SERIF}`;
+    ctx.fillText(b.sub, b.x + b.w / 2, b.y + b.h / 2 + big * 0.12 + 18);
   }
-  titleButtons.push(...lookButtons); // after the modes, so the first button is still Adventure
-  y += 3 * (bh + gap) + 14;
-  if (best > 0) {
-    ctx.fillStyle = '#ccc';
-    ctx.font = '14px system-ui, sans-serif';
-    ctx.fillText(`Best score ${best.toLocaleString()}`, W / 2, y);
+}
+
+// your hero, big, doing a little routine: the wizard twirls sparks from the
+// staff, the spacefarer floats and fires the blaster; tap it to make it cast
+function drawMenuHero(cx, cy, s, dt) {
+  menuT += dt;
+  menuCast = Math.max(0, menuCast - dt);
+  const t = menuT, every = 2.6, phase = (t % every) / every;
+  const casting = menuCast > 0 || phase > 0.78;
+  const elemCol = TYPE_COLOR[ELEM_CYCLE[Math.floor(t / every) % 5]];
+  // a soft glow behind
+  const g = ctx.createRadialGradient(cx, cy, 4, cx, cy, s * 34);
+  g.addColorStop(0, mySkin === 'space' ? 'rgba(74,168,255,0.35)' : 'rgba(199,125,255,0.35)'); g.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, s * 34, 0, TAU); ctx.fill();
+  ctx.save();
+  if (mySkin === 'space') {
+    // zero-g: drift, tilt, jetpack puffs, and a blaster shot now and then
+    const bob = Math.sin(t * 1.6) * 5;
+    ctx.translate(cx, cy + bob); ctx.rotate(Math.sin(t * 0.9) * 0.08); ctx.scale(s, s);
+    if (Math.random() < 0.5) menuFx.push({ x: cx - 12 * s, y: cy + bob + 4 * s, vx: rnd(-30, -10), vy: rnd(20, 60), r: rnd(2, 4), life: 0.7, color: 'rgba(200,220,255,0.8)' });
+    drawAstronaut(0, 0, 1, '#c77dff', '#4aa8ff', { x: 1, y: 0 }, casting ? '#fff' : elemCol);
+    if (casting && Math.random() < 0.6) menuFx.push({ x: cx + 22 * s, y: cy + bob, vx: rnd(380, 520), vy: rnd(-20, 20), r: 3, life: 0.5, color: elemCol, bolt: true });
+  } else {
+    // the wizard bobs, raises the staff, and showers sparks of each element in turn
+    const bob = Math.sin(t * 2) * 3, lift = casting ? 6 : 0;
+    ctx.translate(cx, cy + bob); ctx.scale(s, s);
+    drawWizardFigure(0, 0, Math.sin(t * 0.7) > 0 ? 1 : -1, '#4b2d7a', '#6a3fb0', casting ? '#fff' : elemCol, lift);
+    const ox = cx + 16 * s, oy = cy + bob - (20 + lift) * s;
+    const n = casting ? 3 : Math.random() < 0.3 ? 1 : 0;
+    for (let i = 0; i < n; i++) { const a = rnd(-Math.PI, 0); const sp = rnd(60, casting ? 220 : 90); menuFx.push({ x: ox, y: oy, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, r: rnd(1.5, 3.5), life: 0.9, color: elemCol }); }
+  }
+  ctx.restore();
+  // sparks, puffs and bolts
+  for (const f of menuFx) {
+    f.x += f.vx * dt; f.y += f.vy * dt; f.life -= dt; if (!f.bolt) f.vy += 60 * dt;
+    ctx.globalAlpha = Math.max(0, Math.min(1, f.life * 2));
+    if (f.bolt) { ctx.strokeStyle = f.color; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(f.x - 14, f.y); ctx.lineTo(f.x, f.y); ctx.stroke(); }
+    else circle(f.x, f.y, f.r, f.color);
   }
   ctx.globalAlpha = 1;
+  menuFx = menuFx.filter(f => f.life > 0 && f.x < W + 20);
+}
+
+let lastTitleT = 0;
+function drawTitle() {
+  const now = performance.now() / 1000, dt = Math.min(0.05, lastTitleT ? now - lastTitleT : 0.016);
+  lastTitleT = now;
+  dim(0.88);
+  const bw = Math.min(340, W - 32), bx = W / 2 - bw / 2, gap = 10;
+  ctx.textAlign = 'center';
+  // the title, as big as fits
+  let fs = Math.min(60, W / 6.4);
+  ctx.font = `${fs}px ${SERIF_BIG}`;
+  const tw = ctx.measureText('SPACE WIZARD').width;
+  if (tw > W - 28) { fs *= (W - 28) / tw; ctx.font = `${fs}px ${SERIF_BIG}`; }
+  let y = Math.max(fs + 14, H * 0.09);
+  ctx.fillStyle = '#c77dff';
+  ctx.fillText('SPACE WIZARD', W / 2, y);
+  y += 26;
+  ctx.fillStyle = '#ffd24a';
+  ctx.font = `italic 15px ${SERIF}`;
+  y = wrapText('Parallel universes are converging. Fight to preserve yours.', W / 2, y, bw, 19) + 14;
+
+  if (menuPage === 'battle') {
+    ctx.fillStyle = '#e6e0f0';
+    ctx.font = `26px ${SERIF_BIG}`;
+    ctx.fillText('Battle', W / 2, y + 12);
+    y += 32;
+    const bh = Math.min(68, Math.max(54, (H - y - 90) / 4 - gap));
+    const opts = [
+      { title: 'Easy', sub: 'Even sides: you tip the balance', color: TEAM_COLOR.blue, go: () => startBattle('easy') },
+      { title: 'Hard', sub: 'Red sends far more minions', color: TEAM_COLOR.red, go: () => startBattle('hard') },
+      { title: 'Very Hard', sub: 'A smart army, wizards casting every spell', color: '#ff2a8a', go: () => startBattle('vhard') },
+      { title: 'Battle a Friend', sub: 'Online, with a room code', color: '#ffd166', go: openLobby },
+    ];
+    titleButtons = opts.map((o, i) => ({ ...o, x: bx, y: y + i * (bh + gap), w: bw, h: bh }));
+    y += opts.length * (bh + gap) + 4;
+    titleButtons.push({ title: '‹ Back', color: '#aaa', size: 18, x: bx + bw / 2 - 70, y, w: 140, h: 42, go: () => goMenu('main') });
+    for (const b of titleButtons) menuButton(b);
+    return;
+  }
+
+  // your hero on the left, Wizard / Space on the right
+  const ph = Math.min(230, Math.max(150, H * 0.27)), half = (bw - gap) / 2;
+  roundRect(bx, y, half, ph, 14); ctx.fillStyle = 'rgba(12,8,24,0.75)'; ctx.fill();
+  ctx.strokeStyle = 'rgba(199,125,255,0.35)'; ctx.lineWidth = 1.5; ctx.stroke();
+  ctx.save(); roundRect(bx, y, half, ph, 14); ctx.clip();
+  drawMenuHero(bx + half / 2 - 6, y + ph * 0.56, Math.min(3.2, ph / 62), dt);
+  ctx.restore();
+  const ch = (ph - gap) / 2;
+  const looks = [
+    { title: 'Wizard', sub: 'Robes, staff and old magic', look: 'wizard' },
+    { title: 'Space', sub: 'Suit, blaster and star-tech', look: 'space' },
+  ];
+  const lookButtons = looks.map((o, i) => ({ ...o, color: mySkin === o.look ? '#fff' : '#999', selected: mySkin === o.look, size: 22,
+    x: bx + half + gap, y: y + i * (ch + gap), w: half, h: ch, go: () => setSkin(o.look) }));
+  const heroButton = { x: bx, y, w: half, h: ph, go: () => { menuCast = 0.8; SFX.release(mySkin === 'space' ? 'FA' : 'FF'); } };
+  y += ph + 16;
+  // where to play
+  const bh = Math.min(76, Math.max(58, (H - y - 70) / 2 - gap));
+  const modes = [
+    { title: 'Adventure', sub: 'Explore, hunt the five guardians, find the scrolls', color: '#c77dff', go: startGame },
+    { title: 'Battle', sub: 'Easy · Hard · Very Hard · a friend', color: TEAM_COLOR.blue, go: () => goMenu('battle') },
+  ];
+  const modeButtons = modes.map((o, i) => ({ ...o, size: 26, x: bx, y: y + i * (bh + gap), w: bw, h: bh }));
+  y += modes.length * (bh + gap) + 8;
+  // Adventure first, so Enter starts it
+  titleButtons = [...modeButtons, ...lookButtons, heroButton];
+  for (const b of modeButtons.concat(lookButtons)) menuButton(b);
+  // how to play, if there's room
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#bbb';
+  ctx.font = `13px ${SERIF}`;
+  const tips = ['Slide across the five elements to weave a spell, release to cast. Most patterns fizzle: find the ones that work.',
+                'Tilt or drag to walk · touch the field to shoot · attack spells load onto FIRE.'];
+  for (const l of tips) { if (y + 40 > H) break; y = wrapText(l, W / 2, y + 6, bw, 17) + 2; }
+  if (y + 24 < H) { ctx.fillStyle = '#ffb08a'; ctx.font = `italic 13px ${SERIF}`; wrapText('A whisper: “Fire, then fire again…”', W / 2, y + 10, bw, 17); }
 }
 
 function drawReveal() {
@@ -5840,19 +5904,19 @@ function drawReveal() {
   const maxW = Math.min(W - 40, 480);
   let y = Math.max(60, panelTop * 0.18);
   ctx.fillStyle = '#ffd24a';
-  ctx.font = 'bold 16px system-ui, sans-serif';
+  ctx.font = 'bold 16px "Big Caslon", "Libre Caslon Text", Georgia, serif';
   ctx.fillText(reveal.title, W / 2, y);
   y += 22;
   ctx.fillStyle = TIER_COLOR[combo.length];
-  ctx.font = 'bold 13px system-ui, sans-serif';
+  ctx.font = 'bold 13px "Big Caslon", "Libre Caslon Text", Georgia, serif';
   ctx.fillText(`TIER ${combo.length} · ${TIERS[combo.length].toUpperCase()} · COMPLEXITY ${complexityOf(combo).toFixed(1)} · POWER ×${potencyOf(combo).toFixed(2)}`, W / 2, y);
   y += 40;
   ctx.fillStyle = '#fff';
-  ctx.font = `bold ${Math.min(36, W / 11)}px Georgia, serif`;
+  ctx.font = `bold ${Math.min(36, W / 11)}px "Big Caslon", "Libre Caslon Display", "Libre Caslon Text", Georgia, serif`;
   ctx.fillText(reveal.name, W / 2, y);
   y += 28;
   ctx.fillStyle = '#bbb';
-  ctx.font = '14px system-ui, sans-serif';
+  ctx.font = '14px "Big Caslon", "Libre Caslon Text", Georgia, serif';
   ctx.fillText(combo.split('').map(c => ELEMENTS[c].name).join(' → '), W / 2, y);
   y += 22;
   const gs = Math.min(40, (W - 40) / combo.length - 6);
@@ -5866,11 +5930,11 @@ function drawReveal() {
   }
   y += gs + 30;
   ctx.fillStyle = '#ffb08a';
-  ctx.font = 'italic 15px Georgia, serif';
+  ctx.font = 'italic 15px "Big Caslon", "Libre Caslon Display", "Libre Caslon Text", Georgia, serif';
   y = wrapText('Memorise it. The scroll crumbles once you look away.', W / 2, y, maxW, 20);
   if (reveal.t > 1.2) {
     ctx.fillStyle = '#ffd24a';
-    ctx.font = 'bold 16px system-ui, sans-serif';
+    ctx.font = 'bold 16px "Big Caslon", "Libre Caslon Text", Georgia, serif';
     ctx.globalAlpha = 0.6 + Math.sin(elapsed * 3) * 0.4;
     ctx.fillText('[ tap to continue ]', W / 2, y + 16);
     ctx.globalAlpha = 1;
@@ -5882,25 +5946,25 @@ function drawDead() {
     dim(Math.min(0.45, overlayT));
     ctx.textAlign = 'center';
     ctx.fillStyle = '#e44';
-    ctx.font = `bold ${Math.min(40, W / 10)}px Georgia, serif`;
+    ctx.font = `bold ${Math.min(40, W / 10)}px "Big Caslon", "Libre Caslon Display", "Libre Caslon Text", Georgia, serif`;
     ctx.fillText('YOU FELL', W / 2, panelTop * 0.4);
     ctx.fillStyle = '#ddd';
-    ctx.font = '16px system-ui, sans-serif';
+    ctx.font = '16px "Big Caslon", "Libre Caslon Text", Georgia, serif';
     ctx.fillText(`Back in the fight in ${Math.max(0, Math.ceil(5 - overlayT))}…`, W / 2, panelTop * 0.4 + 34);
     return;
   }
   dim(Math.min(0.7, overlayT));
   ctx.textAlign = 'center';
   ctx.fillStyle = '#e44';
-  ctx.font = `bold ${Math.min(52, W / 8)}px Georgia, serif`;
+  ctx.font = `bold ${Math.min(52, W / 8)}px "Big Caslon", "Libre Caslon Display", "Libre Caslon Text", Georgia, serif`;
   ctx.fillText('YOU FELL', W / 2, panelTop * 0.4);
   ctx.fillStyle = '#ddd';
-  ctx.font = '16px system-ui, sans-serif';
+  ctx.font = '16px "Big Caslon", "Libre Caslon Text", Georgia, serif';
   ctx.fillText(`Score ${score.toLocaleString()}   ·   Best ${best.toLocaleString()}`, W / 2, panelTop * 0.4 + 36);
   ctx.fillText('Your score and defeated guardians stay.', W / 2, panelTop * 0.4 + 58);
   if (overlayT > 0.8) {
     ctx.fillStyle = '#ffd24a';
-    ctx.font = 'bold 18px system-ui, sans-serif';
+    ctx.font = 'bold 18px "Big Caslon", "Libre Caslon Text", Georgia, serif';
     ctx.fillText('[ tap to rise at the shrine ]', W / 2, panelTop * 0.4 + 100);
   }
 }
@@ -5915,27 +5979,27 @@ function drawScoreTable(y) {
   ctx.strokeStyle = 'rgba(199,125,255,0.4)'; ctx.lineWidth = 1; ctx.stroke();
   const cBlue = x + w * 0.66, cRed = x + w - 14;
   let ry = y + 20;
-  ctx.font = 'bold 12px system-ui, sans-serif';
+  ctx.font = 'bold 12px "Big Caslon", "Libre Caslon Text", Georgia, serif';
   ctx.textAlign = 'left'; ctx.fillStyle = '#aaa'; ctx.fillText('HOW IT WAS SCORED', x + 12, ry);
   ctx.textAlign = 'right'; ctx.fillStyle = TEAM_COLOR.blue; ctx.fillText('You', cBlue, ry);
   ctx.fillStyle = TEAM_COLOR.red; ctx.fillText('Red', cRed, ry);
   const cell = (e, cx, col) => {
     ctx.textAlign = 'right';
     if (!e) { ctx.fillStyle = '#555'; ctx.fillText('–', cx, ry); return; }
-    ctx.fillStyle = col; ctx.font = 'bold 13px system-ui, sans-serif'; ctx.fillText(String(e.pts), cx, ry);
-    ctx.fillStyle = '#888'; ctx.font = '11px system-ui, sans-serif';
+    ctx.fillStyle = col; ctx.font = 'bold 13px "Big Caslon", "Libre Caslon Text", Georgia, serif'; ctx.fillText(String(e.pts), cx, ry);
+    ctx.fillStyle = '#888'; ctx.font = '11px "Big Caslon", "Libre Caslon Text", Georgia, serif';
     if (e.n > 1 && e.pts !== e.n) ctx.fillText(`×${e.n} `, cx - ctx.measureText(String(e.pts)).width - 10, ry);
   };
   for (const c of rows) {
     ry += rh;
-    ctx.textAlign = 'left'; ctx.fillStyle = '#ddd'; ctx.font = '13px system-ui, sans-serif';
+    ctx.textAlign = 'left'; ctx.fillStyle = '#ddd'; ctx.font = '13px "Big Caslon", "Libre Caslon Text", Georgia, serif';
     ctx.fillText(c, x + 12, ry);
     cell(B.blue[c], cBlue, '#cfe6ff'); cell(B.red[c], cRed, '#ffd0d4');
   }
-  if (!rows.length) { ry += rh; ctx.textAlign = 'left'; ctx.fillStyle = '#888'; ctx.font = '13px system-ui, sans-serif'; ctx.fillText('No points scored', x + 12, ry); }
+  if (!rows.length) { ry += rh; ctx.textAlign = 'left'; ctx.fillStyle = '#888'; ctx.font = '13px "Big Caslon", "Libre Caslon Text", Georgia, serif'; ctx.fillText('No points scored', x + 12, ry); }
   ry += rh + 2;
   ctx.strokeStyle = 'rgba(255,255,255,0.2)'; ctx.beginPath(); ctx.moveTo(x + 10, ry - 15); ctx.lineTo(x + w - 10, ry - 15); ctx.stroke();
-  ctx.font = 'bold 14px system-ui, sans-serif';
+  ctx.font = 'bold 14px "Big Caslon", "Libre Caslon Text", Georgia, serif';
   ctx.textAlign = 'left'; ctx.fillStyle = '#fff'; ctx.fillText('Total', x + 12, ry);
   ctx.textAlign = 'right'; ctx.fillStyle = TEAM_COLOR.blue; ctx.fillText(String(teams.blue.score), cBlue, ry);
   ctx.fillStyle = TEAM_COLOR.red; ctx.fillText(String(teams.red.score), cRed, ry);
@@ -5946,18 +6010,18 @@ function drawBattleEnd(win) {
   dim(Math.min(0.75, overlayT));
   ctx.textAlign = 'center';
   ctx.fillStyle = win ? '#ffd24a' : '#ff4a5a';
-  ctx.font = `bold ${Math.min(52, W / 8)}px Georgia, serif`;
+  ctx.font = `bold ${Math.min(52, W / 8)}px "Big Caslon", "Libre Caslon Display", "Libre Caslon Text", Georgia, serif`;
   const y = panelTop * 0.35;
   const draw = teams && teams.result === 'draw';
   if (draw) ctx.fillStyle = '#ccc';
   ctx.fillText(draw ? 'DRAW' : win ? 'VICTORY' : 'DEFEAT', W / 2, y);
-  ctx.font = 'italic 15px Georgia, serif';
+  ctx.font = 'italic 15px "Big Caslon", "Libre Caslon Display", "Libre Caslon Text", Georgia, serif';
   ctx.fillText(draw ? 'The two universes stay locked together…' : win ? 'Your universe is preserved!' : 'Your universe is being overwritten…', W / 2, y - 48);
-  ctx.font = 'bold 20px system-ui, sans-serif';
+  ctx.font = 'bold 20px "Big Caslon", "Libre Caslon Text", Georgia, serif';
   ctx.fillStyle = TEAM_COLOR.blue; ctx.fillText(`You ${teams.blue.score}`, W / 2 - 70, y + 38);
   ctx.fillStyle = TEAM_COLOR.red; ctx.fillText(`Red ${teams.red.score}`, W / 2 + 70, y + 38);
   ctx.fillStyle = '#ddd';
-  ctx.font = '15px system-ui, sans-serif';
+  ctx.font = '15px "Big Caslon", "Libre Caslon Text", Georgia, serif';
   const why = teams.endedBy === 'base'
     ? (teams.baseFell === 'red' ? `You destroyed the red base! (+${BASE_BONUS})` : `Red destroyed your base. (+${BASE_BONUS} to red)`)
     : 'Time’s up.';
@@ -5965,13 +6029,13 @@ function drawBattleEnd(win) {
   ctx.fillText(teams.groundTo ? `Most ground: ${teams.groundTo === 'blue' ? 'you' : 'red'} (+${GROUND_BONUS})   ·   Your kills ${kills}` : `Ground level   ·   Your kills ${kills}`, W / 2, y + 86);
   let ty = drawScoreTable(y + 104);
   if (difficulty === 'vhard' && !versus && teams.redUsed) {
-    ctx.fillStyle = '#ff8ab0'; ctx.font = '13px system-ui, sans-serif'; ctx.textAlign = 'center';
+    ctx.fillStyle = '#ff8ab0'; ctx.font = '13px "Big Caslon", "Libre Caslon Text", Georgia, serif'; ctx.textAlign = 'center';
     ctx.fillText(`Red’s wizards cast ${teams.redUsed.size} different spells`, W / 2, ty + 20);
     ty += 22;
   }
   if (overlayT > 1) {
     ctx.fillStyle = '#c77dff';
-    ctx.font = 'bold 17px system-ui, sans-serif';
+    ctx.font = 'bold 17px "Big Caslon", "Libre Caslon Text", Georgia, serif';
     ctx.textAlign = 'center';
     ctx.fillText('[ tap to return to the title ]', W / 2, ty + 26);
   }
@@ -5982,18 +6046,18 @@ function drawWon() {
   dim(Math.min(0.75, overlayT));
   ctx.textAlign = 'center';
   ctx.fillStyle = '#ffd24a';
-  ctx.font = `bold ${Math.min(40, W / 11)}px Georgia, serif`;
+  ctx.font = `bold ${Math.min(40, W / 11)}px "Big Caslon", "Libre Caslon Display", "Libre Caslon Text", Georgia, serif`;
   const y = panelTop * 0.35;
   ctx.fillText('The five guardians have fallen', W / 2, y);
-  ctx.font = 'italic 15px Georgia, serif';
+  ctx.font = 'italic 15px "Big Caslon", "Libre Caslon Display", "Libre Caslon Text", Georgia, serif';
   ctx.fillText('Your universe holds… for now.', W / 2, y - 40);
   ctx.fillStyle = '#ddd';
-  ctx.font = '16px system-ui, sans-serif';
+  ctx.font = '16px "Big Caslon", "Libre Caslon Text", Georgia, serif';
   const m = Math.floor(elapsed / 60), s = Math.floor(elapsed % 60).toString().padStart(2, '0');
   ctx.fillText(`Score ${score.toLocaleString()}   ·   Time ${m}:${s}   ·   Foes ${kills}`, W / 2, y + 36);
   if (overlayT > 1) {
     ctx.fillStyle = '#c77dff';
-    ctx.font = 'bold 17px system-ui, sans-serif';
+    ctx.font = 'bold 17px "Big Caslon", "Libre Caslon Text", Georgia, serif';
     ctx.fillText('[ tap to keep exploring ]', W / 2, y + 76);
   }
 }
