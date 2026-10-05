@@ -2160,7 +2160,8 @@ function computeTerritory() {
 function canBuildAt(x, y) {
   if (cellOwner(x, y) !== 0) return false;
   if (!inArena(x, y, 60)) return false;
-  return !friends.concat(foes).some(u => !u.dead && u.structure && Math.hypot(u.x - x, u.y - y) < 140);
+  // (a duel's wizard stand-in isn't a building, so it never blocks its own turret)
+  return !friends.concat(foes).some(u => !u.dead && u.structure && !u.proxyOf && Math.hypot(u.x - x, u.y - y) < 140);
 }
 
 function buildTurret(team, x, y, elem) {
@@ -2747,13 +2748,13 @@ function buildButtons() {
 function buildChoice(key) {
   if (!teams || !teams.pending || state !== 'play') return false;
   if (net.role === 'guest') {
-    if (key === 'turret' && !canBuildAt(player.x, player.y)) { castMessage('Stand on open ground (no colour) to build a turret', '#ccc'); return true; }
+    if (key === 'turret' && !canBuildAt(player.x, player.y)) { castMessage('Stand on open ground (no colour), away from towers, to build a turret', '#ccc'); return true; }
+    // the turn ends when the host confirms it (if the spot is refused, you can still try again)
     net.send({ t: 'build', key, elem: teams.buildElem });
-    teams.pending = null;
     return true;
   }
   if (key === 'turret') {
-    if (!canBuildAt(player.x, player.y)) { castMessage('Stand on open ground (no colour) to build a turret', '#ccc'); return true; }
+    if (!canBuildAt(player.x, player.y)) { castMessage('Stand on open ground (no colour), away from towers, to build a turret', '#ccc'); return true; }
     buildTurret('blue', player.x, player.y, teams.buildElem);
   } else buildTitan('blue', teams.buildElem);
   teams.pending = null;
@@ -2914,7 +2915,7 @@ function hostReceive(m) {
         teams.buildElemRed = ELEM_CYCLE.includes(m.elem) ? m.elem : 'fire';
         if (m.key === 'turret') {
           if (canBuildAt(rivalP.x, rivalP.y)) { buildTurret('red', rivalP.x, rivalP.y, teams.buildElemRed); teams.pendingRed = null; }
-          else netEvents.push(['msg', 'Stand on open ground to build a turret', '#ccc']);
+          else netEvents.push(['msg', 'Stand on open ground (no colour), away from towers, to build a turret', '#ccc']);
         } else { buildTitan('red', teams.buildElemRed); teams.pendingRed = null; }
       }
       break;
