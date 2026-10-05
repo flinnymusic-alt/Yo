@@ -1905,8 +1905,11 @@ function unitAttack(u, tgt) {
     const big = u.structure, sp = big ? 360 : 420;
     const boom = u.kind === 'wizard' && Math.random() < 0.2 ? 70 : 0; // wizards sometimes throw a fireball
     const small = u.kind === 'archer';
-    bshots.push({ team: u.team, src: u.elem, x: u.x + dx / d * u.r, y: u.y + dy / d * u.r, vx: dx / d * sp, vy: dy / d * sp,
-                  dmg: u.def.dmg * (boom ? 1.3 : 1), r: big ? 9 : boom ? 9 : small ? 4 : 6, life: 1.8, boom, arrow: small, color: TEAM_COLOR[u.team] });
+    const oy = u.kind === 'turret' ? -u.r * 1.35 : 0; // turrets fire from their crystal
+    bshots.push({ team: u.team, src: u.elem, elem: u.elem, x: u.x + dx / d * u.r, y: u.y + oy + dy / d * u.r, vx: dx / d * sp, vy: dy / d * sp,
+                  dmg: u.def.dmg * (boom ? 1.3 : 1), r: big ? 9 : boom ? 9 : small ? 4 : 6, life: 1.8, boom, arrow: small,
+                  color: TYPE_COLOR[u.elem] || TEAM_COLOR[u.team], spin: rnd(0, TAU) });
+    u.fireFlash = 0.18;
     return;
   }
   if (u.kind === 'titan') {
@@ -1926,6 +1929,7 @@ function titanSlam(u) {
   for (const o of opp) if (o !== tgt && !o.dead && Math.hypot(o.x - x, o.y - y) < u.def.splash) hitUnit(o, u.def.dmg * 0.5 * matchup(u.elem, o));
   ring(x, y, u.def.splash, TYPE_COLOR[u.elem] || TEAM_COLOR[u.team], 0.35);
   ring(x, y, u.def.splash * 0.5, '#d8c8a0', 0.25);
+  if (u.elem) elemHit(u.elem, x, y, 2.6);
   for (let i = 0; i < 14; i++) {
     const a = rnd(0, TAU), sp = rnd(60, 180);
     particles.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp * 0.5, r: rnd(3, 6), life: 1, decay: rnd(1.5, 2.5), color: '#8a7a5e' });
@@ -1994,6 +1998,7 @@ function battleOver(baseFell) {
 
 function updateUnit(u, dt) {
   u.cd -= dt;
+  if (u.fireFlash > 0) u.fireFlash -= dt;
   u.flash = Math.max(0, u.flash - dt);
   u.txtCd -= dt;
   if (u.slamT > 0) {
@@ -2054,6 +2059,95 @@ function updateUnit(u, dt) {
       for (let i = 0; i < 4; i++) particles.push({ x: u.x + side * u.r * 0.45, y: u.y + u.r * 0.95, vx: rnd(-40, 40), vy: rnd(-25, 0), r: rnd(2, 4), life: 0.8, decay: 2.2, color: '#7a6c54' });
     }
   }
+}
+
+// ── elemental shot effects ──
+function shotTrail(sh) {
+  const sp = Math.hypot(sh.vx, sh.vy) || 1, bx = -sh.vx / sp, by = -sh.vy / sp;
+  const p = (color, r, life, spread) => particles.push({ x: sh.x + bx * sh.r, y: sh.y + by * sh.r, vx: bx * 40 + rnd(-spread, spread), vy: by * 40 + rnd(-spread, spread), r, life, decay: 2.6, color });
+  switch (sh.elem) {
+    case 'fire':   p(Math.random() < 0.5 ? '#ffb04a' : '#ff5a2a', rnd(2, 4), 0.8, 30); break;   // embers
+    case 'water':  p('#bfe6ff', rnd(1.5, 2.5), 0.6, 20); break;                                 // droplets
+    case 'earth':  p('#8a6a44', rnd(1.5, 3), 0.7, 25); break;                                   // grit
+    case 'air':    p('rgba(255,250,200,0.8)', 1.5, 0.5, 40); break;                             // gusts
+    case 'spirit': p(Math.random() < 0.5 ? '#e6ccff' : '#c77dff', rnd(1.5, 2.5), 0.9, 15); break; // motes
+  }
+}
+// an impact shaped like its element; size scales the effect
+function elemHit(elem, x, y, size) {
+  const c = TYPE_COLOR[elem];
+  const spray = (n, spd, color, rmin, rmax, up) => {
+    for (let i = 0; i < n; i++) {
+      const a = rnd(0, TAU), s = rnd(spd * 0.3, spd);
+      particles.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s - (up || 0), r: rnd(rmin, rmax), life: 1, decay: rnd(1.8, 3), color });
+    }
+  };
+  switch (elem) {
+    case 'fire':   spray(10 * size, 180 * size, '#ff5a2a', 2, 4, 60); spray(6 * size, 120 * size, '#ffd24a', 1.5, 3, 80); break;
+    case 'water':  ring(x, y, 16 * size, '#bfe6ff', 0.35); spray(10 * size, 160 * size, '#3ab0ff', 1.5, 3, 40); break;
+    case 'earth':  spray(8 * size, 140 * size, '#8a6a44', 2, 5); spray(5 * size, 90 * size, '#b5834a', 2, 4); break;
+    case 'air':    ring(x, y, 14 * size, '#f5e663', 0.25); ring(x, y, 24 * size, 'rgba(255,250,200,0.6)', 0.4); spray(6 * size, 200 * size, '#fffbe0', 1, 2); break;
+    case 'spirit': ring(x, y, 18 * size, c, 0.45); spray(10 * size, 120 * size, '#e6ccff', 1.5, 3); break;
+  }
+}
+function drawElemShot(sh) {
+  const sp = Math.hypot(sh.vx, sh.vy) || 1, ux = sh.vx / sp, uy = sh.vy / sp, r = sh.r;
+  ctx.save();
+  ctx.translate(sh.x, sh.y);
+  switch (sh.elem) {
+    case 'fire': {
+      // a flickering fireball with a flame tail
+      const fl = 1 + Math.sin(sh.spin * 3) * 0.15;
+      ctx.rotate(Math.atan2(uy, ux));
+      const g = ctx.createLinearGradient(-r * 3.5, 0, r, 0);
+      g.addColorStop(0, 'rgba(255,90,42,0)'); g.addColorStop(0.6, 'rgba(255,90,42,0.8)'); g.addColorStop(1, '#ffd24a');
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.moveTo(-r * 3.5 * fl, 0); ctx.quadraticCurveTo(-r, -r * 1.1, r * 0.4, -r * 0.8); ctx.lineTo(r * 0.4, r * 0.8); ctx.quadraticCurveTo(-r, r * 1.1, -r * 3.5 * fl, 0); ctx.fill();
+      const c2 = ctx.createRadialGradient(r * 0.2, 0, 0, r * 0.2, 0, r * 1.1);
+      c2.addColorStop(0, '#fff'); c2.addColorStop(0.4, '#ffd24a'); c2.addColorStop(1, '#ff5a2a');
+      ctx.fillStyle = c2; ctx.beginPath(); ctx.arc(r * 0.2, 0, r * fl, 0, TAU); ctx.fill();
+      break;
+    }
+    case 'water': {
+      // a droplet pointed the way it flies
+      ctx.rotate(Math.atan2(uy, ux));
+      ctx.beginPath(); ctx.moveTo(r * 1.6, 0); ctx.quadraticCurveTo(0, -r * 1.2, -r, 0); ctx.quadraticCurveTo(0, r * 1.2, r * 1.6, 0);
+      ctx.fillStyle = '#3ab0ff'; ctx.fill();
+      ctx.strokeStyle = '#bfe6ff'; ctx.lineWidth = 1.5; ctx.stroke();
+      circle(r * 0.3, -r * 0.3, r * 0.3, 'rgba(255,255,255,0.85)');
+      break;
+    }
+    case 'earth': {
+      // a tumbling chunk of rock
+      ctx.rotate(sh.spin);
+      ctx.beginPath();
+      for (let i = 0; i < 6; i++) { const a = i * TAU / 6, rr = r * (i % 2 ? 0.8 : 1.15); i ? ctx.lineTo(Math.cos(a) * rr, Math.sin(a) * rr) : ctx.moveTo(Math.cos(a) * rr, Math.sin(a) * rr); }
+      ctx.closePath(); ctx.fillStyle = '#8a6a44'; ctx.fill(); ctx.strokeStyle = '#5a4430'; ctx.lineWidth = 1.5; ctx.stroke();
+      circle(-r * 0.25, -r * 0.25, r * 0.3, '#b5834a');
+      break;
+    }
+    case 'air': {
+      // a spinning wind blade
+      ctx.rotate(sh.spin * 1.5);
+      ctx.strokeStyle = '#f5e663'; ctx.lineCap = 'round';
+      for (let i = 0; i < 3; i++) {
+        ctx.lineWidth = 2.5 - i * 0.6; ctx.globalAlpha = 1 - i * 0.25;
+        ctx.beginPath(); ctx.arc(0, 0, r * (1.4 - i * 0.35), i * 2.1, i * 2.1 + 2.2); ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+      circle(0, 0, r * 0.35, '#fffbe0');
+      break;
+    }
+    case 'spirit': {
+      // a glowing orb with sparks circling it
+      const g = ctx.createRadialGradient(0, 0, 0, 0, 0, r * 2.2);
+      g.addColorStop(0, '#fff'); g.addColorStop(0.35, '#c77dff'); g.addColorStop(1, 'rgba(199,125,255,0)');
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, r * 2.2, 0, TAU); ctx.fill();
+      for (let i = 0; i < 3; i++) { const a = sh.spin + i * TAU / 3; circle(Math.cos(a) * r * 1.4, Math.sin(a) * r * 1.4, 1.8, '#e6ccff'); }
+      break;
+    }
+  }
+  ctx.restore();
 }
 
 // split a wave between the three minion kinds by the mix (largest remainders)
@@ -2160,6 +2254,8 @@ function updateBattle(dt) {
   for (const sh of bshots) {
     const sdt = sh.team === 'red' ? dt * timeScale() : dt;
     sh.x += sh.vx * sdt; sh.y += sh.vy * sdt; sh.life -= sdt;
+    sh.spin += sdt * 9;
+    if (sh.elem && !sh.arrow && Math.random() < 0.6) shotTrail(sh);
     if (sh.team === 'red' && tempSolids.some(b => Math.hypot(b.x - sh.x, b.y - sh.y) < b.r + sh.r)) { sh.life = 0; continue; }
     const opp = sh.team === 'red'
       ? (state === 'play' && !player.onBoat ? [player] : []).concat(friends)
@@ -2177,7 +2273,7 @@ function updateBattle(dt) {
           burst(sh.x, sh.y, sh.color, 16, 220);
         }
       }
-      burst(sh.x, sh.y, sh.color, 5, 120);
+      if (sh.elem) elemHit(sh.elem, sh.x, sh.y, sh.r >= 9 ? 1.3 : 0.8); else burst(sh.x, sh.y, sh.color, 5, 120);
       sh.life = 0;
       break;
     }
@@ -3078,9 +3174,16 @@ function drawUnit(u) {
     circle(4, 8, r, 'rgba(0,0,0,0.3)');
     circle(0, 0, r, '#5d5a56', '#3e3c39', 3);
     ctx.fillStyle = '#76726c'; ctx.fillRect(-r * 0.55, -r * 1.3, r * 1.1, r * 1.3);
-    const g = ctx.createRadialGradient(0, -r * 1.35, 0, 0, -r * 1.35, 18);
+    const ready = 1 - clamp(u.cd / u.def.cd, 0, 1), flashR = (u.fireFlash || 0) > 0 ? 10 : 0;
+    const gr = 12 + ready * 8 + flashR + Math.sin(t * 6 + u.wob) * 1.5;
+    const g = ctx.createRadialGradient(0, -r * 1.35, 0, 0, -r * 1.35, gr);
     g.addColorStop(0, '#fff'); g.addColorStop(0.4, ec); g.addColorStop(1, ec + '00');
-    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, -r * 1.35, 18, 0, TAU); ctx.fill();
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, -r * 1.35, gr, 0, TAU); ctx.fill();
+    // the crystal itself, turning slowly
+    ctx.save(); ctx.translate(0, -r * 1.35); ctx.rotate(t * 1.2 + u.wob);
+    ctx.beginPath(); ctx.moveTo(0, -7); ctx.lineTo(5, 0); ctx.lineTo(0, 7); ctx.lineTo(-5, 0); ctx.closePath();
+    ctx.fillStyle = ec; ctx.fill(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.stroke();
+    ctx.restore();
     circle(0, 0, r - 3, null, c, 3);
     if (u.elem) drawGlyph(ELEM_GLYPH[u.elem], 0, 2, r * 0.9, ec);
   } else if (u.kind === 'nexus') {
@@ -3392,6 +3495,13 @@ function drawWorld() {
       const sp = Math.hypot(sh.vx, sh.vy) || 1;
       ctx.strokeStyle = sh.color; ctx.lineWidth = 2;
       ctx.beginPath(); ctx.moveTo(sh.x - sh.vx / sp * 12, sh.y - sh.vy / sp * 12); ctx.lineTo(sh.x, sh.y); ctx.stroke();
+      continue;
+    }
+    if (sh.elem) {
+      circle(sh.x + 3, sh.y + 6, sh.r * 0.8, 'rgba(0,0,0,0.25)');
+      drawElemShot(sh);
+      // a thin ring in the shooter's team colour, so you can tell whose it is
+      circle(sh.x, sh.y, sh.r * 1.5, null, TEAM_COLOR[sh.team] + '99', 1);
       continue;
     }
     circle(sh.x, sh.y, sh.r + 4, 'rgba(0,0,0,0.35)');
