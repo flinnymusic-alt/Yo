@@ -2927,6 +2927,7 @@ function hostReceive(m) {
 
 function friendLeft() {
   if (!versus) return;
+  setTimeout(hangUp, 0);
   showBanner('Your friend left', 'The red side carries on without them', 3);
   if (net.role === 'host') {
     if (rivalProxy) rivalProxy.dead = true;
@@ -3110,24 +3111,139 @@ function netReceive(m) { if (net.role === 'host') hostReceive(m); else if (net.r
 function leaveDuel() {
   if (!versus) return;
   try { net.send({ t: 'bye' }); } catch (_) {}
-  const { conn, peer } = net;
-  if (conn) setTimeout(() => { try { conn.close(); } catch (_) {} }, 200);
-  if (peer) setTimeout(() => { try { peer.destroy(); } catch (_) {} }, 400);
   if (net.role === 'guest') mirrorArena(false);
-  versus = false; net.role = null; net.conn = null; net.peer = null;
+  versus = false; net.role = null;
   rivalP = null; otherHero = null;
+  setTimeout(hangUp, 300); // let the goodbye go out first
 }
 
-// ── lobby: host a duel or join one with a code (uses PeerJS for the connection) ──
+// ── lobby: host a duel or join one with a code ──
+// Two ways to find each other are tried side by side: PeerJS's free
+// matchmaking server, and Trystero, which meets through public Nostr relays.
+// If one is down the other still works. The friend who joins plays on
+// whichever opens first and says hello on it; the host plays on the one the
+// hello arrives on. After that the phones talk directly.
 const PEER_PREFIX = 'pentagram-duel-';
+const PEERJS_URL = 'https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js';
+const TRYSTERO_URL = 'https://cdn.jsdelivr.net/npm/trystero@0.26.0/+esm';
+const TRYSTERO_APP = 'pentagram-duel-v1';
+// relay servers for when two networks can't reach each other directly
+const TURN = [{ urls: ['turn:eu-0.turn.peerjs.com:3478', 'turn:us-0.turn.peerjs.com:3478'], username: 'peerjs', credential: 'peerjsp' }];
+const ICE_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }, ...TURN];
+const lobby = { role: null, code: null, paths: [], chosen: null, state: {}, try: null };
+
 function loadPeer() {
   if (window.Peer) return Promise.resolve();
   return new Promise((res, rej) => {
     const s = document.createElement('script');
-    s.src = 'https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js';
-    s.onload = () => res(); s.onerror = () => rej(new Error('Could not load the connection library'));
+    s.src = PEERJS_URL;
+    s.onload = () => res(); s.onerror = () => rej(new Error('Could not load PeerJS'));
     document.head.appendChild(s);
   });
+}
+function hangUp() {
+  for (const p of lobby.paths) try { p.close(); } catch (_) {}
+  lobby.paths = []; lobby.chosen = null; lobby.role = null; lobby.state = {}; lobby.try = null;
+}
+// a path is one way of reaching the other phone: { name, send(m), close() }
+function pathData(path, m) {
+  if (lobby.chosen) { if (path === lobby.chosen) netReceive(m); return; }
+  if (lobby.role === 'host' && m && m.t === 'hello') choosePath(path);
+}
+function pathOpen(path) {
+  if (lobby.role !== 'guest' || lobby.chosen) return;
+  path.send({ t: 'hello' });
+  choosePath(path);
+}
+function pathClosed(path) { if (path === lobby.chosen && versus) friendLeft(); }
+function choosePath(path) {
+  lobby.chosen = path;
+  for (const p of lobby.paths) if (p !== path) try { p.close(); } catch (_) {}
+  lobby.paths = [path];
+  const el = document.getElementById('lobby');
+  if (el) el.style.display = 'none';
+  const send = m => path.send(m);
+  if (lobby.role === 'host') startVersusHost(send); else startVersusGuest(send);
+}
+// how each path is doing, shown under the code
+function pathState(name, st) {
+  lobby.state[name] = st;
+  if (lobby.chosen || !lobby.role) return;
+  const S = lobby.state, mark = v => v === 'ok' ? '✓' : v === 'down' ? '✗' : '…';
+  const line = `<br><small style="color:#888">server ${mark(S.peerjs)} · relays ${mark(S.nostr)}</small>`;
+  if (S.peerjs === 'down' && S.nostr === 'down') {
+    lobbyStatus('Couldn’t reach either connection service. Check your internet, or try another network (mobile data or Wi-Fi).' + line);
+    return;
+  }
+  if (lobby.role === 'host') lobbyStatus(`Your code<br><span class="code">${lobby.code}</span><br>Waiting for your friend to join…` + line);
+  else lobbyStatus(`Looking for game ${lobby.code}…` + line);
+}
+
+async function viaPeerJS(code, role, tryId) {
+  try { await loadPeer(); } catch (_) { pathState('peerjs', 'down'); return; }
+  if (lobby.try !== tryId) return; // gave up or started over meanwhile
+  const peer = role === 'host' ? new Peer(PEER_PREFIX + code, Object.assign({ config: { iceServers: ICE_SERVERS } }, window.PEER_OPTS))
+                               : new Peer(Object.assign({ config: { iceServers: ICE_SERVERS } }, window.PEER_OPTS));
+  const path = { name: 'peerjs', conn: null,
+    send: m => { const c = path.conn; try { if (c && c.open) c.send(m); } catch (_) {} },
+    close: () => { try { peer.destroy(); } catch (_) {} } };
+  lobby.paths.push(path);
+  const wire = conn => {
+    conn.on('data', m => {
+      if (role === 'host' && !lobby.chosen && m && m.t === 'hello') path.conn = conn;
+      if (conn === path.conn) pathData(path, m);
+    });
+    conn.on('close', () => { if (conn === path.conn) pathClosed(path); });
+  };
+  peer.on('open', () => {
+    pathState('peerjs', 'ok');
+    if (role !== 'guest') return;
+    const conn = peer.connect(PEER_PREFIX + code, { reliable: true, serialization: 'json' });
+    path.conn = conn;
+    wire(conn);
+    conn.on('open', () => pathOpen(path));
+  });
+  if (role === 'host') peer.on('connection', wire);
+  // once playing, a hiccup with the matchmaking server doesn't matter
+  peer.on('error', () => { if (lobby.try === tryId && !lobby.chosen) pathState('peerjs', 'down'); });
+}
+
+async function viaTrystero(code, role, tryId) {
+  let joinRoom;
+  try { ({ joinRoom } = await import(TRYSTERO_URL)); } catch (_) { pathState('nostr', 'down'); return; }
+  if (lobby.try !== tryId) return;
+  let room;
+  try {
+    room = joinRoom(Object.assign({ appId: TRYSTERO_APP, turnConfig: TURN, relayConfig: { redundancy: 8, warnOnRelayFailure: false } }, window.TRYSTERO_OPTS), 'room-' + code);
+  } catch (_) { pathState('nostr', 'down'); return; }
+  const act = room.makeAction('m');
+  let other = null;
+  const path = { name: 'nostr',
+    send: m => { if (!other) return; try { const r = act.send(m, { target: other }); if (r && r.catch) r.catch(() => {}); } catch (_) {} },
+    close: () => { try { room.leave(); } catch (_) {} } };
+  lobby.paths.push(path);
+  pathState('nostr', 'ok');
+  room.onPeerJoin = id => { if (role === 'guest' && !other) { other = id; pathOpen(path); } };
+  room.onPeerLeave = id => { if (id === other) pathClosed(path); };
+  act.onMessage = (m, meta) => {
+    const from = meta && meta.peerId;
+    if (role === 'host' && !lobby.chosen && m && m.t === 'hello') other = from;
+    if (from === other) pathData(path, m);
+  };
+}
+
+function startLobby(role, code) {
+  hangUp();
+  const tryId = {};
+  lobby.role = role; lobby.code = code; lobby.try = tryId;
+  pathState('peerjs', 'wait');
+  pathState('nostr', 'wait');
+  viaPeerJS(code, role, tryId);
+  viaTrystero(code, role, tryId);
+  if (role === 'guest') setTimeout(() => {
+    if (lobby.try === tryId && !lobby.chosen)
+      lobbyStatus('No answer yet. Check the code, and that your friend is still on the host screen. Still trying…');
+  }, 20000);
 }
 function lobbyEl() {
   let el = document.getElementById('lobby');
@@ -3171,40 +3287,16 @@ function openLobby() { lobbyEl().style.display = 'flex'; lobbyStatus(''); }
 function closeLobby() {
   const el = document.getElementById('lobby');
   if (el) el.style.display = 'none';
-  if (net.peer && !versus) { try { net.peer.destroy(); } catch (_) {} net.peer = null; }
+  if (!versus) { hangUp(); lobby.code = null; }
 }
-function wireConn(conn, role) {
-  net.conn = conn;
-  conn.on('data', m => netReceive(m));
-  conn.on('close', () => { if (versus) friendLeft(); });
-  conn.on('error', () => { if (versus) friendLeft(); });
-  const send = m => { try { if (conn.open) conn.send(m); } catch (_) {} };
-  document.getElementById('lobby').style.display = 'none'; // keep the connection open
-  if (role === 'host') startVersusHost(send); else startVersusGuest(send);
-}
-async function hostLobby() {
-  lobbyStatus('Connecting…');
-  try { await loadPeer(); } catch (e) { lobbyStatus('Couldn’t reach the connection service. Check your internet and try again.'); return; }
+function hostLobby() {
   const code = Array.from({ length: 4 }, () => 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[Math.floor(Math.random() * 32)]).join('');
-  const peer = new Peer(PEER_PREFIX + code, window.PEER_OPTS);
-  net.peer = peer;
-  peer.on('open', () => lobbyStatus(`Your code<br><span class="code">${code}</span><br>Waiting for your friend to join…`));
-  peer.on('connection', conn => conn.on('open', () => wireConn(conn, 'host')));
-  peer.on('error', e => lobbyStatus(e.type === 'unavailable-id' ? 'That code is taken, tap Host again.' : 'Connection problem: ' + (e.type || 'unknown')));
+  startLobby('host', code);
 }
-async function joinLobby(raw) {
+function joinLobby(raw) {
   const code = String(raw || '').trim().toUpperCase();
   if (code.length < 4) { lobbyStatus('Type the 4-letter code your friend sees.'); return; }
-  lobbyStatus('Connecting…');
-  try { await loadPeer(); } catch (e) { lobbyStatus('Couldn’t reach the connection service. Check your internet and try again.'); return; }
-  const peer = new Peer(window.PEER_OPTS);
-  net.peer = peer;
-  peer.on('open', () => {
-    const conn = peer.connect(PEER_PREFIX + code, { reliable: true, serialization: 'json' });
-    conn.on('open', () => wireConn(conn, 'guest'));
-    setTimeout(() => { if (!versus) lobbyStatus('No answer. Check the code, and that your friend is still on the host screen.'); }, 9000);
-  });
-  peer.on('error', e => lobbyStatus(e.type === 'peer-unavailable' ? 'No game with that code. Check it and try again.' : 'Connection problem: ' + (e.type || 'unknown')));
+  startLobby('guest', code);
 }
 
 // ── tilt steering ────────────────────────────────────────────────────────────
