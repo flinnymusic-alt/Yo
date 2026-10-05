@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>Pentagram</title>
+<title>Space Wizard</title>
 <style>
   *, *::before, *::after { box-sizing: border-box; }
   html { background: #0b0a12; color-scheme: dark; }
@@ -5479,9 +5479,12 @@ function drawTitle() {
   const maxW = Math.min(W - 40, 520);
   ctx.textAlign = 'center';
   ctx.fillStyle = '#c77dff';
-  ctx.font = `bold ${Math.min(52, W / 8)}px Georgia, serif`;
+  let fs = Math.min(52, W / 8);
+  ctx.font = `bold ${fs}px Georgia, serif`;
+  const tw = ctx.measureText('SPACE WIZARD').width;
+  if (tw > W - 32) { fs *= (W - 32) / tw; ctx.font = `bold ${fs}px Georgia, serif`; } // fit narrow phones
   let y = Math.max(70, panelTop * 0.16);
-  ctx.fillText('PENTAGRAM', W / 2, y);
+  ctx.fillText('SPACE WIZARD', W / 2, y);
   y += 34;
   ctx.fillStyle = '#e6e0f0';
   ctx.font = '15px system-ui, sans-serif';
