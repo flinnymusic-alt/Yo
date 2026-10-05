@@ -1536,14 +1536,25 @@ function levelTilt() { tilt.base = tilt.raw ? { ...tilt.raw } : null; }
 
 function tiltActive() { return !!(tilt.raw && tilt.base); }
 
-// Pressing the pentagram or FIRE with a thumb tips the phone, which would
-// otherwise read as "walk". Ignore tilt then, and briefly after letting go.
+// Pressing the pentagram or FIRE with a thumb tips the phone. Don't read new
+// tilt then (or briefly after letting go); see holdTilt below.
 function tiltPaused() {
   return castPtr !== null || player.charging || performance.now() < tilt.pauseUntil;
 }
 
+// While your thumb works the pentagram or FIRE, keep walking the way you were
+// tilting just before you touched it; the press itself can't steer you.
+function holdTilt() { if (!tilt.held) tilt.held = liveTilt(); }
+
 function tiltVector() {
-  if (!tiltActive() || tiltPaused()) return { x: 0, y: 0 };
+  if (!tiltActive()) return { x: 0, y: 0 };
+  if (tiltPaused()) return tilt.held || { x: 0, y: 0 };
+  tilt.held = null;
+  return liveTilt();
+}
+
+function liveTilt() {
+  if (!tiltActive()) return { x: 0, y: 0 };
   const axis = v => {
     const m = Math.abs(v);
     return m < TILT_DEAD ? 0 : Math.sign(v) * Math.min(1, (m - TILT_DEAD) / (TILT_FULL - TILT_DEAD));
@@ -1619,8 +1630,9 @@ canvas.addEventListener('pointerdown', e => {
     else { tilt.asked = false; tilt.warned = false; tilt.denied = false; tilt.granted = false; } // try again on this tap's release
     return;
   }
-  if (fireButtonHit(x, y)) { fireLoaded(); tilt.pauseUntil = performance.now() + 400; return; }
+  if (fireButtonHit(x, y)) { holdTilt(); fireLoaded(); tilt.pauseUntil = performance.now() + 400; return; }
   if (castPtr === null && inCastZone(x, y)) {
+    holdTilt();
     castPtr = e.pointerId;
     seq = [];
     curNode = null;
