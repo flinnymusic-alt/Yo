@@ -1507,7 +1507,8 @@ function update(dt) {
   player.skin    = Math.max(0, player.skin - dt);
   player.haste   = Math.max(0, player.haste - dt);
   player.empower = Math.max(0, player.empower - dt);
-  player.mana    = Math.min(player.maxMana, player.mana + 2.2 * dt);
+  const inEnemyGround = mode === 'battle' && cellOwner(player.x, player.y) === 2;
+  player.mana    = Math.min(player.maxMana, player.mana + (inEnemyGround ? 0.6 : 2.2) * dt);
   const fp = fountainPos();
   if (state === 'play' && Math.hypot(player.x - fp.x, player.y - fp.y) < SHRINE_R) {
     player.hp   = Math.min(player.maxHp, player.hp + 3 * dt);
@@ -1572,10 +1573,11 @@ function movePlayer(dx, dy, step) {
 
 
 // ── battle mode ─────────────────────────────────────────────────────────────
-// A 5-minute points match between blue (you) and red. Three ways to score:
-//  · Space: towers claim the ground around them and link to their nearest
-//    friendly tower with a laser wall. Every 15s the side holding more
-//    ground scores 100.
+// A 5-minute points match between blue (you) and red. It ends when the clock
+// runs out (most points wins) or a home base is destroyed (its destroyer wins).
+// Three ways to score:
+//  · Ground: towers joined by laser lines enclose each side's ground. The
+//    side holding more ground when the match ends scores 100.
 //  · Kills: 1 per minion, 3 per wizard, 5 per titan, 5 per tower.
 //  · Sigils: each side has one sigil in its own ground. Destroying the
 //    other side's scores 30; it reappears elsewhere behind a 15s wall.
@@ -1585,7 +1587,7 @@ let friends = [];   // blue units and structures (your side)
 let bshots = [];    // shots from units and towers
 let teams = null;
 let links = [];     // laser walls between friendly towers
-const MATCH_TIME = 300, TERRITORY_EVERY = 15, BUILD_EVERY = 10, SIGIL_WALL = 15;
+const MATCH_TIME = 300, BUILD_EVERY = 10, SIGIL_WALL = 15;
 const FRONT_X = WORLD - WORLD * 2 * 0.3; // each side starts holding the 30% of the map behind this line
 const TEAM_COLOR = { blue: '#4aa8ff', red: '#ff4a5a' };
 const UNITS = {
@@ -1594,7 +1596,7 @@ const UNITS = {
   titan:  { name: 'Titan',  pts: 5, hp: 55,  spd: 32, r: 30, range: 48,  dmg: 3,   cd: 2.2, aggro: 240, splash: 45 },
   // turrets sting but don't dominate; a few focused hits bring one down
   turret: { name: 'Turret', pts: 5, hp: 30,  spd: 0,  r: 24, range: 240, dmg: 1.5, cd: 1.6, aggro: 240, ranged: true, structure: true },
-  nexus:  { name: 'Base',   pts: 0, hp: 999, spd: 0,  r: 55, range: 300, dmg: 2.5, cd: 1.6, aggro: 300, ranged: true, structure: true },
+  nexus:  { name: 'Base',   pts: 0, hp: 250, spd: 0,  r: 55, range: 300, dmg: 2.5, cd: 1.6, aggro: 300, ranged: true, structure: true },
   sigil:  { name: 'Sigil',  pts: 30, hp: 40, spd: 0,  r: 20, range: 0,   dmg: 0,   cd: 99,  aggro: 0,   structure: true, passive: true },
 };
 for (const k in UNITS) { UNITS[k].mult = {}; UNITS[k].color = '#ccc'; }
@@ -1604,9 +1606,9 @@ function otherTeam(team) { return team === 'blue' ? 'red' : 'blue'; }
 function teamList(team) { return team === 'red' ? foes : friends; }
 function nexusOf(team) { return teamList(team).find(u => u.kind === 'nexus' && !u.dead); }
 function towersOf(team) { return teamList(team).filter(u => !u.dead && (u.kind === 'turret' || u.kind === 'nexus')); }
-// home bases can't fall; a fresh sigil is walled in for a while
-function shielded(u) { return u.kind === 'nexus' || (u.kind === 'sigil' && u.wall > 0); }
-function shieldText(u) { return u.kind === 'nexus' ? 'BASE · can’t be destroyed' : `WALLED ${Math.ceil(u.wall)}s`; }
+// a fresh sigil is walled in for a while
+function shielded(u) { return u.kind === 'sigil' && u.wall > 0; }
+function shieldText(u) { return `WALLED ${Math.ceil(u.wall)}s`; }
 function fountainPos() { return mode === 'battle' ? { x: -BASE_X + 170, y: 0 } : { x: 0, y: 0 }; }
 
 function teamScore(team, n, x, y) {
@@ -1774,7 +1776,7 @@ function startBattle(diff) {
   teams = {
     blue: { score: 0, cells: 0, wave: 4, minions: 4, wizards: 2, wizQ: [], sigilT: 0 },
     red:  { score: 0, cells: 0, wave: 4, minions: hard ? 7 : 4, wizards: hard ? 3 : 2, wizQ: [], sigilT: 0 },
-    time: MATCH_TIME, terrT: TERRITORY_EVERY, terrRecalc: 0,
+    time: MATCH_TIME, terrRecalc: 0,
     build: { team: 'blue', t: BUILD_EVERY }, pending: null, result: null,
   };
   for (const team of ['blue', 'red']) {
@@ -1817,7 +1819,7 @@ function objectiveFor(u) {
   for (const o of enemy) { if (o.kind !== 'turret') continue; const d = Math.hypot(o.x - u.x, o.y - u.y); if (d < bd) { bd = d; best = o; } }
   if (best) return best;
   const nx = nexusOf(otherTeam(u.team));
-  return nx ? { x: nx.x - teamSide(otherTeam(u.team)) * 480, y: u.laneY } : null;
+  return nx || null; // no turrets left: go for the base
 }
 
 function unitAttack(u, tgt) {
@@ -1867,6 +1869,7 @@ function unitFell(u) {
     SFX.bossDown();
     showBanner(by === 'blue' ? 'You broke the red sigil! +30' : 'Red broke your sigil! +30 to red', 'A new one will appear', 3);
   }
+  if (u.kind === 'nexus') { battleOver(u.team); return; }
   if (u.kind === 'turret') {
     shake = Math.max(shake, 12);
     SFX.explode(true);
@@ -1875,14 +1878,26 @@ function unitFell(u) {
   }
 }
 
-function battleOver() {
+// who'd get the ground bonus right now (null if level)
+function groundLeader() {
+  if (!teams || teams.blue.cells === teams.red.cells) return null;
+  return teams.blue.cells > teams.red.cells ? 'blue' : 'red';
+}
+
+// The match ends when the clock runs out (most points wins) or a base falls
+// (whoever destroyed it wins). The 100 for the most ground is paid now.
+function battleOver(baseFell) {
   if (state !== 'play' && state !== 'dead') return;
+  computeTerritory();
+  const g = groundLeader();
+  if (g) { teams[g].score += 100; teams.groundTo = g; }
   const b = teams.blue.score, r = teams.red.score;
-  teams.result = b > r ? 'win' : b < r ? 'lose' : 'draw';
-  state = b > r ? 'won' : 'lost';
+  teams.endedBy = baseFell ? 'base' : 'time';
+  teams.result = baseFell ? (baseFell === 'red' ? 'win' : 'lose') : b > r ? 'win' : b < r ? 'lose' : 'draw';
+  state = teams.result === 'win' ? 'won' : 'lost';
   overlayT = 0;
   flash = 1;
-  b > r ? SFX.bossDown() : SFX.death();
+  teams.result === 'win' ? SFX.bossDown() : SFX.death();
 }
 
 function updateUnit(u, dt) {
@@ -1933,22 +1948,11 @@ function updateBattle(dt) {
   const T = teams;
   // match clock
   T.time -= dt;
-  if (T.time <= 0) { T.time = 0; battleOver(); return; }
+  if (T.time <= 0) { T.time = 0; battleOver(null); return; }
 
   // space: recount the ground now and then; the bigger side scores every 15s
   T.terrRecalc -= dt;
   if (T.terrRecalc <= 0) { T.terrRecalc = 0.5; computeTerritory(); }
-  T.terrT -= dt;
-  if (T.terrT <= 0) {
-    T.terrT = TERRITORY_EVERY;
-    const b = T.blue.cells, r = T.red.cells;
-    if (b !== r) {
-      const win = b > r ? 'blue' : 'red', nx = nexusOf(win);
-      teamScore(win, 100, nx.x - teamSide(win) * 200, -120);
-      showBanner(win === 'blue' ? 'You hold the most ground! +100' : 'Red holds the most ground: +100 to red', '', 2.5);
-      win === 'blue' ? SFX.scroll() : SFX.hurt();
-    }
-  }
 
   // build turns alternate between the sides
   if (T.pending) {
@@ -3180,17 +3184,19 @@ function bar(x, y, w, h, frac, color, label) {
 function drawHUD() {
   const w = Math.min(180, W * 0.42);
   bar(14, 14, w, 16, player.hp / player.maxHp, '#d33', `HP ${Math.ceil(player.hp)}/${player.maxHp}`);
-  bar(14, 36, w, 16, player.mana / player.maxMana, '#3a7bff', `Mana ${Math.floor(player.mana)}/${player.maxMana}`);
+  bar(14, 36, w, 16, player.mana / player.maxMana, '#3a7bff', `Mana ${Math.floor(player.mana)}/${player.maxMana}${mode === 'battle' && cellOwner(player.x, player.y) === 2 ? '  · slow in enemy ground' : ''}`);
 
   ctx.font = '12px system-ui, sans-serif';
   ctx.fillStyle = '#ccc';
   ctx.textAlign = 'left';
   if (mode === 'battle' && teams) {
     ctx.font = 'bold 16px system-ui, sans-serif';
-    ctx.fillStyle = TEAM_COLOR.blue; ctx.fillText(`You ${teams.blue.score}`, 14, 72);
-    const bw = ctx.measureText(`You ${teams.blue.score}`).width;
+    const g = groundLeader();
+    const bt = `You ${teams.blue.score}${g === 'blue' ? ' (+100)' : ''}`, rt = `Red ${teams.red.score}${g === 'red' ? ' (+100)' : ''}`;
+    ctx.fillStyle = TEAM_COLOR.blue; ctx.fillText(bt, 14, 72);
+    const bw = ctx.measureText(bt).width;
     ctx.fillStyle = '#888'; ctx.fillText('·', 22 + bw, 72);
-    ctx.fillStyle = TEAM_COLOR.red; ctx.fillText(`Red ${teams.red.score}`, 34 + bw, 72);
+    ctx.fillStyle = TEAM_COLOR.red; ctx.fillText(rt, 34 + bw, 72);
   } else {
     ctx.fillStyle = '#ffd24a';
     ctx.font = 'bold 16px system-ui, sans-serif';
@@ -3200,7 +3206,7 @@ function drawHUD() {
   ctx.font = '12px system-ui, sans-serif';
   if (mode === 'battle' && teams) {
     const m = Math.floor(teams.time / 60), sec = Math.floor(teams.time % 60).toString().padStart(2, '0');
-    ctx.fillText(`${m}:${sec} left   ·   ground +100 in ${Math.ceil(teams.terrT)}s`, 14, 90);
+    ctx.fillText(`${m}:${sec} left   ·   most ground at the end: +100`, 14, 90);
   } else ctx.fillText(`Spells ${discovered.size}/${SPELL_COUNT}   Guardians ${bossesDown}/${BOSSES.length}`, 14, 90);
   if (mode === 'battle') drawBattleStatus(14, 110); else drawHunt(14, 108);
 
@@ -3651,11 +3657,15 @@ function drawBattleEnd(win) {
   ctx.fillStyle = TEAM_COLOR.red; ctx.fillText(`Red ${teams.red.score}`, W / 2 + 70, y + 38);
   ctx.fillStyle = '#ddd';
   ctx.font = '15px system-ui, sans-serif';
-  ctx.fillText(`Your kills ${kills}`, W / 2, y + 64);
+  const why = teams.endedBy === 'base'
+    ? (teams.result === 'win' ? 'You destroyed the red base!' : 'Red destroyed your base.')
+    : 'Time’s up.';
+  ctx.fillText(why, W / 2, y + 64);
+  ctx.fillText(teams.groundTo ? `Most ground: ${teams.groundTo === 'blue' ? 'you' : 'red'} (+100)   ·   Your kills ${kills}` : `Ground level   ·   Your kills ${kills}`, W / 2, y + 86);
   if (overlayT > 1) {
     ctx.fillStyle = '#c77dff';
     ctx.font = 'bold 17px system-ui, sans-serif';
-    ctx.fillText('[ tap to return to the title ]', W / 2, y + 96);
+    ctx.fillText('[ tap to return to the title ]', W / 2, y + 118);
   }
 }
 
