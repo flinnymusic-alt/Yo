@@ -642,7 +642,7 @@ function aimFrom(src, range) {
 function damageFoe(f, dmg, type) {
   if (f.dead) return;
   if (f.unit && shielded(f)) {
-    if (f.txtCd <= 0) { floatText(f.x, f.y - f.r - 10, 'SHIELDED · break its turrets', '#bde', 13); f.txtCd = 0.8; }
+    if (f.txtCd <= 0) { floatText(f.x, f.y - f.r - 10, shieldText(f), '#bde', 13); f.txtCd = 0.8; }
     SFX.immune();
     return;
   }
@@ -701,8 +701,7 @@ function killFoe(f) {
     // battle units: points for your kill, then the usual fallout (respawns, shields, victory)
     kills++;
     SFX.kill();
-    addScore(f.def.pts, f.x, f.y - f.r - 22, f.structure);
-    unitFell(f);
+    unitFell(f); // points go to blue
     return;
   }
   f.dead = true;
@@ -1573,29 +1572,46 @@ function movePlayer(dx, dy, step) {
 
 
 // ── battle mode ─────────────────────────────────────────────────────────────
-// Two bases face off across an arena. Each has a big tower (shielded until its
-// two guard turrets fall), sends flying minions out in waves and a titan now
-// and then, and fields wizards. You fight for blue; destroy the red tower to win.
+// A 5-minute points match between blue (you) and red. Three ways to score:
+//  · Space: towers claim the ground around them and link to their nearest
+//    friendly tower with a laser wall. Every 15s the side holding more
+//    ground scores 100.
+//  · Kills: 1 per minion, 3 per wizard, 5 per titan, 5 per tower.
+//  · Sigils: each side has one sigil in its own ground. Destroying the
+//    other side's scores 30; it reappears elsewhere behind a 15s wall.
+// Build turns alternate: on yours, build a turret (claims open ground) or a titan.
 let difficulty = 'easy';
 let friends = [];   // blue units and structures (your side)
-let bshots = [];    // shots from units, turrets and towers
+let bshots = [];    // shots from units and towers
 let teams = null;
+let links = [];     // laser walls between friendly towers
+const MATCH_TIME = 300, TERRITORY_EVERY = 15, BUILD_EVERY = 22, SIGIL_WALL = 15;
 const TEAM_COLOR = { blue: '#4aa8ff', red: '#ff4a5a' };
 const UNITS = {
-  minion: { name: 'Minion', pts: 10,   hp: 6,   spd: 78, r: 11, range: 26,  dmg: 1,   cd: 1.0, aggro: 220, flying: true },
-  wizard: { name: 'Wizard', pts: 100,  hp: 26,  spd: 86, r: 15, range: 250, dmg: 2.5, cd: 1.4, aggro: 330, ranged: true },
-  titan:  { name: 'Titan',  pts: 300,  hp: 110, spd: 36, r: 34, range: 52,  dmg: 7,   cd: 1.8, aggro: 260, splash: 65 },
-  turret: { name: 'Turret', pts: 500,  hp: 140, spd: 0,  r: 30, range: 300, dmg: 3,   cd: 1.1, aggro: 300, ranged: true, structure: true },
-  nexus:  { name: 'Tower',  pts: 2000, hp: 320, spd: 0,  r: 55, range: 330, dmg: 4,   cd: 1.5, aggro: 330, ranged: true, structure: true },
+  minion: { name: 'Minion', pts: 1, hp: 6,   spd: 78, r: 11, range: 26,  dmg: 1,   cd: 1.0, aggro: 220, flying: true },
+  wizard: { name: 'Wizard', pts: 3, hp: 26,  spd: 86, r: 15, range: 250, dmg: 2.5, cd: 1.4, aggro: 330, ranged: true },
+  titan:  { name: 'Titan',  pts: 5, hp: 110, spd: 36, r: 34, range: 52,  dmg: 7,   cd: 1.8, aggro: 260, splash: 65 },
+  turret: { name: 'Turret', pts: 5, hp: 120, spd: 0,  r: 26, range: 280, dmg: 3,   cd: 1.2, aggro: 280, ranged: true, structure: true, reach: 290 },
+  nexus:  { name: 'Base',   pts: 0, hp: 999, spd: 0,  r: 55, range: 330, dmg: 4,   cd: 1.5, aggro: 330, ranged: true, structure: true, reach: 430 },
+  sigil:  { name: 'Sigil',  pts: 30, hp: 40, spd: 0,  r: 20, range: 0,   dmg: 0,   cd: 99,  aggro: 0,   structure: true, passive: true },
 };
 for (const k in UNITS) { UNITS[k].mult = {}; UNITS[k].color = '#ccc'; }
 
 function teamSide(team) { return team === 'blue' ? -1 : 1; }
+function otherTeam(team) { return team === 'blue' ? 'red' : 'blue'; }
 function teamList(team) { return team === 'red' ? foes : friends; }
 function nexusOf(team) { return teamList(team).find(u => u.kind === 'nexus' && !u.dead); }
-function turretsLeft(team) { return teamList(team).filter(u => u.kind === 'turret' && !u.dead).length; }
-function shielded(u) { return u.kind === 'nexus' && turretsLeft(u.team) > 0; }
+function towersOf(team) { return teamList(team).filter(u => !u.dead && (u.kind === 'turret' || u.kind === 'nexus')); }
+// home bases can't fall; a fresh sigil is walled in for a while
+function shielded(u) { return u.kind === 'nexus' || (u.kind === 'sigil' && u.wall > 0); }
+function shieldText(u) { return u.kind === 'nexus' ? 'BASE · can’t be destroyed' : `WALLED ${Math.ceil(u.wall)}s`; }
 function fountainPos() { return mode === 'battle' ? { x: -BASE_X + 170, y: 0 } : { x: 0, y: 0 }; }
+
+function teamScore(team, n, x, y) {
+  if (!teams || n <= 0) return;
+  teams[team].score += n;
+  floatText(x, y, '+' + n, TEAM_COLOR[team], n >= 30 ? 22 : 14);
+}
 
 function addUnit(team, kind, x, y) {
   const def = UNITS[kind];
@@ -1603,10 +1619,102 @@ function addUnit(team, kind, x, y) {
     unit: true, team, kind, def, x, y, hp: def.hp, maxHp: def.hp, r: def.r, spd: def.spd * rnd(0.92, 1.08),
     structure: !!def.structure, cd: rnd(0.2, def.cd), laneY: clamp(y, -ARENA_H + 70, ARENA_H - 70),
     kx: 0, ky: 0, slow: 0, poison: 0, poisonDps: 0, poisonTick: 0, flash: 0, hitCd: 0, txtCd: 0,
-    wob: rnd(0, TAU), dead: false, boss: false,
+    wob: rnd(0, TAU), dead: false, boss: false, wall: 0, laserT: 0,
   };
   teamList(team).push(u);
   return u;
+}
+
+// ── territory: a grid of cells, each owned by the nearest tower that reaches it ──
+const CELL = 100, COLS = Math.ceil(WORLD * 2 / CELL), ROWS = Math.ceil(ARENA_H * 2 / CELL);
+const terr = new Int8Array(COLS * ROWS); // 0 open ground, 1 blue, 2 red
+function cellCenter(i, j) { return { x: -WORLD + (i + 0.5) * CELL, y: -ARENA_H + (j + 0.5) * CELL }; }
+function cellOwner(x, y) {
+  const i = Math.floor((x + WORLD) / CELL), j = Math.floor((y + ARENA_H) / CELL);
+  if (i < 0 || j < 0 || i >= COLS || j >= ROWS) return -1;
+  return terr[j * COLS + i];
+}
+function computeTerritory() {
+  const towers = towersOf('blue').concat(towersOf('red'));
+  let b = 0, r = 0;
+  for (let j = 0; j < ROWS; j++) for (let i = 0; i < COLS; i++) {
+    const c = cellCenter(i, j);
+    let best = null, bd = Infinity;
+    for (const t of towers) {
+      const d = Math.hypot(t.x - c.x, t.y - c.y);
+      if (d < t.def.reach && d < bd) { bd = d; best = t; }
+    }
+    const v = best ? (best.team === 'blue' ? 1 : 2) : 0;
+    terr[j * COLS + i] = v;
+    if (v === 1) b++; else if (v === 2) r++;
+  }
+  teams.blue.cells = b; teams.red.cells = r;
+  // each tower's laser wall runs to its nearest friendly tower
+  links = [];
+  for (const team of ['blue', 'red']) {
+    const ts = towersOf(team);
+    for (const t of ts) {
+      let near = null, nd = 950;
+      for (const o of ts) { if (o === t) continue; const d = Math.hypot(o.x - t.x, o.y - t.y); if (d < nd) { nd = d; near = o; } }
+      if (near && !links.some(l => (l.a === near && l.b === t))) links.push({ a: t, b: near, team });
+    }
+  }
+}
+
+function canBuildAt(x, y) {
+  if (cellOwner(x, y) !== 0) return false;
+  if (Math.abs(y) > ARENA_H - 50 || Math.abs(x) > WORLD - 60) return false;
+  return !friends.concat(foes).some(u => !u.dead && u.structure && Math.hypot(u.x - x, u.y - y) < 140);
+}
+
+function buildTurret(team, x, y) {
+  addUnit(team, 'turret', x, y);
+  computeTerritory();
+  ring(x, y, 290, TEAM_COLOR[team], 0.8);
+  burst(x, y, TEAM_COLOR[team], 30, 260);
+  SFX.summon();
+  showBanner(team === 'blue' ? 'Turret built!' : 'Red built a turret', 'It claims the ground around it', 2.5);
+}
+function buildTitan(team) {
+  const sd = teamSide(team);
+  addUnit(team, 'titan', sd * (BASE_X - 120), rnd(-60, 60)).laneY = rnd(-200, 200);
+  SFX.awaken();
+  showBanner(team === 'blue' ? 'Your titan marches out!' : 'Red sends a titan!', '', 2.5);
+}
+
+// red's choice on its build turn: grab ground while behind on space, otherwise a titan
+function redBuild() {
+  if (teams.red.cells <= teams.blue.cells) {
+    let best = null, bs = -Infinity;
+    const reds = towersOf('red');
+    for (let j = 0; j < ROWS; j++) for (let i = 0; i < COLS; i++) {
+      if (terr[j * COLS + i] !== 0) continue;
+      const c = cellCenter(i, j);
+      if (!canBuildAt(c.x, c.y)) continue;
+      const d = Math.min(...reds.map(t => Math.hypot(t.x - c.x, t.y - c.y)));
+      const sc = -Math.abs(d - 300) + rnd(0, 60); // just past the edge of its ground
+      if (sc > bs) { bs = sc; best = c; }
+    }
+    if (best) { buildTurret('red', best.x, best.y); return; }
+  }
+  buildTitan('red');
+}
+
+// put a team's sigil somewhere in its own ground, away from its base
+function placeSigil(team) {
+  const want = team === 'blue' ? 1 : 2, nx = nexusOf(team), cells = [];
+  for (let j = 1; j < ROWS - 1; j++) for (let i = 0; i < COLS; i++) {
+    if (terr[j * COLS + i] !== want) continue;
+    const c = cellCenter(i, j);
+    if (nx && Math.hypot(c.x - nx.x, c.y - nx.y) < 280) continue;
+    if (blockedForFoot(c.x, c.y, 24)) continue;
+    cells.push(c);
+  }
+  const c = cells.length ? cells[Math.floor(Math.random() * cells.length)] : { x: nx.x - teamSide(team) * 320, y: rnd(-200, 200) };
+  const s = addUnit(team, 'sigil', c.x + rnd(-25, 25), c.y + rnd(-25, 25));
+  s.wall = SIGIL_WALL;
+  ring(s.x, s.y, 60, TEAM_COLOR[team], 0.8);
+  if (team === 'blue') showBanner('Your sigil appeared', 'Its wall falls in 15s: defend it!', 3);
 }
 
 function startBattle(diff) {
@@ -1616,7 +1724,7 @@ function startBattle(diff) {
   clearCombat();
   const fp = fountainPos();
   player.x = fp.x; player.y = fp.y; player.face = { x: 1, y: 0 };
-  foes = []; friends = []; bshots = [];
+  foes = []; friends = []; bshots = []; links = [];
   chests = []; scrolls = []; boat.x = boat.y = 1e6;
   discovered = new Set();
   bossesDown = 0; kills = 0; score = 0; elapsed = 0; tally = {}; masterHunter = false;
@@ -1625,8 +1733,10 @@ function startBattle(diff) {
   const hard = diff === 'hard';
   // Easy: evenly matched, so you tip the balance. Hard: red sends far more minions and an extra wizard.
   teams = {
-    blue: { wave: 4, titan: 40, minions: 4, wizards: 2, wizQ: [] },
-    red:  { wave: 4, titan: 40, minions: hard ? 7 : 4, wizards: hard ? 3 : 2, wizQ: [] },
+    blue: { score: 0, cells: 0, wave: 4, minions: 4, wizards: 2, wizQ: [], sigilT: 0 },
+    red:  { score: 0, cells: 0, wave: 4, minions: hard ? 7 : 4, wizards: hard ? 3 : 2, wizQ: [], sigilT: 0 },
+    time: MATCH_TIME, terrT: TERRITORY_EVERY, terrRecalc: 0,
+    build: { team: 'blue', t: 12 }, pending: null, result: null,
   };
   for (const team of ['blue', 'red']) {
     const sd = teamSide(team);
@@ -1636,11 +1746,14 @@ function startBattle(diff) {
     const n = teams[team].wizards;
     for (let i = 0; i < n; i++) addUnit(team, 'wizard', sd * (BASE_X - 130), (i - (n - 1) / 2) * 110);
   }
+  computeTerritory();
+  placeSigil('blue');
+  placeSigil('red');
   state = 'play';
-  showBanner(hard ? 'Battle · Hard' : 'Battle · Easy', 'Break the red turrets, then the red tower', 4.5);
+  showBanner(hard ? 'Battle · Hard' : 'Battle · Easy', 'Most points in 5 minutes wins', 4.5);
 }
 
-// Who a unit fights: the nearest opponent it can see. A shielded tower is ignored.
+// Who a unit fights: the nearest opponent it can see (walled sigils and bases are ignored).
 function findTarget(u) {
   const opp = u.team === 'blue'
     ? foes
@@ -1654,8 +1767,20 @@ function findTarget(u) {
   return best;
 }
 
+// Where a unit heads when nothing is in reach: the enemy sigil (unless walled),
+// otherwise the nearest enemy turret, otherwise the edge of the enemy base.
+function objectiveFor(u) {
+  const enemy = teamList(otherTeam(u.team)).filter(o => !o.dead && o.structure && !shielded(o));
+  if (u.kind !== 'titan') { const sig = enemy.find(o => o.kind === 'sigil'); if (sig) return sig; }
+  let best = null, bd = Infinity;
+  for (const o of enemy) { if (o.kind !== 'turret') continue; const d = Math.hypot(o.x - u.x, o.y - u.y); if (d < bd) { bd = d; best = o; } }
+  if (best) return best;
+  const nx = nexusOf(otherTeam(u.team));
+  return nx ? { x: nx.x - teamSide(otherTeam(u.team)) * 480, y: u.laneY } : null;
+}
+
 function unitAttack(u, tgt) {
-  if (u.cd > 0 || u.hex > 0) return;
+  if (u.cd > 0 || u.hex > 0 || u.def.passive) return;
   u.cd = u.def.cd;
   if (u.def.ranged) {
     const dx = tgt.x - u.x, dy = tgt.y - u.y, d = Math.hypot(dx, dy) || 1;
@@ -1675,12 +1800,12 @@ function unitAttack(u, tgt) {
   }
 }
 
-// Damage from the AI (no score). Your own hits go through damageFoe instead.
+// Damage from the AI and laser walls. Your own hits go through damageFoe.
 function hitUnit(t, dmg) {
   if (t === player) { hurtPlayer(dmg); return; }
   if (t.dead) return;
   if (shielded(t)) {
-    if (t.txtCd <= 0) { floatText(t.x, t.y - t.r - 10, 'SHIELDED', '#bde', 13); t.txtCd = 0.8; }
+    if (t.txtCd <= 0) { floatText(t.x, t.y - t.r - 10, shieldText(t), '#bde', 13); t.txtCd = 0.8; }
     return;
   }
   t.hp -= dmg;
@@ -1688,39 +1813,48 @@ function hitUnit(t, dmg) {
   if (t.hp <= 0) unitFell(t);
 }
 
+// A unit is gone. Whoever's side it wasn't on scores for it.
 function unitFell(u) {
   u.dead = true;
-  burst(u.x, u.y, TEAM_COLOR[u.team], u.structure ? 70 : 14, u.structure ? 460 : 240);
+  const by = otherTeam(u.team);
+  teamScore(by, u.def.pts, u.x, u.y - u.r - 20);
+  burst(u.x, u.y, TEAM_COLOR[u.team], u.structure ? 60 : 14, u.structure ? 420 : 240);
   if (u.kind === 'wizard') teams[u.team].wizQ.push({ t: 12 });
-  if (u.kind === 'turret') {
-    shake = Math.max(shake, 14);
-    SFX.explode(true);
-    const left = turretsLeft(u.team);
-    if (u.team === 'red') showBanner('Red turret destroyed!', left ? '1 more to break the tower’s shield' : 'The red tower’s shield is down!', 3.5);
-    else showBanner('Your turret has fallen!', left ? '' : 'Your tower’s shield is down!', 3.5);
+  if (u.kind === 'sigil') {
+    teams[u.team].sigilT = 3;
+    shake = Math.max(shake, 10);
+    SFX.bossDown();
+    showBanner(by === 'blue' ? 'You broke the red sigil! +30' : 'Red broke your sigil! +30 to red', 'A new one will appear', 3);
   }
-  if (u.kind === 'nexus') battleOver(u.team === 'red');
+  if (u.kind === 'turret') {
+    shake = Math.max(shake, 12);
+    SFX.explode(true);
+    computeTerritory();
+    showBanner(u.team === 'red' ? 'Red turret destroyed!' : 'Your turret has fallen!', 'That ground is open again', 3);
+  }
 }
 
-function battleOver(win) {
+function battleOver() {
   if (state !== 'play' && state !== 'dead') return;
-  if (win) addScore(difficulty === 'hard' ? 10000 : 5000, player.x, player.y - 60, true);
-  state = win ? 'won' : 'lost';
+  const b = teams.blue.score, r = teams.red.score;
+  teams.result = b > r ? 'win' : b < r ? 'lose' : 'draw';
+  state = b > r ? 'won' : 'lost';
   overlayT = 0;
   flash = 1;
-  win ? SFX.bossDown() : SFX.death();
+  b > r ? SFX.bossDown() : SFX.death();
 }
 
 function updateUnit(u, dt) {
   u.cd -= dt;
   u.flash = Math.max(0, u.flash - dt);
   u.txtCd -= dt;
+  if (u.kind === 'sigil') { u.wall = Math.max(0, u.wall - dt); return; }
   if (u.structure) {
     const t = findTarget(u);
     if (t && Math.hypot(t.x - u.x, t.y - u.y) <= u.def.range + (t.r || PLAYER_R)) unitAttack(u, t);
     return;
   }
-  // hurt wizards fall back to their tower to heal
+  // hurt wizards fall back to their base to heal
   if (u.kind === 'wizard' && u.hp < u.maxHp * 0.3) u.retreat = true;
   const home = nexusOf(u.team);
   let tx = null, ty = null;
@@ -1734,11 +1868,11 @@ function updateUnit(u, dt) {
       const d = Math.hypot(t.x - u.x, t.y - u.y) - (t.r || PLAYER_R);
       if (d > u.def.range - 4) { tx = t.x; ty = t.y; } else unitAttack(u, t);
     } else {
-      // march down the field toward the enemy tower, then close in on it
-      const nx = nexusOf(u.team === 'blue' ? 'red' : 'blue');
-      if (nx) {
-        const near = Math.abs(nx.x - u.x) < 520;
-        tx = nx.x; ty = near ? nx.y : u.laneY;
+      const o = objectiveFor(u);
+      if (o) {
+        // spread out along the field until close, then converge
+        const near = Math.abs(o.x - u.x) < 420;
+        tx = o.x; ty = near ? o.y : (u.laneY + o.y) / 2;
       }
     }
   }
@@ -1748,31 +1882,82 @@ function updateUnit(u, dt) {
   }
 }
 
+function segDist(px, py, a, b) {
+  const dx = b.x - a.x, dy = b.y - a.y, l2 = dx * dx + dy * dy || 1;
+  const t = clamp(((px - a.x) * dx + (py - a.y) * dy) / l2, 0, 1);
+  return Math.hypot(px - (a.x + dx * t), py - (a.y + dy * t));
+}
+
 function updateBattle(dt) {
+  const T = teams;
+  // match clock
+  T.time -= dt;
+  if (T.time <= 0) { T.time = 0; battleOver(); return; }
+
+  // space: recount the ground now and then; the bigger side scores every 15s
+  T.terrRecalc -= dt;
+  if (T.terrRecalc <= 0) { T.terrRecalc = 0.5; computeTerritory(); }
+  T.terrT -= dt;
+  if (T.terrT <= 0) {
+    T.terrT = TERRITORY_EVERY;
+    const b = T.blue.cells, r = T.red.cells;
+    if (b !== r) {
+      const win = b > r ? 'blue' : 'red', nx = nexusOf(win);
+      teamScore(win, 100, nx.x - teamSide(win) * 200, -120);
+      showBanner(win === 'blue' ? 'You hold the most ground! +100' : 'Red holds the most ground: +100 to red', '', 2.5);
+      win === 'blue' ? SFX.scroll() : SFX.hurt();
+    }
+  }
+
+  // build turns alternate between the sides
+  if (T.pending) {
+    T.pending.t -= dt;
+    if (T.pending.t <= 0) { T.pending = null; buildTitan('blue'); } // you didn't choose: a titan it is
+  } else {
+    T.build.t -= dt;
+    if (T.build.t <= 0) {
+      if (T.build.team === 'blue') {
+        T.pending = { t: 12 };
+        showBanner('Your build turn!', 'Turret: stand on open ground · or send a Titan', 3);
+        SFX.discover();
+      } else redBuild();
+      T.build.team = otherTeam(T.build.team);
+      T.build.t = BUILD_EVERY;
+    }
+  }
+
   for (const team of ['blue', 'red']) {
-    const T = teams[team], sd = teamSide(team), nx = nexusOf(team);
-    if (!nx) continue;
-    T.wave -= dt;
-    if (T.wave <= 0) {
-      T.wave = 18;
-      for (let i = 0; i < T.minions; i++) {
+    const S = T[team], sd = teamSide(team);
+    S.wave -= dt;
+    if (S.wave <= 0) {
+      S.wave = 18;
+      for (let i = 0; i < S.minions; i++) {
         const u = addUnit(team, 'minion', sd * (BASE_X - 90) + rnd(-20, 20), rnd(-120, 120));
         u.laneY = rnd(-1, 1) * ARENA_H * 0.65;
       }
     }
-    T.titan -= dt;
-    if (T.titan <= 0) {
-      T.titan = 55;
-      addUnit(team, 'titan', sd * (BASE_X - 120), rnd(-60, 60)).laneY = rnd(-200, 200);
-      showBanner(team === 'red' ? 'A red titan marches!' : 'Your titan joins the fight!', '', 2.2);
-      SFX.awaken();
-    }
-    T.wizQ = T.wizQ.filter(q => {
+    S.wizQ = S.wizQ.filter(q => {
       q.t -= dt;
       if (q.t > 0) return true;
       addUnit(team, 'wizard', sd * (BASE_X - 130), rnd(-90, 90));
       return false;
     });
+    if (!teamList(team).some(u => u.kind === 'sigil' && !u.dead)) {
+      S.sigilT -= dt;
+      if (S.sigilT <= 0) placeSigil(team);
+    }
+  }
+
+  // laser walls hurt enemies that cross them
+  for (const l of links) {
+    if (l.a.dead || l.b.dead) continue;
+    const opp = l.team === 'blue' ? foes : friends.concat(state === 'play' ? [player] : []);
+    for (const o of opp) {
+      if (o.dead || o.structure) continue;
+      if (segDist(o.x, o.y, l.a, l.b) > (o.r || PLAYER_R) + 4) continue;
+      o.laserT = (o.laserT || 0) + dt;
+      if (o.laserT >= 0.5) { o.laserT = 0; hitUnit(o, 1); burst(o.x, o.y, TEAM_COLOR[l.team], 4, 100); }
+    }
   }
 
   for (const u of friends) {
@@ -1812,6 +1997,28 @@ function updateBattle(dt) {
     }
   }
   bshots = bshots.filter(sh => sh.life > 0);
+}
+
+// your build turn: the two choices
+function buildButtons() {
+  const w = Math.min(150, (W - 48) / 2), h = 46, y = panelTop - h - 14;
+  return [
+    { key: 'turret', x: W / 2 - w - 6, y, w, h },
+    { key: 'titan',  x: W / 2 + 6,     y, w, h },
+  ];
+}
+function buildChoice(key) {
+  if (!teams || !teams.pending || state !== 'play') return false;
+  if (key === 'turret') {
+    if (!canBuildAt(player.x, player.y)) { castMessage('Stand on open ground (no colour) to build a turret', '#ccc'); return true; }
+    buildTurret('blue', player.x, player.y);
+  } else buildTitan('blue');
+  teams.pending = null;
+  return true;
+}
+function buildButtonHit(x, y) {
+  if (mode !== 'battle' || !teams || !teams.pending) return null;
+  return buildButtons().find(b => x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) || null;
 }
 
 // keep a crowd of units from stacking on one spot
@@ -1993,6 +2200,8 @@ canvas.addEventListener('pointerdown', e => {
     else { tilt.asked = false; tilt.warned = false; tilt.denied = false; tilt.granted = false; } // try again on this tap's release
     return;
   }
+  const bb = buildButtonHit(x, y);
+  if (bb) { buildChoice(bb.key); return; }
   if (fireButtonHit(x, y)) { holdTilt(); fireLoaded(); tilt.pauseUntil = performance.now() + 400; return; }
   if (castPtr === null && inCastZone(x, y)) {
     holdTilt();
@@ -2060,6 +2269,8 @@ window.addEventListener('keydown', e => {
   }
   if (confirm && castPtr === null) { if (seq.length) castSequence(); else fireLoaded(); }
   if (e.code === 'KeyF') fireLoaded();
+  if (e.code === 'KeyB') buildChoice('turret');
+  if (e.code === 'KeyT') buildChoice('titan');
   if ((e.code === 'Backspace' || e.code === 'Escape') && castPtr === null) seq = [];
 });
 window.addEventListener('keyup', e => { keys[e.code] = false; });
@@ -2140,8 +2351,27 @@ function drawArena() {
   ctx.fillRect(-BASE_X, -60, BASE_X * 2, 120);
   ctx.strokeStyle = 'rgba(255,255,255,0.08)'; ctx.setLineDash([18, 18]); ctx.lineWidth = 2;
   ctx.beginPath(); ctx.moveTo(0, -ARENA_H); ctx.lineTo(0, ARENA_H); ctx.stroke(); ctx.setLineDash([]);
+  // claimed ground
+  for (let j = 0; j < ROWS; j++) for (let i = 0; i < COLS; i++) {
+    const v = terr[j * COLS + i];
+    if (!v) continue;
+    ctx.fillStyle = v === 1 ? 'rgba(74,168,255,0.11)' : 'rgba(255,74,90,0.11)';
+    ctx.fillRect(-WORLD + i * CELL, -ARENA_H + j * CELL, CELL, CELL);
+  }
   ctx.strokeStyle = 'rgba(199,125,255,0.35)'; ctx.lineWidth = 3;
   ctx.strokeRect(-WORLD, -ARENA_H, WORLD * 2, ARENA_H * 2);
+}
+
+function drawLasers() {
+  for (const l of links) {
+    if (l.a.dead || l.b.dead) continue;
+    const c = TEAM_COLOR[l.team], flick = 0.55 + Math.sin(elapsed * 20 + l.a.x) * 0.15;
+    ctx.strokeStyle = c; ctx.globalAlpha = flick * 0.35; ctx.lineWidth = 9;
+    ctx.beginPath(); ctx.moveTo(l.a.x, l.a.y); ctx.lineTo(l.b.x, l.b.y); ctx.stroke();
+    ctx.strokeStyle = '#fff'; ctx.globalAlpha = flick; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(l.a.x, l.a.y); ctx.lineTo(l.b.x, l.b.y); ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
 }
 
 function drawGround(camX, camY) {
@@ -2586,9 +2816,21 @@ function drawUnit(u) {
     circle(0, 10, r, '#4b4844', '#2e2c29', 4);
     ctx.beginPath(); ctx.moveTo(0, -r * 1.9); ctx.lineTo(r * 0.55, -r * 0.2); ctx.lineTo(0, r * 0.5); ctx.lineTo(-r * 0.55, -r * 0.2); ctx.closePath();
     ctx.fillStyle = c; ctx.fill(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke();
-    if (shielded(u)) {
-      ctx.strokeStyle = `rgba(190,220,255,${0.45 + Math.sin(t * 3) * 0.2})`; ctx.lineWidth = 4;
-      ctx.beginPath(); ctx.arc(0, -r * 0.5, r * 1.6, 0, TAU); ctx.stroke();
+  } else if (u.kind === 'sigil') {
+    const g = ctx.createRadialGradient(0, 0, 4, 0, 0, r * 2.4);
+    g.addColorStop(0, c + 'aa'); g.addColorStop(1, c + '00');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, r * 2.4, 0, TAU); ctx.fill();
+    ctx.save(); ctx.rotate(t * 0.8);
+    circle(0, 0, r, 'rgba(10,10,20,0.85)', c, 3);
+    ctx.strokeStyle = c; ctx.lineWidth = 2; ctx.beginPath();
+    for (let i = 0; i <= 5; i++) { const a = -Math.PI / 2 + ((i * 2) % 5) * TAU / 5; const px = Math.cos(a) * r * 0.85, py = Math.sin(a) * r * 0.85; i ? ctx.lineTo(px, py) : ctx.moveTo(px, py); }
+    ctx.stroke(); ctx.restore();
+    if (u.wall > 0) {
+      // the protective wall, with its countdown
+      ctx.strokeStyle = `rgba(220,230,255,${0.5 + Math.sin(t * 6) * 0.2})`; ctx.lineWidth = 6;
+      ctx.beginPath(); ctx.arc(0, 0, r + 26, 0, TAU); ctx.stroke();
+      ctx.fillStyle = '#fff'; ctx.font = 'bold 12px system-ui, sans-serif'; ctx.textAlign = 'center';
+      ctx.fillText(Math.ceil(u.wall) + 's', 0, -r - 34);
     }
   }
   if (u.flash > 0) circle(0, 0, r, 'rgba(255,255,255,0.6)');
@@ -2849,6 +3091,7 @@ function drawWorld() {
     drawCastles(camX, camY);
   }
   drawSolids(camX, camY);
+  if (mode === 'battle') drawLasers();
   for (const b of tempSolids) {
     ctx.globalAlpha = Math.min(1, b.life);
     circle(b.x + 3, b.y + 5, b.r, 'rgba(0,0,0,0.3)');
@@ -2898,15 +3141,24 @@ function drawHUD() {
   ctx.font = '12px system-ui, sans-serif';
   ctx.fillStyle = '#ccc';
   ctx.textAlign = 'left';
-  ctx.fillStyle = '#ffd24a';
-  ctx.font = 'bold 16px system-ui, sans-serif';
-  ctx.fillText(`Score ${score.toLocaleString()}`, 14, 72);
+  if (mode === 'battle' && teams) {
+    ctx.font = 'bold 16px system-ui, sans-serif';
+    ctx.fillStyle = TEAM_COLOR.blue; ctx.fillText(`You ${teams.blue.score}`, 14, 72);
+    const bw = ctx.measureText(`You ${teams.blue.score}`).width;
+    ctx.fillStyle = '#888'; ctx.fillText('·', 22 + bw, 72);
+    ctx.fillStyle = TEAM_COLOR.red; ctx.fillText(`Red ${teams.red.score}`, 34 + bw, 72);
+  } else {
+    ctx.fillStyle = '#ffd24a';
+    ctx.font = 'bold 16px system-ui, sans-serif';
+    ctx.fillText(`Score ${score.toLocaleString()}`, 14, 72);
+  }
   ctx.fillStyle = '#ccc';
   ctx.font = '12px system-ui, sans-serif';
-  ctx.fillText(mode === 'battle'
-    ? `Spells ${discovered.size}/${SPELL_COUNT}   ${difficulty === 'hard' ? 'Hard' : 'Easy'} battle`
-    : `Spells ${discovered.size}/${SPELL_COUNT}   Guardians ${bossesDown}/${BOSSES.length}`, 14, 90);
-  if (mode === 'battle') drawTowers(14, 110); else drawHunt(14, 108);
+  if (mode === 'battle' && teams) {
+    const m = Math.floor(teams.time / 60), sec = Math.floor(teams.time % 60).toString().padStart(2, '0');
+    ctx.fillText(`${m}:${sec} left   ·   ground +100 in ${Math.ceil(teams.terrT)}s`, 14, 90);
+  } else ctx.fillText(`Spells ${discovered.size}/${SPELL_COUNT}   Guardians ${bossesDown}/${BOSSES.length}`, 14, 90);
+  if (mode === 'battle') drawBattleStatus(14, 110); else drawHunt(14, 108);
 
   const buffs = [];
   if (player.ward > 0)    buffs.push([`Ward ×${player.ward}`, TYPE_COLOR.spirit]);
@@ -2929,6 +3181,7 @@ function drawHUD() {
 
   drawMinimap();
   drawFireButton();
+  drawBuildButtons();
   {
     const r = soundRect();
     roundRect(r.x, r.y, r.w, r.h, 6);
@@ -2998,19 +3251,38 @@ function drawFireButton() {
   ctx.fillText(SPELLS[key].name, W - 10, b.y - b.r - 12);
 }
 
-// your tower and theirs, with how many turrets still shield each
-function drawTowers(x, y) {
+// how much ground each side holds, and whose build turn is next
+function drawBattleStatus(x, y) {
+  if (!teams) return;
+  const total = COLS * ROWS, w = Math.min(170, W * 0.42);
+  const b = teams.blue.cells / total, r = teams.red.cells / total;
+  ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(x, y - 9, w, 9);
+  ctx.fillStyle = TEAM_COLOR.blue; ctx.fillRect(x, y - 9, w * b, 9);
+  ctx.fillStyle = TEAM_COLOR.red; ctx.fillRect(x + w * (1 - r), y - 9, w * r, 9);
   ctx.font = '10px system-ui, sans-serif';
   ctx.textAlign = 'left';
-  let cx = x;
-  for (const team of ['blue', 'red']) {
-    const nx = teamList(team).find(u => u.kind === 'nexus');
-    const frac = nx && !nx.dead ? nx.hp / nx.maxHp : 0, w = 54;
-    ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(cx, y - 8, w, 8);
-    ctx.fillStyle = TEAM_COLOR[team]; ctx.fillRect(cx, y - 8, w * frac, 8);
-    ctx.fillStyle = '#ccc';
-    ctx.fillText(`${team === 'blue' ? 'You' : 'Red'} · ${turretsLeft(team)}⛨`, cx + w + 4, y);
-    cx += w + 52;
+  ctx.fillStyle = '#ccc';
+  ctx.fillText(`Ground ${Math.round(b * 100)}% / ${Math.round(r * 100)}%`, x, y + 12);
+  const bt = teams.pending ? 'Your build: choose!' : `Build: ${teams.build.team === 'blue' ? 'you' : 'red'} in ${Math.ceil(teams.build.t)}s`;
+  ctx.fillStyle = teams.pending ? '#ffd24a' : '#aaa';
+  ctx.fillText(bt, x, y + 26);
+}
+
+function drawBuildButtons() {
+  if (mode !== 'battle' || !teams || !teams.pending || state !== 'play') return;
+  const ok = canBuildAt(player.x, player.y);
+  for (const bb of buildButtons()) {
+    const turret = bb.key === 'turret', live = !turret || ok;
+    roundRect(bb.x, bb.y, bb.w, bb.h, 10);
+    ctx.fillStyle = 'rgba(16,22,40,0.92)'; ctx.fill();
+    ctx.strokeStyle = live ? TEAM_COLOR.blue : '#555'; ctx.lineWidth = 2; ctx.stroke();
+    ctx.textAlign = 'center';
+    ctx.fillStyle = live ? '#fff' : '#888';
+    ctx.font = 'bold 15px system-ui, sans-serif';
+    ctx.fillText(turret ? 'Build Turret' : 'Send Titan', bb.x + bb.w / 2, bb.y + 20);
+    ctx.font = '10px system-ui, sans-serif';
+    ctx.fillStyle = '#aaa';
+    ctx.fillText(turret ? (ok ? 'here, on open ground' : 'walk onto open ground') : `auto in ${Math.ceil(teams.pending.t)}s`, bb.x + bb.w / 2, bb.y + 36);
   }
 }
 
@@ -3213,8 +3485,8 @@ function drawTitle() {
   const bw = Math.min(300, W - 48), bh = 50, gap = 10, bx = W / 2 - bw / 2;
   const opts = [
     { title: 'Adventure', sub: 'Explore, hunt the five guardians, find the scrolls', color: '#c77dff', go: startGame },
-    { title: 'Battle · Easy', sub: 'Two bases, even sides: you make the difference', color: TEAM_COLOR.blue, go: () => startBattle('easy') },
-    { title: 'Battle · Hard', sub: 'The red side sends far more minions', color: TEAM_COLOR.red, go: () => startBattle('hard') },
+    { title: 'Battle · Easy', sub: 'Score with ground, kills and sigils · even sides', color: TEAM_COLOR.blue, go: () => startBattle('easy') },
+    { title: 'Battle · Hard', sub: 'Same rules, but red sends far more minions', color: TEAM_COLOR.red, go: () => startBattle('hard') },
   ];
   titleButtons = opts.map((o, i) => ({ ...o, x: bx, y: y + i * (bh + gap), w: bw, h: bh }));
   for (const b of titleButtons) {
@@ -3320,12 +3592,15 @@ function drawBattleEnd(win) {
   ctx.fillStyle = win ? '#ffd24a' : '#ff4a5a';
   ctx.font = `bold ${Math.min(52, W / 8)}px Georgia, serif`;
   const y = panelTop * 0.35;
-  ctx.fillText(win ? 'VICTORY' : 'DEFEAT', W / 2, y);
+  const draw = teams && teams.result === 'draw';
+  if (draw) ctx.fillStyle = '#ccc';
+  ctx.fillText(draw ? 'DRAW' : win ? 'VICTORY' : 'DEFEAT', W / 2, y);
+  ctx.font = 'bold 20px system-ui, sans-serif';
+  ctx.fillStyle = TEAM_COLOR.blue; ctx.fillText(`You ${teams.blue.score}`, W / 2 - 70, y + 38);
+  ctx.fillStyle = TEAM_COLOR.red; ctx.fillText(`Red ${teams.red.score}`, W / 2 + 70, y + 38);
   ctx.fillStyle = '#ddd';
-  ctx.font = '16px system-ui, sans-serif';
-  ctx.fillText(win ? 'The red tower has fallen.' : 'Your tower has fallen.', W / 2, y + 34);
-  const m = Math.floor(elapsed / 60), s = Math.floor(elapsed % 60).toString().padStart(2, '0');
-  ctx.fillText(`Score ${score.toLocaleString()}   ·   Time ${m}:${s}   ·   Kills ${kills}`, W / 2, y + 58);
+  ctx.font = '15px system-ui, sans-serif';
+  ctx.fillText(`Your kills ${kills}`, W / 2, y + 64);
   if (overlayT > 1) {
     ctx.fillStyle = '#c77dff';
     ctx.font = 'bold 17px system-ui, sans-serif';
