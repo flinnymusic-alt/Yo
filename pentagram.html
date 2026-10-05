@@ -220,20 +220,20 @@ const SPELL_COUNT = Object.keys(SPELLS).length;
 
 // Everyday creatures: every attack hurts them, some types hurt more (mult > 1).
 const FOES = {
-  slime:    { hp: 3, spd: 55,  r: 14, dmg: 1, color: '#5c5', mult: { fire: 2, poison: 0.5 } },
-  bat:      { hp: 2, spd: 115, r: 11, dmg: 1, color: '#86a', mult: { air: 2, lightning: 2, earth: 0.5 } },
-  skeleton: { hp: 6, spd: 60,  r: 15, dmg: 2, color: '#ddd', mult: { earth: 2, spirit: 2, holy: 2, poison: 0.5, fire: 0.75 } },
-  ember:    { hp: 5, spd: 75,  r: 13, dmg: 2, color: '#f73', mult: { water: 2, fire: 0.5, air: 0.75 } },
-  shade:    { hp: 7, spd: 70,  r: 15, dmg: 2, color: '#546', mult: { spirit: 2, holy: 2, lightning: 1.5, earth: 0.5 } },
+  slime:    { pts: 10, hp: 3, spd: 55,  r: 14, dmg: 1, color: '#5c5', mult: { fire: 2, poison: 0.5 } },
+  bat:      { pts: 5,  hp: 2, spd: 115, r: 11, dmg: 1, color: '#86a', mult: { air: 2, lightning: 2, earth: 0.5 } },
+  skeleton: { pts: 25, hp: 6, spd: 60,  r: 15, dmg: 2, color: '#ddd', mult: { earth: 2, spirit: 2, holy: 2, poison: 0.5, fire: 0.75 } },
+  ember:    { pts: 20, hp: 5, spd: 75,  r: 13, dmg: 2, color: '#f73', mult: { water: 2, fire: 0.5, air: 0.75 } },
+  shade:    { pts: 35, hp: 7, spd: 70,  r: 15, dmg: 2, color: '#546', mult: { spirit: 2, holy: 2, lightning: 1.5, earth: 0.5 } },
 };
 
 // Bosses only take damage from their `weak` types. Each guards a chest holding `reward`.
 const BOSSES = [
-  { id: 'troll',    name: 'Frost Troll',   x: 0,     y: -850,  hp: 30, r: 38, spd: 50, color: '#9fd8ff', weak: ['fire'],            dmg: 3, attack: 'aimed', shots: 1,  rate: 2.0, minion: 'bat',      reward: 'AWA' },
-  { id: 'sentinel', name: 'Iron Sentinel', x: 1150,  y: 150,   hp: 40, r: 40, spd: 40, color: '#8a8f9c', weak: ['lightning'],       dmg: 3, attack: 'aimed', shots: 3,  rate: 2.2, minion: 'skeleton', reward: 'SSA' },
-  { id: 'lich',     name: 'Bone Lich',     x: -150,  y: 1200,  hp: 45, r: 34, spd: 55, color: '#d8d2b8', weak: ['spirit', 'holy'],  dmg: 3, attack: 'aimed', shots: 2,  rate: 2.0, minion: 'skeleton', reward: 'WWWA', summon: 'skeleton' },
-  { id: 'titan',    name: 'Magma Titan',   x: -1200, y: -150,  hp: 60, r: 48, spd: 38, color: '#ff7a30', weak: ['water'],           dmg: 4, attack: 'ring',  shots: 10, rate: 2.6, minion: 'ember',    reward: 'SAFEWS' },
-  { id: 'hydra',    name: 'Void Hydra',    x: 1250,  y: -1250, hp: 90, r: 50, spd: 45, color: '#6a3aa8', weak: ['poison', 'holy'], dmg: 4, attack: 'aimed', shots: 5,  rate: 2.4, minion: 'shade',    reward: 'SFWEASS', summon: 'shade' },
+  { id: 'troll',    pts: 1000, name: 'Frost Troll',   x: 0,     y: -850,  hp: 30, r: 38, spd: 50, color: '#9fd8ff', weak: ['fire'],            dmg: 3, attack: 'aimed', shots: 1,  rate: 2.0, minion: 'bat',      reward: 'AWA' },
+  { id: 'sentinel', pts: 1500, name: 'Iron Sentinel', x: 1150,  y: 150,   hp: 40, r: 40, spd: 40, color: '#8a8f9c', weak: ['lightning'],       dmg: 3, attack: 'aimed', shots: 3,  rate: 2.2, minion: 'skeleton', reward: 'SSA' },
+  { id: 'lich',     pts: 2000, name: 'Bone Lich',     x: -150,  y: 1200,  hp: 45, r: 34, spd: 55, color: '#d8d2b8', weak: ['spirit', 'holy'],  dmg: 3, attack: 'aimed', shots: 2,  rate: 2.0, minion: 'skeleton', reward: 'WWWA', summon: 'skeleton' },
+  { id: 'titan',    pts: 3000, name: 'Magma Titan',   x: -1200, y: -150,  hp: 60, r: 48, spd: 38, color: '#ff7a30', weak: ['water'],           dmg: 4, attack: 'ring',  shots: 10, rate: 2.6, minion: 'ember',    reward: 'SAFEWS' },
+  { id: 'hydra',    pts: 5000, name: 'Void Hydra',    x: 1250,  y: -1250, hp: 90, r: 50, spd: 45, color: '#6a3aa8', weak: ['poison', 'holy'], dmg: 4, attack: 'aimed', shots: 5,  rate: 2.4, minion: 'shade',    reward: 'SFWEASS', summon: 'shade' },
 ];
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -318,10 +318,11 @@ let timeWarp = 0, timeStop = 0; // seconds left of slow-mo / frozen time
 let fx = [], particles = [], floaters = [], chests = [];
 let spawnQueue = [];
 let discovered = new Set();
-let bossesDown = 0, kills = 0, elapsed = 0, spawnTimer = 0;
+let bossesDown = 0, kills = 0, score = 0, best = 0, elapsed = 0, spawnTimer = 0;
 let banner = null, castMsg = null, reveal = null, wonShown = false;
 let flash = 0, shake = 0, overlayT = 0;
 const nodePulse = [0, 0, 0, 0, 0];
+try { best = Number(localStorage.getItem('pentagram-best')) || 0; } catch (_) {}
 
 // spell input
 let seq = [], curNode = null, castPtr = null, finger = null;
@@ -535,7 +536,7 @@ function startGame() {
   scrolls = SCROLLS.map(s => ({ ...s, taken: false }));
   boat.x = BOAT_HOME.x; boat.y = BOAT_HOME.y;
   discovered = new Set();
-  bossesDown = 0; kills = 0; elapsed = 0; spawnTimer = 2;
+  bossesDown = 0; kills = 0; score = 0; elapsed = 0; spawnTimer = 2;
   banner = null; castMsg = null; reveal = null; wonShown = false;
   seq = []; curNode = null;
   state = 'play';
@@ -616,10 +617,18 @@ function damageFoe(f, dmg, type) {
   return d;
 }
 
+// Points: a beast's base worth grows as later, tougher versions spawn.
+function addScore(n, x, y, big) {
+  score += n;
+  floatText(x, y, '+' + n, '#ffd24a', big ? 26 : 15);
+  if (score > best) { best = score; try { localStorage.setItem('pentagram-best', String(best)); } catch (_) {} }
+}
+
 function killFoe(f) {
   f.dead = true;
   f.boss ? SFX.bossDown() : SFX.kill();
   kills++;
+  addScore(f.boss ? f.def.pts : Math.round(f.def.pts * f.maxHp / f.def.hp), f.x, f.y - f.r - 22, f.boss);
   burst(f.x, f.y, f.boss ? f.def.color : f.def.color, f.boss ? 70 : 14, f.boss ? 420 : 260);
   if (f.boss) {
     bossesDown++;
@@ -2434,7 +2443,12 @@ function drawHUD() {
   ctx.font = '12px system-ui, sans-serif';
   ctx.fillStyle = '#ccc';
   ctx.textAlign = 'left';
-  ctx.fillText(`Spells ${discovered.size}/${SPELL_COUNT}   Guardians ${bossesDown}/${BOSSES.length}`, 14, 68);
+  ctx.fillStyle = '#ffd24a';
+  ctx.font = 'bold 16px system-ui, sans-serif';
+  ctx.fillText(`Score ${score.toLocaleString()}`, 14, 72);
+  ctx.fillStyle = '#ccc';
+  ctx.font = '12px system-ui, sans-serif';
+  ctx.fillText(`Spells ${discovered.size}/${SPELL_COUNT}   Guardians ${bossesDown}/${BOSSES.length}`, 14, 90);
 
   const buffs = [];
   if (player.ward > 0)    buffs.push([`Ward ×${player.ward}`, TYPE_COLOR.spirit]);
@@ -2451,7 +2465,7 @@ function drawHUD() {
   let bx = 14;
   for (const [t, c] of buffs) {
     ctx.fillStyle = c;
-    ctx.fillText(t, bx, 86);
+    ctx.fillText(t, bx, 108);
     bx += ctx.measureText(t).width + 12;
   }
 
@@ -2692,6 +2706,12 @@ function drawTitle() {
   ctx.font = 'bold 20px system-ui, sans-serif';
   ctx.globalAlpha = 0.6 + Math.sin(elapsed * 3) * 0.4;
   ctx.fillText('[ TAP TO BEGIN ]', W / 2, y + 24);
+  if (best > 0) {
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = '#ccc';
+    ctx.font = '14px system-ui, sans-serif';
+    ctx.fillText(`Best score ${best.toLocaleString()}`, W / 2, y + 52);
+  }
   ctx.globalAlpha = 1;
 }
 
@@ -2752,8 +2772,8 @@ function drawDead() {
   ctx.fillText('YOU FELL', W / 2, panelTop * 0.4);
   ctx.fillStyle = '#ddd';
   ctx.font = '16px system-ui, sans-serif';
-  ctx.fillText('Defeated guardians stay defeated.', W / 2, panelTop * 0.4 + 36);
-  ctx.fillText('What you remember is yours to keep.', W / 2, panelTop * 0.4 + 58);
+  ctx.fillText(`Score ${score.toLocaleString()}   ·   Best ${best.toLocaleString()}`, W / 2, panelTop * 0.4 + 36);
+  ctx.fillText('Your score and defeated guardians stay.', W / 2, panelTop * 0.4 + 58);
   if (overlayT > 0.8) {
     ctx.fillStyle = '#ffd24a';
     ctx.font = 'bold 18px system-ui, sans-serif';
@@ -2771,7 +2791,7 @@ function drawWon() {
   ctx.fillStyle = '#ddd';
   ctx.font = '16px system-ui, sans-serif';
   const m = Math.floor(elapsed / 60), s = Math.floor(elapsed % 60).toString().padStart(2, '0');
-  ctx.fillText(`Time ${m}:${s}   ·   Spells found ${discovered.size}/${SPELL_COUNT}   ·   Foes ${kills}`, W / 2, y + 36);
+  ctx.fillText(`Score ${score.toLocaleString()}   ·   Time ${m}:${s}   ·   Foes ${kills}`, W / 2, y + 36);
   if (overlayT > 1) {
     ctx.fillStyle = '#c77dff';
     ctx.font = 'bold 17px system-ui, sans-serif';
