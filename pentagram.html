@@ -1591,15 +1591,27 @@ const MATCH_TIME = 300, BUILD_EVERY = 10, SIGIL_WALL = 15;
 const FRONT_X = WORLD - WORLD * 2 * 0.3; // each side starts holding the 30% of the map behind this line
 const TEAM_COLOR = { blue: '#4aa8ff', red: '#ff4a5a' };
 const UNITS = {
-  minion: { name: 'Minion', pts: 1, hp: 6,   spd: 78, r: 11, range: 26,  dmg: 1,   cd: 1.0, aggro: 220, flying: true },
+  // three kinds of minion, weak alone but plentiful. Each beats one other kind:
+  // Flyers swoop on Archers, Archers shoot down Brutes, Brutes swat Flyers.
+  flyer:  { name: 'Flyer',  pts: 1, hp: 3,   spd: 96, r: 9,  range: 22,  dmg: 0.6, cd: 0.8, aggro: 220, flying: true, beats: 'archer' },
+  archer: { name: 'Archer', pts: 1, hp: 3,   spd: 64, r: 9,  range: 170, dmg: 0.6, cd: 1.2, aggro: 230, ranged: true, beats: 'brute' },
+  brute:  { name: 'Brute',  pts: 1, hp: 6,   spd: 56, r: 12, range: 24,  dmg: 0.8, cd: 1.1, aggro: 200, beats: 'flyer' },
   wizard: { name: 'Wizard', pts: 3, hp: 26,  spd: 86, r: 15, range: 250, dmg: 2.5, cd: 1.4, aggro: 330, ranged: true },
   titan:  { name: 'Titan',  pts: 5, hp: 55,  spd: 32, r: 30, range: 48,  dmg: 3,   cd: 2.2, aggro: 240, splash: 45 },
   // turrets sting but don't dominate; a few focused hits bring one down
-  turret: { name: 'Turret', pts: 5, hp: 30,  spd: 0,  r: 24, range: 240, dmg: 1.5, cd: 1.6, aggro: 240, ranged: true, structure: true },
+  turret: { name: 'Turret', pts: 5, hp: 45,  spd: 0,  r: 24, range: 260, dmg: 2.2, cd: 1.4, aggro: 260, ranged: true, structure: true },
   nexus:  { name: 'Base',   pts: 0, hp: 250, spd: 0,  r: 55, range: 300, dmg: 2.5, cd: 1.6, aggro: 300, ranged: true, structure: true },
   sigil:  { name: 'Sigil',  pts: 30, hp: 40, spd: 0,  r: 20, range: 0,   dmg: 0,   cd: 99,  aggro: 0,   structure: true, passive: true },
 };
 for (const k in UNITS) { UNITS[k].mult = {}; UNITS[k].color = '#ccc'; }
+const MINION_KINDS = ['flyer', 'archer', 'brute'];
+const isMinion = u => MINION_KINDS.includes(u.kind);
+// the super-effective triangle: double damage to the kind you beat, half to the kind that beats you
+function matchup(att, def) {
+  const a = UNITS[att], d = UNITS[def];
+  if (!a || !d || !a.beats || !d.beats) return 1;
+  return a.beats === def ? 2 : d.beats === att ? 0.5 : 1;
+}
 
 function teamSide(team) { return team === 'blue' ? -1 : 1; }
 function otherTeam(team) { return team === 'blue' ? 'red' : 'blue'; }
@@ -1623,7 +1635,7 @@ function addUnit(team, kind, x, y) {
     unit: true, team, kind, def, x, y, hp: def.hp, maxHp: def.hp, r: def.r, spd: def.spd * rnd(0.92, 1.08),
     structure: !!def.structure, cd: rnd(0.2, def.cd), laneY: clamp(y, -ARENA_H + 70, ARENA_H - 70),
     kx: 0, ky: 0, slow: 0, poison: 0, poisonDps: 0, poisonTick: 0, flash: 0, hitCd: 0, txtCd: 0,
-    wob: rnd(0, TAU), dead: false, boss: false, wall: 0, laserT: 0,
+    wob: rnd(0, TAU), dead: false, boss: false, wall: 0, laserT: 0, slot: rnd(0, TAU), walk: 0, slamT: 0,
   };
   teamList(team).push(u);
   return u;
@@ -1774,8 +1786,9 @@ function startBattle(diff) {
   const hard = diff === 'hard';
   // Easy: evenly matched, so you tip the balance. Hard: red sends far more minions and an extra wizard.
   teams = {
-    blue: { score: 0, cells: 0, wave: 4, minions: 4, wizards: 2, wizQ: [], sigilT: 0 },
-    red:  { score: 0, cells: 0, wave: 4, minions: hard ? 7 : 4, wizards: hard ? 3 : 2, wizQ: [], sigilT: 0 },
+    blue: { score: 0, cells: 0, wave: 4, minions: 8, wizards: 2, wizQ: [], sigilT: 0, mix: { flyer: 1 / 3, archer: 1 / 3, brute: 1 / 3 } },
+    red:  { score: 0, cells: 0, wave: 4, minions: hard ? 13 : 8, wizards: hard ? 3 : 2, wizQ: [], sigilT: 0, mix: { flyer: 1 / 3, archer: 1 / 3, brute: 1 / 3 } },
+    order: 'spread', // your army: 'spread' pushes on its own, 'follow' sticks with you
     time: MATCH_TIME, terrRecalc: 0,
     build: { team: 'blue', t: BUILD_EVERY }, pending: null, result: null,
   };
@@ -1829,18 +1842,35 @@ function unitAttack(u, tgt) {
     const dx = tgt.x - u.x, dy = tgt.y - u.y, d = Math.hypot(dx, dy) || 1;
     const big = u.structure, sp = big ? 360 : 420;
     const boom = u.kind === 'wizard' && Math.random() < 0.2 ? 70 : 0; // wizards sometimes throw a fireball
-    bshots.push({ team: u.team, x: u.x + dx / d * u.r, y: u.y + dy / d * u.r, vx: dx / d * sp, vy: dy / d * sp,
-                  dmg: u.def.dmg * (boom ? 1.3 : 1), r: big ? 9 : boom ? 9 : 6, life: 1.8, boom, color: TEAM_COLOR[u.team] });
+    const small = u.kind === 'archer';
+    bshots.push({ team: u.team, src: u.kind, x: u.x + dx / d * u.r, y: u.y + dy / d * u.r, vx: dx / d * sp, vy: dy / d * sp,
+                  dmg: u.def.dmg * (boom ? 1.3 : 1), r: big ? 9 : boom ? 9 : small ? 4 : 6, life: 1.8, boom, arrow: small, color: TEAM_COLOR[u.team] });
     return;
   }
-  hitUnit(tgt, u.def.dmg);
-  if (u.def.splash) {
-    // titan slam: everything of the other side nearby gets hit too
-    const opp = u.team === 'blue' ? foes : friends.concat(state === 'play' ? [player] : []);
-    for (const o of opp) if (o !== tgt && !o.dead && Math.hypot(o.x - tgt.x, o.y - tgt.y) < u.def.splash) hitUnit(o, u.def.dmg * 0.5);
-    ring(tgt.x, tgt.y, u.def.splash, TEAM_COLOR[u.team], 0.3);
-    shake = Math.max(shake, 3);
+  if (u.kind === 'titan') {
+    // the slam lands a beat after the swing starts
+    u.slamT = 0.5;
+    u.slamAt = { x: tgt.x, y: tgt.y, tgt };
+    return;
   }
+  hitUnit(tgt, u.def.dmg * matchup(u.kind, tgt.kind));
+}
+
+function titanSlam(u) {
+  const { x, y, tgt } = u.slamAt;
+  if (tgt && !tgt.dead) hitUnit(tgt, u.def.dmg);
+  // everything of the other side nearby gets hit too
+  const opp = u.team === 'blue' ? foes : friends.concat(state === 'play' ? [player] : []);
+  for (const o of opp) if (o !== tgt && !o.dead && Math.hypot(o.x - x, o.y - y) < u.def.splash) hitUnit(o, u.def.dmg * 0.5);
+  ring(x, y, u.def.splash, TEAM_COLOR[u.team], 0.35);
+  ring(x, y, u.def.splash * 0.5, '#d8c8a0', 0.25);
+  for (let i = 0; i < 14; i++) {
+    const a = rnd(0, TAU), sp = rnd(60, 180);
+    particles.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp * 0.5, r: rnd(3, 6), life: 1, decay: rnd(1.5, 2.5), color: '#8a7a5e' });
+  }
+  shake = Math.max(shake, 5);
+  SFX.explode(false);
+  u.slamAt = null;
 }
 
 // Damage from the AI and laser walls. Your own hits go through damageFoe.
@@ -1904,6 +1934,11 @@ function updateUnit(u, dt) {
   u.cd -= dt;
   u.flash = Math.max(0, u.flash - dt);
   u.txtCd -= dt;
+  if (u.slamT > 0) {
+    u.slamT -= dt;
+    if (u.slamT <= 0.18 && u.slamAt) titanSlam(u);
+    if (u.slamT > 0) return; // a titan mid-swing stays put
+  }
   if (u.kind === 'sigil') { u.wall = Math.max(0, u.wall - dt); return; }
   if (u.structure) {
     const t = findTarget(u);
@@ -1918,6 +1953,18 @@ function updateUnit(u, dt) {
     tx = home.x - teamSide(u.team) * 130; ty = home.y;
     if (Math.hypot(tx - u.x, ty - u.y) < 160) u.hp = Math.min(u.maxHp, u.hp + 8 * dt);
     if (u.hp >= u.maxHp * 0.95) u.retreat = false;
+  } else if (u.team === 'blue' && teams.order === 'follow' && state === 'play') {
+    // follow me: fight what comes near you, otherwise keep formation around you
+    const t = findTarget(u);
+    if (t && Math.hypot(t.x - player.x, t.y - player.y) < 340) {
+      const d = Math.hypot(t.x - u.x, t.y - u.y) - (t.r || PLAYER_R);
+      if (d > u.def.range - 4) { tx = t.x; ty = t.y; } else unitAttack(u, t);
+    } else {
+      const rad = u.kind === 'titan' ? 120 : u.kind === 'wizard' ? 90 : 60 + (u.wob % 1) * 50;
+      tx = player.x - player.face.x * 40 + Math.cos(u.slot) * rad;
+      ty = player.y - player.face.y * 40 + Math.sin(u.slot) * rad;
+      if (Math.hypot(tx - u.x, ty - u.y) < 10) tx = null;
+    }
   } else {
     const t = findTarget(u);
     if (t) {
@@ -1934,8 +1981,37 @@ function updateUnit(u, dt) {
   }
   if (tx !== null) {
     const spd = u.spd * (u.slow > 0 ? 0.5 : 1) * (u.hex > 0 ? 0.4 : 1) * (u.root > 0 ? 0 : 1);
+    const ox = u.x, oy = u.y;
     moveToward(u, tx, ty, spd, dt, 0);
+    const moved = Math.hypot(u.x - ox, u.y - oy);
+    u.walk += moved;
+    u.face = u.x !== ox ? Math.sign(u.x - ox) : u.face || 1;
+    if (u.kind === 'titan' && moved > 0 && Math.floor(u.walk / 34) !== Math.floor((u.walk - moved) / 34)) {
+      // footfall: a puff of dust under the stepping foot
+      const side = Math.floor(u.walk / 34) % 2 ? 1 : -1;
+      for (let i = 0; i < 4; i++) particles.push({ x: u.x + side * u.r * 0.45, y: u.y + u.r * 0.95, vx: rnd(-40, 40), vy: rnd(-25, 0), r: rnd(2, 4), life: 0.8, decay: 2.2, color: '#7a6c54' });
+    }
   }
+}
+
+// split a wave between the three minion kinds by the mix (largest remainders)
+function waveKinds(mix, n) {
+  const raw = MINION_KINDS.map(k => mix[k] * n), out = raw.map(Math.floor);
+  let left = n - out.reduce((a, b) => a + b, 0);
+  const order = raw.map((v, i) => [v - Math.floor(v), i]).sort((a, b) => b[0] - a[0]);
+  for (let k = 0; k < left; k++) out[order[k][1]]++;
+  return MINION_KINDS.flatMap((k, i) => Array(out[i]).fill(k));
+}
+// red's mix: random on Easy; on Hard it leans toward whatever beats your favourite
+function redMix() {
+  const w = MINION_KINDS.map(() => 0.3 + Math.random());
+  if (difficulty === 'hard') {
+    const fav = MINION_KINDS.reduce((a, b) => teams.blue.mix[a] >= teams.blue.mix[b] ? a : b);
+    const counter = MINION_KINDS.find(k => UNITS[k].beats === fav);
+    w[MINION_KINDS.indexOf(counter)] += 1.6;
+  }
+  const t = w.reduce((a, b) => a + b, 0);
+  return Object.fromEntries(MINION_KINDS.map((k, i) => [k, w[i] / t]));
 }
 
 function segDist(px, py, a, b) {
@@ -1976,9 +2052,10 @@ function updateBattle(dt) {
     const S = T[team], sd = teamSide(team);
     S.wave -= dt;
     if (S.wave <= 0) {
-      S.wave = 18;
-      for (let i = 0; i < S.minions; i++) {
-        const u = addUnit(team, 'minion', sd * (BASE_X - 90) + rnd(-20, 20), rnd(-120, 120));
+      S.wave = 14;
+      if (team === 'red') S.mix = redMix();
+      for (const kind of waveKinds(S.mix, S.minions)) {
+        const u = addUnit(team, kind, sd * (BASE_X - 90) + rnd(-20, 20), rnd(-120, 120));
         u.laneY = rnd(-1, 1) * ARENA_H * 0.65;
       }
     }
@@ -2031,7 +2108,7 @@ function updateBattle(dt) {
         launch(sh.x, sh.y, { x: -sh.vx / sp, y: -sh.vy / sp }, { dmg: sh.dmg * 2, type: 'mirror', speed: sp * 1.4, r: sh.r });
         SFX.block();
       } else {
-        hitUnit(o, sh.dmg);
+        hitUnit(o, sh.dmg * matchup(sh.src, o.kind));
         if (sh.boom) {
           for (const o2 of opp) if (o2 !== o && !o2.dead && Math.hypot(o2.x - sh.x, o2.y - sh.y) < sh.boom) hitUnit(o2, sh.dmg * 0.5);
           burst(sh.x, sh.y, sh.color, 16, 220);
@@ -2246,6 +2323,8 @@ canvas.addEventListener('pointerdown', e => {
     else { tilt.asked = false; tilt.warned = false; tilt.denied = false; tilt.granted = false; } // try again on this tap's release
     return;
   }
+  if (orderHit(x, y)) { toggleOrder(); return; }
+  if (mixHit(x, y)) { mixPtr = e.pointerId; setMixAt(x, y); try { canvas.setPointerCapture(e.pointerId); } catch (_) {} return; }
   const bb = buildButtonHit(x, y);
   if (bb) { buildChoice(bb.key); return; }
   if (fireButtonHit(x, y)) { holdTilt(); fireLoaded(); tilt.pauseUntil = performance.now() + 400; return; }
@@ -2264,7 +2343,9 @@ canvas.addEventListener('pointerdown', e => {
   try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
 });
 
+let mixPtr = null;
 canvas.addEventListener('pointermove', e => {
+  if (e.pointerId === mixPtr) { const p = localPos(e); setMixAt(p.x, p.y); return; }
   if (e.pointerId === castPtr) { const p = localPos(e); castMove(p.x, p.y); }
   else if (e.pointerId === movePtr) {
     movePos = localPos(e);
@@ -2273,6 +2354,7 @@ canvas.addEventListener('pointermove', e => {
 });
 
 function endPointer(e, cancelled) {
+  if (e.pointerId === mixPtr) mixPtr = null;
   if (e.pointerId === castPtr) {
     if (state === 'play' && !cancelled) castSequence();
     seq = []; castPtr = null; finger = null; curNode = null;
@@ -2316,6 +2398,7 @@ window.addEventListener('keydown', e => {
   if (confirm && castPtr === null) { if (seq.length) castSequence(); else fireLoaded(); }
   if (e.code === 'KeyF') fireLoaded();
   if (e.code === 'KeyB') buildChoice('turret');
+  if (e.code === 'KeyG' && mode === 'battle' && teams) toggleOrder();
   if (e.code === 'KeyT') buildChoice('titan');
   if ((e.code === 'Backspace' || e.code === 'Escape') && castPtr === null) seq = [];
 });
@@ -2824,7 +2907,24 @@ function drawUnit(u) {
   const c = TEAM_COLOR[u.team], t = elapsed, r = u.r;
   ctx.save();
   ctx.translate(u.x, u.y);
-  if (u.kind === 'minion') {
+  if (u.kind === 'archer') {
+    const bob = Math.sin(u.walk * 0.25) * 1.5;
+    ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.beginPath(); ctx.ellipse(1, 10, 7, 2.5, 0, 0, TAU); ctx.fill();
+    circle(0, bob, r * 0.8, '#2a2238', c, 2);
+    circle(0, -r * 0.7 + bob, r * 0.5, '#f1d2b0');
+    ctx.strokeStyle = '#a07a40'; ctx.lineWidth = 2;
+    const f = u.face || 1;
+    ctx.beginPath(); ctx.arc(f * r * 0.9, bob, r * 0.8, -Math.PI / 2, Math.PI / 2, f < 0); ctx.stroke();
+    ctx.strokeStyle = '#ddd'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(f * r * 0.9, -r * 0.8 + bob); ctx.lineTo(f * r * 0.9, r * 0.8 + bob); ctx.stroke();
+  } else if (u.kind === 'brute') {
+    const bob = Math.abs(Math.sin(u.walk * 0.18)) * 2;
+    ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.beginPath(); ctx.ellipse(1, 13, 10, 3, 0, 0, TAU); ctx.fill();
+    roundRect(-r, -r - bob, r * 2, r * 1.9, 4); ctx.fillStyle = '#3a3040'; ctx.fill();
+    ctx.strokeStyle = c; ctx.lineWidth = 2.5; ctx.stroke();
+    circle(-r * 1.05, r * 0.2 - bob, 4.5, c); circle(r * 1.05, r * 0.2 - bob, 4.5, c);
+    ctx.fillStyle = '#fff'; ctx.fillRect(-5, -r * 0.5 - bob, 3, 2); ctx.fillRect(2, -r * 0.5 - bob, 3, 2);
+  } else if (u.kind === 'flyer') {
     const flap = Math.sin(t * 16 + u.wob) * 0.6;
     ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.beginPath(); ctx.ellipse(2, 16, 8, 3, 0, 0, TAU); ctx.fill();
     ctx.fillStyle = c;
@@ -2844,12 +2944,45 @@ function drawUnit(u) {
     circle(-15, -18, 4, c);
     if (u.retreat) { ctx.fillStyle = '#8f8'; ctx.font = 'bold 11px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.fillText('+', 0, -36); }
   } else if (u.kind === 'titan') {
-    circle(5, r * 0.8, r * 0.9, 'rgba(0,0,0,0.3)');
-    circle(0, 0, r, '#4a4a52', c, 4);
+    // a lumbering giant: alternating legs, swinging arms, a heaving body,
+    // and an overhead two-fisted slam when it attacks
+    const ph = u.walk * 0.09, step = Math.sin(ph), f = u.face || 1;
+    const swing = u.slamT > 0 ? 1 - Math.max(0, u.slamT - 0.18) / 0.32 : 0; // 0 raised → 1 crashing down
+    const bob = -Math.abs(step) * 3 + (u.slamT > 0.18 ? -4 : 0);
+    ctx.fillStyle = 'rgba(0,0,0,0.32)'; ctx.beginPath(); ctx.ellipse(0, r * 1.05, r * 1.05, r * 0.32, 0, 0, TAU); ctx.fill();
+    // legs
+    ctx.strokeStyle = '#3a3a42'; ctx.lineCap = 'round'; ctx.lineWidth = r * 0.42;
+    for (const sd of [-1, 1]) {
+      const lift = Math.max(0, sd * step) * 7;
+      ctx.beginPath(); ctx.moveTo(sd * r * 0.38, r * 0.35 + bob); ctx.lineTo(sd * r * 0.45 + sd * step * 4, r * 0.98 - lift); ctx.stroke();
+    }
+    // arms: swinging while walking, raised high then hammered down in a slam
+    for (const sd of [-1, 1]) {
+      let ax, ay;
+      if (u.slamT > 0) {
+        const up = 1 - swing;
+        ax = sd * r * (0.5 + 0.2 * swing) + f * swing * r * 0.5;
+        ay = -r * 1.5 * up + r * 0.9 * swing + bob;
+      } else {
+        ax = sd * r * 1.05 + Math.sin(ph + (sd > 0 ? Math.PI : 0)) * 3;
+        ay = r * 0.45 - Math.sin(ph + (sd > 0 ? Math.PI : 0)) * r * 0.35 + bob;
+      }
+      ctx.strokeStyle = '#46464f'; ctx.lineWidth = r * 0.36;
+      ctx.beginPath(); ctx.moveTo(sd * r * 0.72, -r * 0.25 + bob); ctx.lineTo(ax, ay); ctx.stroke();
+      circle(ax, ay, r * 0.27, '#55555e', c, 2);
+    }
+    // body and armour
+    roundRect(-r * 0.85, -r * 0.75 + bob, r * 1.7, r * 1.25, r * 0.35);
+    ctx.fillStyle = '#4a4a52'; ctx.fill(); ctx.strokeStyle = c; ctx.lineWidth = 3; ctx.stroke();
+    ctx.fillStyle = c; ctx.fillRect(-r * 0.55, -r * 0.2 + bob, r * 1.1, r * 0.2);
+    // head with horns and glowing eyes
+    circle(f * r * 0.08, -r * 0.92 + bob, r * 0.4, '#3e3e46', c, 2);
     ctx.fillStyle = '#d8d0c0';
-    for (const sd of [-1, 1]) { ctx.beginPath(); ctx.moveTo(sd * r * 0.5, -r * 0.7); ctx.lineTo(sd * r * 0.95, -r * 1.35); ctx.lineTo(sd * r * 0.8, -r * 0.55); ctx.fill(); }
-    ctx.fillStyle = c; ctx.fillRect(-r * 0.6, -r * 0.2, r * 1.2, r * 0.25);
-    circle(-r * 0.3, -r * 0.35, 4, '#ffd24a'); circle(r * 0.3, -r * 0.35, 4, '#ffd24a');
+    for (const sd of [-1, 1]) {
+      ctx.beginPath(); ctx.moveTo(sd * r * 0.25, -r * 1.1 + bob); ctx.lineTo(sd * r * 0.62, -r * 1.55 + bob); ctx.lineTo(sd * r * 0.4, -r * 0.98 + bob); ctx.fill();
+    }
+    const glow = u.slamT > 0 ? '#fff6b0' : '#ffd24a';
+    circle(f * r * 0.08 - r * 0.15, -r * 0.95 + bob, 3, glow); circle(f * r * 0.08 + r * 0.15, -r * 0.95 + bob, 3, glow);
   } else if (u.kind === 'turret') {
     circle(4, 8, r, 'rgba(0,0,0,0.3)');
     circle(0, 0, r, '#5d5a56', '#3e3c39', 3);
@@ -3162,6 +3295,12 @@ function drawWorld() {
   }
   for (const u of friends) if (!u.dead && inView(u.x, u.y, 120, camX, camY)) drawUnit(u);
   for (const sh of bshots) {
+    if (sh.arrow) {
+      const sp = Math.hypot(sh.vx, sh.vy) || 1;
+      ctx.strokeStyle = sh.color; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(sh.x - sh.vx / sp * 12, sh.y - sh.vy / sp * 12); ctx.lineTo(sh.x, sh.y); ctx.stroke();
+      continue;
+    }
     circle(sh.x, sh.y, sh.r + 4, 'rgba(0,0,0,0.35)');
     circle(sh.x, sh.y, sh.r, sh.color, '#fff', 1.5);
   }
@@ -3230,8 +3369,8 @@ function drawHUD() {
   }
 
   drawMinimap();
-  drawFireButton();
   drawBuildButtons();
+  drawMixTri();
   {
     const r = soundRect();
     roundRect(r.x, r.y, r.w, r.h, 6);
@@ -3318,6 +3457,84 @@ function drawBattleStatus(x, y) {
   ctx.fillText(bt, x, y + 26);
 }
 
+// The mix triangle: drag the dot toward the minion kinds you want more of.
+// Each corner is a kind; arrows around it show who beats whom.
+function mixTri() {
+  const s = Math.min(92, W * 0.22), x = 44 + s / 2, y = 172, h = s * 0.866;
+  return { s, pts: { flyer: { x, y }, archer: { x: x + s / 2, y: y + h }, brute: { x: x - s / 2, y: y + h } }, cx: x, cy: y + h * 0.62 };
+}
+function mixPoint() {
+  const T = mixTri(), m = teams.blue.mix;
+  return { x: MINION_KINDS.reduce((a, k) => a + T.pts[k].x * m[k], 0), y: MINION_KINDS.reduce((a, k) => a + T.pts[k].y * m[k], 0) };
+}
+function mixHit(x, y) {
+  if (mode !== 'battle' || !teams) return false;
+  const T = mixTri();
+  return x > T.pts.brute.x - 16 && x < T.pts.archer.x + 16 && y > T.pts.flyer.y - 18 && y < T.pts.brute.y + 26;
+}
+// set the mix from a point: barycentric weights, clamped inside the triangle
+function setMixAt(x, y) {
+  const T = mixTri(), A = T.pts.flyer, B = T.pts.archer, C = T.pts.brute;
+  const d = (B.y - C.y) * (A.x - C.x) + (C.x - B.x) * (A.y - C.y);
+  let a = ((B.y - C.y) * (x - C.x) + (C.x - B.x) * (y - C.y)) / d;
+  let b = ((C.y - A.y) * (x - C.x) + (A.x - C.x) * (y - C.y)) / d;
+  a = clamp(a, 0, 1); b = clamp(b, 0, 1);
+  let c = 1 - a - b;
+  if (c < 0) { const t = a + b; a /= t; b /= t; c = 0; }
+  teams.blue.mix = { flyer: a, archer: b, brute: c };
+}
+function drawMixTri() {
+  if (mode !== 'battle' || !teams) return;
+  const T = mixTri(), P = T.pts;
+  ctx.beginPath(); ctx.moveTo(P.flyer.x, P.flyer.y); ctx.lineTo(P.archer.x, P.archer.y); ctx.lineTo(P.brute.x, P.brute.y); ctx.closePath();
+  ctx.fillStyle = 'rgba(10,14,28,0.7)'; ctx.fill();
+  ctx.strokeStyle = 'rgba(74,168,255,0.6)'; ctx.lineWidth = 1.5; ctx.stroke();
+  // who beats whom, as arrows round the outside
+  ctx.strokeStyle = 'rgba(255,210,74,0.7)'; ctx.fillStyle = 'rgba(255,210,74,0.7)'; ctx.lineWidth = 1.5;
+  for (const k of MINION_KINDS) {
+    const a = P[k], b = P[UNITS[k].beats];
+    const ox = (a.x + b.x) / 2 - T.cx, oy = (a.y + b.y) / 2 - T.cy, ol = Math.hypot(ox, oy) || 1;
+    const mxp = (a.x + b.x) / 2 + ox / ol * 9, myp = (a.y + b.y) / 2 + oy / ol * 9;
+    const dx = b.x - a.x, dy = b.y - a.y, dl = Math.hypot(dx, dy);
+    ctx.beginPath(); ctx.moveTo(mxp - dx / dl * 10, myp - dy / dl * 10); ctx.lineTo(mxp + dx / dl * 10, myp + dy / dl * 10); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(mxp + dx / dl * 12, myp + dy / dl * 12);
+    ctx.lineTo(mxp + dx / dl * 6 - dy / dl * 4, myp + dy / dl * 6 + dx / dl * 4); ctx.lineTo(mxp + dx / dl * 6 + dy / dl * 4, myp + dy / dl * 6 - dx / dl * 4); ctx.closePath(); ctx.fill();
+  }
+  const counts = waveKinds(teams.blue.mix, teams.blue.minions).reduce((m, k) => (m[k] = (m[k] || 0) + 1, m), {});
+  ctx.font = 'bold 10px system-ui, sans-serif'; ctx.fillStyle = '#ddd';
+  ctx.textAlign = 'center'; ctx.fillText(`Flyer ${counts.flyer || 0}`, P.flyer.x, P.flyer.y - 6);
+  ctx.textAlign = 'left'; ctx.fillText(`Archer ${counts.archer || 0}`, P.archer.x - 26, P.archer.y + 14);
+  ctx.textAlign = 'right'; ctx.fillText(`Brute ${counts.brute || 0}`, P.brute.x + 26, P.brute.y + 14);
+  const m = mixPoint();
+  circle(m.x, m.y, 6, TEAM_COLOR.blue, '#fff', 2);
+}
+
+function orderButton() {
+  const r = Math.max(26, Math.min(32, W * 0.075));
+  return { x: 16 + r, y: H - 16 - r, r };
+}
+function orderHit(x, y) {
+  if (mode !== 'battle' || !teams) return false;
+  const b = orderButton();
+  return Math.hypot(x - b.x, y - b.y) < b.r + 6;
+}
+function toggleOrder() {
+  teams.order = teams.order === 'follow' ? 'spread' : 'follow';
+  castMessage(teams.order === 'follow' ? 'Army: follow me!' : 'Army: spread out!', TEAM_COLOR.blue);
+  SFX.buff();
+}
+function drawOrderButton() {
+  if (mode !== 'battle' || !teams) return;
+  const b = orderButton(), follow = teams.order === 'follow';
+  circle(b.x, b.y, b.r, follow ? 'rgba(74,168,255,0.85)' : 'rgba(16,22,40,0.9)', TEAM_COLOR.blue, 2.5);
+  ctx.textAlign = 'center';
+  ctx.fillStyle = follow ? '#08111e' : '#cfe6ff';
+  ctx.font = 'bold 10px system-ui, sans-serif';
+  ctx.fillText(follow ? 'FOLLOW' : 'SPREAD', b.x, b.y - 1);
+  ctx.font = '9px system-ui, sans-serif';
+  ctx.fillText(follow ? 'tap: spread' : 'tap: follow', b.x, b.y + 11);
+}
+
 function drawBuildButtons() {
   if (mode !== 'battle' || !teams || !teams.pending || state !== 'play') return;
   const ok = canBuildAt(player.x, player.y);
@@ -3372,7 +3589,7 @@ function drawBattleMap() {
     if (u.dead) continue;
     const c = TEAM_COLOR[u.team];
     if (u.structure) { ctx.fillStyle = c; const s = u.kind === 'nexus' ? 7 : 4; ctx.fillRect(mx(u.x) - s / 2, my(u.y) - s / 2, s, s); }
-    else circle(mx(u.x), my(u.y), u.kind === 'titan' ? 2.5 : u.kind === 'wizard' ? 2 : 1.2, c);
+    else circle(mx(u.x), my(u.y), u.kind === 'titan' ? 2.8 : u.kind === 'wizard' ? 2 : 1, c);
   }
   circle(mx(player.x), my(player.y), 2.5, '#fff');
   return h;
@@ -3727,6 +3944,8 @@ function render() {
   if (state === 'reveal') { drawReveal(); return; }
   drawHUD();
   drawPentagram();
+  drawFireButton();   // on top of the pentagram's backdrop
+  drawOrderButton();
   if (state === 'dead') drawDead();
   if (state === 'won') drawWon();
   if (state === 'lost') drawBattleEnd(false);
