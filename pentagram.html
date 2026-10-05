@@ -5757,22 +5757,19 @@ let menuPage = 'main';
 let menuFx = [], menuT = 0, menuCast = 0;
 function goMenu(page) { menuPage = page; SFX.buff(); }
 
-// a menu button: big Caslon title with a line underneath
+// a menu button: just the word, in capitals, as big as its space allows
 function menuButton(b) {
-  const sel = b.selected;
-  roundRect(b.x, b.y, b.w, b.h, 12);
-  ctx.fillStyle = sel ? 'rgba(199,125,255,0.22)' : 'rgba(20,14,34,0.92)'; ctx.fill();
-  ctx.strokeStyle = sel ? '#ffd24a' : b.color; ctx.lineWidth = sel ? 3 : 2; ctx.stroke();
+  const word = b.title.toUpperCase();
   ctx.textAlign = 'center';
+  let fs = b.h * 0.9;
+  ctx.font = `${fs}px ${SERIF_BIG}`;
+  const w = ctx.measureText(word).width;
+  if (w > b.w * 0.96) { fs *= b.w * 0.96 / w; ctx.font = `${fs}px ${SERIF_BIG}`; }
+  const by = b.y + b.h / 2 + fs * 0.34; // caps sit in the middle
+  if (b.selected) { ctx.shadowColor = b.color; ctx.shadowBlur = 18; }
   ctx.fillStyle = b.color;
-  const big = b.size || 22;
-  ctx.font = `${big}px ${SERIF_BIG}`;
-  ctx.fillText(b.title, b.x + b.w / 2, b.y + (b.sub ? b.h / 2 + big * 0.12 : b.h / 2 + big * 0.36));
-  if (b.sub) {
-    ctx.fillStyle = '#bbb';
-    ctx.font = `italic 12px ${SERIF}`;
-    ctx.fillText(b.sub, b.x + b.w / 2, b.y + b.h / 2 + big * 0.12 + 18);
-  }
+  ctx.fillText(word, b.x + b.w / 2, by);
+  ctx.shadowBlur = 0;
 }
 
 // your hero, big, doing a little routine: the wizard twirls sparks from the
@@ -5837,47 +5834,42 @@ function drawTitle() {
   y = wrapText('Parallel universes are converging. Fight to preserve yours.', W / 2, y, bw, 19) + 14;
 
   if (menuPage === 'battle') {
-    ctx.fillStyle = '#e6e0f0';
-    ctx.font = `26px ${SERIF_BIG}`;
-    ctx.fillText('Battle', W / 2, y + 12);
-    y += 32;
-    const bh = Math.min(68, Math.max(54, (H - y - 90) / 4 - gap));
+    y += 6;
+    const bh = Math.min(84, Math.max(54, (H - y - 80) / 4 - gap));
     const opts = [
-      { title: 'Easy', sub: 'Even sides: you tip the balance', color: TEAM_COLOR.blue, go: () => startBattle('easy') },
-      { title: 'Hard', sub: 'Red sends far more minions', color: TEAM_COLOR.red, go: () => startBattle('hard') },
-      { title: 'Very Hard', sub: 'A smart army, wizards casting every spell', color: '#ff2a8a', go: () => startBattle('vhard') },
-      { title: 'Battle a Friend', sub: 'Online, with a room code', color: '#ffd166', go: openLobby },
+      { title: 'Easy', color: TEAM_COLOR.blue, go: () => startBattle('easy') },
+      { title: 'Hard', color: TEAM_COLOR.red, go: () => startBattle('hard') },
+      { title: 'Very Hard', color: '#ff2a8a', go: () => startBattle('vhard') },
+      { title: 'Battle a Friend', color: '#ffd166', go: openLobby },
     ];
     titleButtons = opts.map((o, i) => ({ ...o, x: bx, y: y + i * (bh + gap), w: bw, h: bh }));
-    y += opts.length * (bh + gap) + 4;
-    titleButtons.push({ title: '‹ Back', color: '#aaa', size: 18, x: bx + bw / 2 - 70, y, w: 140, h: 42, go: () => goMenu('main') });
+    y += opts.length * (bh + gap) + 6;
+    titleButtons.push({ title: 'Back', color: '#8a8498', x: bx + bw / 2 - 70, y, w: 140, h: 40, go: () => goMenu('main') });
     for (const b of titleButtons) menuButton(b);
     return;
   }
 
   // your hero on the left, Wizard / Space on the right
   const ph = Math.min(230, Math.max(150, H * 0.27)), half = (bw - gap) / 2;
-  roundRect(bx, y, half, ph, 14); ctx.fillStyle = 'rgba(12,8,24,0.75)'; ctx.fill();
-  ctx.strokeStyle = 'rgba(199,125,255,0.35)'; ctx.lineWidth = 1.5; ctx.stroke();
-  ctx.save(); roundRect(bx, y, half, ph, 14); ctx.clip();
+  ctx.save(); ctx.beginPath(); ctx.rect(bx - 8, y - 8, half + 16, ph + 16); ctx.clip();
   drawMenuHero(bx + half / 2 - 6, y + ph * 0.56, Math.min(3.2, ph / 62), dt);
   ctx.restore();
   const ch = (ph - gap) / 2;
   const looks = [
-    { title: 'Wizard', sub: 'Robes, staff and old magic', look: 'wizard' },
-    { title: 'Space', sub: 'Suit, blaster and star-tech', look: 'space' },
+    { title: 'Wizard', look: 'wizard' },
+    { title: 'Space', look: 'space' },
   ];
-  const lookButtons = looks.map((o, i) => ({ ...o, color: mySkin === o.look ? '#fff' : '#999', selected: mySkin === o.look, size: 22,
+  const lookButtons = looks.map((o, i) => ({ ...o, color: mySkin === o.look ? '#ffd24a' : '#5a5470', selected: mySkin === o.look,
     x: bx + half + gap, y: y + i * (ch + gap), w: half, h: ch, go: () => setSkin(o.look) }));
   const heroButton = { x: bx, y, w: half, h: ph, go: () => { menuCast = 0.8; SFX.release(mySkin === 'space' ? 'FA' : 'FF'); } };
   y += ph + 16;
   // where to play
   const bh = Math.min(76, Math.max(58, (H - y - 70) / 2 - gap));
   const modes = [
-    { title: 'Adventure', sub: 'Explore, hunt the five guardians, find the scrolls', color: '#c77dff', go: startGame },
-    { title: 'Battle', sub: 'Easy · Hard · Very Hard · a friend', color: TEAM_COLOR.blue, go: () => goMenu('battle') },
+    { title: 'Adventure', color: '#c77dff', go: startGame },
+    { title: 'Battle', color: TEAM_COLOR.blue, go: () => goMenu('battle') },
   ];
-  const modeButtons = modes.map((o, i) => ({ ...o, size: 26, x: bx, y: y + i * (bh + gap), w: bw, h: bh }));
+  const modeButtons = modes.map((o, i) => ({ ...o, x: bx, y: y + i * (bh + gap), w: bw, h: bh }));
   y += modes.length * (bh + gap) + 8;
   // Adventure first, so Enter starts it
   titleButtons = [...modeButtons, ...lookButtons, heroButton];
