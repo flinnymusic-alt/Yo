@@ -737,11 +737,11 @@ function respawn() {
 
 // ── feedback helpers ─────────────────────────────────────────────────────────
 function showBanner(text, sub, life) {
-  if (curSide === 'red') { netEvents.push(['banner', text, sub, life]); return; }
+  if (curSide === 'red') { if (versus) netEvents.push(['banner', text, sub, life]); return; }
   banner = { text, sub, life, max: life };
 }
 function castMessage(text, color) {
-  if (curSide === 'red') { netEvents.push(['msg', text, color]); return; }
+  if (curSide === 'red') { if (versus) netEvents.push(['msg', text, color]); return; }
   castMsg = { text, color, life: 1.6 };
 }
 function floatText(x, y, text, color, size) {
@@ -833,7 +833,7 @@ function damageFoe(f, dmg, rawType, fromHelper) {
     }
   }
   if (player.empower > 0 && !fromHelper) mult *= 2;
-  const d = f.unit ? minionHit(f, dmg * mult) : dmg * mult;
+  const d = f.unit ? minionHit(f, mageGuard(f, dmg * mult)) : dmg * mult;
   f.hp -= d;
   if (rawType !== 'poison') SFX.hit();
   f.flash = 0.12;
@@ -872,8 +872,8 @@ function huntBonus(f) {
 
 function killFoe(f) {
   if (f.unit) {
-    // battle units: points for your kill, then the usual fallout (respawns, shields, victory)
-    kills++;
+    // battle units: points for the kill, then the usual fallout (respawns, shields, victory)
+    if (curSide !== 'red') kills++;
     SFX.kill();
     unitFell(f); // points go to blue
     return;
@@ -1386,7 +1386,7 @@ function castSequence() {
   }
   if (!discovered.has(key)) {
     discovered.add(key);
-    SFX.discover();
+    if (curSide !== 'red') SFX.discover();
     showBanner(tier >= 5 ? `${TIERS[tier].toUpperCase()} SPELL!` : 'New spell discovered!',
                `${sp.name} · tier ${tier} ${TIERS[tier]} · complexity ${complexityOf(key).toFixed(1)}`, tier >= 5 ? 4 : 3);
   }
@@ -2278,8 +2278,12 @@ function startBattle(diff) {
     orders: { minion: 'attackTurrets', titan: 'attackTurrets' }, // what each group does when spread out
     time: MATCH_TIME, terrRecalc: 0,
     build: { team: 'blue', t: BUILD_EVERY }, pending: null, result: null,
-    breakdown: { blue: {}, red: {} }, brain: null, focus: new Map(),
+    breakdown: { blue: {}, red: {} }, brain: null, focus: new Map(), redUsed: new Set(), ultCd: 30,
   };
+  // Very Hard: red's wizards get their own spell lists, and can hit you through a stand-in
+  leadMage = null;
+  Object.assign(redSide, { shots: [], allies: [], traps: [], zones: [], waves: [], meteors: [], storms: [], discovered: new Set(), seq: [] });
+  if (vhard) hostProxy = heroProxy('host', 'blue');
   for (const team of ['blue', 'red']) {
     const sd = teamSide(team);
     addUnit(team, 'nexus', sd * BASE_X, 0);
@@ -2328,7 +2332,7 @@ function findTarget(u) {
 // Where a unit heads when nothing is in reach: the enemy sigil (unless walled),
 // otherwise the nearest enemy turret, otherwise the edge of the enemy base.
 // Your orders for a unit (red always attacks turrets, then the base).
-function rivalHelpers() { return versus && net.role === 'host' ? redSide.allies.filter(a => a.kind === 'critter' && a.life > 0) : []; }
+function rivalHelpers() { return (versus && net.role === 'host') || aiMagic() ? redSide.allies.filter(a => a.kind === 'critter' && a.life > 0) : []; }
 // a team's army stance and its leader (red only has one in a duel)
 function teamStance(team) { return team === 'blue' ? teams.order : (versus && teams.redOrder) || 'spread'; }
 function teamLeader(team) { return team === 'blue' ? (state === 'play' ? hostP : null) : (versus && rivalP && !rivalP.dead ? rivalP : null); }
@@ -2424,13 +2428,20 @@ function hitUnit(t, dmg) {
     if (t.txtCd <= 0) { floatText(t.x, t.y - t.r - 10, shieldText(t), '#bde', 13); t.txtCd = 0.8; }
     return;
   }
-  t.hp -= minionHit(t, dmg);
+  t.hp -= minionHit(t, mageGuard(t, dmg));
   t.flash = 0.12;
   if (t.hp <= 0) unitFell(t);
 }
 
 // A unit is gone. Whoever's side it wasn't on scores for it.
 function unitFell(u) {
+  if (u.mage && u.mage.phoenix > 0) {
+    // a red wizard's Phoenix: back up once, in flames
+    u.mage.phoenix = 0; u.hp = u.maxHp;
+    burst(u.x, u.y, '#ffb04a', 50, 420);
+    floatText(u.x, u.y - 50, 'PHOENIX!', '#ff8a3a', 18);
+    return;
+  }
   u.dead = true;
   const by = otherTeam(u.team);
   teamScore(by, u.def.pts, u.x, u.y - u.r - 20,
@@ -2491,6 +2502,7 @@ function updateUnit(u, dt) {
     if (u.slamT > 0) return; // a titan mid-swing stays put
   }
   if (u.kind === 'sigil') { u.wall = Math.max(0, u.wall - dt); return; }
+  if (u.castT > 0) return; // a wizard winding up a spell stands still
   if (u.structure) {
     const t = findTarget(u);
     if (t && Math.hypot(t.x - u.x, t.y - u.y) <= u.def.range + (t.r || PLAYER_R)) unitAttack(u, t);
@@ -2553,7 +2565,7 @@ function updateUnit(u, dt) {
     }
   }
   if (tx !== null) {
-    const spd = u.spd * (u.slow > 0 ? 0.5 : 1) * (u.hex > 0 ? 0.4 : 1) * (u.root > 0 ? 0 : 1) * tiredSpd(u);
+    const spd = u.spd * (u.mage && u.mage.haste > 0 ? 1.6 : 1) * (u.slow > 0 ? 0.5 : 1) * (u.hex > 0 ? 0.4 : 1) * (u.root > 0 ? 0 : 1) * tiredSpd(u);
     const ox = u.x, oy = u.y;
     moveToward(u, tx, ty, spd, dt, 0);
     const moved = Math.hypot(u.x - ox, u.y - oy);
@@ -2753,6 +2765,113 @@ function redBrain(dt) {
     for (const u of free.slice(0, Math.min(free.length, 2 + wn * 2))) u.defend = true;
   }
 }
+// ── Very Hard: red's wizards cast the whole spell book ──
+// Each red wizard has an invisible caster that runs real spells through the
+// same engine as yours (and a duel friend's). Every few seconds it reads the
+// fight and picks a kind of spell: heal or guard when hurt, crowd control and
+// blasts into a crowd, attacks on you, helpers when it has none, buffs before
+// a push. Within that kind it prefers spells it hasn't cast yet, so over a
+// match red works through its whole spell book.
+const aiMagic = () => mode === 'battle' && difficulty === 'vhard' && !versus && !!teams;
+let leadMage = null;
+const AI_BOOK = {};
+for (const [k, sp] of Object.entries(SPELLS)) if (sp.kind !== 'time') (AI_BOOK[sp.kind] || (AI_BOOK[sp.kind] = [])).push(k);
+function makeMage(u) {
+  const keep = player;
+  player = {}; resetPlayer();
+  const m = player;
+  player = keep;
+  Object.assign(m, { x: u.x, y: u.y, face: { x: -1, y: 0 }, isMage: true, hp: u.hp, maxHp: u.maxHp, hpSeen: u.hp, mana: 14 });
+  return m;
+}
+const pickW = opts => { const t = opts.reduce((a, o) => a + o[1], 0); let r = Math.random() * t; for (const [v, w] of opts) if ((r -= w) <= 0) return v; return opts[0][0]; };
+function chooseSpell(u, m) {
+  const T = teams;
+  const fighters = friends.filter(o => !o.dead && !o.structure).concat(state === 'play' && !player.onBoat ? [player] : []);
+  const near = fighters.filter(o => Math.hypot(o.x - u.x, o.y - u.y) < 330).length;
+  const heroNear = state === 'play' && Math.hypot(player.x - u.x, player.y - u.y) < 420;
+  const helpers = redSide.allies.filter(a => a.kind === 'critter' && a.life > 0).length;
+  const hurt = u.hp / u.maxHp;
+  let want;
+  if (hurt < 0.45) want = pickW([['heal', 4], ['defence', 3], ['move', near ? 2 : 0]]);
+  else if (near >= 4) want = pickW([['control', 3], ['attack', 3], ['poison', 2], ['defence', 1]]);
+  else if (heroNear) want = pickW([['attack', 4], ['control', 2], ['poison', 2], ['defence', 1]]);
+  else if (near >= 1) want = pickW([['attack', 3], ['poison', 2], ['control', 2], ['summon', 1]]);
+  else want = pickW([['summon', 3], ['buff', 3], ['defence', 1], ['heal', hurt < 0.9 ? 2 : 0]]);
+  if (want === 'summon' && helpers >= MAX_HELPERS) want = 'buff';
+  T.ultCd = Math.max(0, T.ultCd || 0);
+  const ok = k => SPELLS[k].cost <= m.mana && (k.length < 6 || T.ultCd <= 0);
+  const all = (AI_BOOK[want] || []).filter(ok);
+  if (!all.length) return null;
+  T.redUsed = T.redUsed || new Set();
+  const fresh = all.filter(k => !T.redUsed.has(k));
+  const pool = fresh.length ? fresh : all;
+  return pickW(pool.map(k => [k, k.length * k.length])); // stronger spells more often when affordable
+}
+function aiCast(u, m, key) {
+  const sp = SPELLS[key], T = teams;
+  // face the nearest enemy (or away from it, to blink out)
+  const t = withSide('red', () => nearestFoe(m.x, m.y, 700), m);
+  if (t) { const dx = t.x - m.x, dy = t.y - m.y, d = Math.hypot(dx, dy) || 1; m.face = sp.kind === 'move' ? { x: -dx / d, y: -dy / d } : { x: dx / d, y: dy / d }; }
+  const manaBefore = m.mana;
+  withSide('red', () => { seq = key.split(''); castSequence(); }, m);
+  if (m.mana >= manaBefore) return; // not enough mana after all
+  T.redUsed.add(key);
+  if (key.length >= 6) T.ultCd = 45;
+  u.x = m.x; u.y = m.y; // a blink moves the wizard
+  floatText(u.x, u.y - 52, sp.name, TIER_COLOR[key.length], key.length >= 5 ? 16 : 13);
+}
+function updateMages(dt) {
+  const T = teams;
+  const ws = foes.filter(u => u.kind === 'wizard' && !u.dead);
+  for (const u of ws) {
+    const m = u.mage || (u.mage = makeMage(u));
+    // keep the caster on the wizard; heals on the caster heal the wizard
+    if (m.hp > m.hpSeen) u.hp = Math.min(u.maxHp, u.hp + (m.hp - m.hpSeen));
+    m.x = u.x; m.y = u.y; m.maxHp = u.maxHp; m.hp = m.hpSeen = u.hp;
+    withSide('red', () => heroTimers(dt), m);
+    // a loaded attack: stand still for each wind-up, then let fly
+    if (u.castT > 0) {
+      u.castT -= dt;
+      if (u.castT <= 0 && m.loaded) {
+        withSide('red', () => {
+          const L = m.loaded, a = aimFrom(m, 650);
+          m.face = { x: a.x, y: a.y };
+          if (--L.left <= 0) m.loaded = null;
+          releaseSpell(L.key);
+        }, m);
+        u.x = m.x; u.y = m.y;
+      }
+      continue;
+    }
+    if (m.loaded) {
+      if (withSide('red', () => nearestFoe(m.x, m.y, 600), m)) u.castT = Math.max(0.3, SPELLS[m.loaded.key].windup ?? TIER_WINDUP[m.loaded.key.length]);
+      continue;
+    }
+    u.think = (u.think ?? rnd(1, 3)) - dt;
+    if (u.think > 0) continue;
+    u.think = rnd(2.2, 3.4);
+    const key = chooseSpell(u, m);
+    if (key) aiCast(u, m, key);
+  }
+  if (ws.length) leadMage = ws[0].mage;
+  T.ultCd = Math.max(0, (T.ultCd || 0) - dt);
+  // red's own spells, pools, helpers and storms
+  if (leadMage) {
+    potency = 1;
+    withSide('red', () => { updateShots(dt); updateAllies(dt); updateStorms(dt); updateEffects(dt); }, leadMage);
+    potency = 1;
+  }
+}
+// a wizard's guard spells protect it
+function mageGuard(u, dmg) {
+  const m = u.mage;
+  if (!m) return dmg;
+  if (m.sanct > 0) return 0;
+  if (m.ward > 0) { m.ward--; floatText(u.x, u.y - 30, 'blocked', TYPE_COLOR.spirit, 13); return 0; }
+  return m.skin > 0 ? dmg * 0.5 : dmg;
+}
+
 // where a smart red unit heads when nothing is in reach
 function smartObjective(u) {
   const B = teams.brain;
@@ -2788,7 +2907,7 @@ function updateBattle(dt) {
   T.time -= dt;
   if (T.time <= 0) { T.time = 0; battleOver(null); return; }
 
-  if (difficulty === 'vhard' && !versus) redBrain(dt);
+  if (difficulty === 'vhard' && !versus) { redBrain(dt); updateMages(dt); }
   // space: recount the ground now and then; the bigger side scores every 15s
   T.terrRecalc -= dt;
   if (T.terrRecalc <= 0) { T.terrRecalc = 0.5; computeTerritory(); }
@@ -2978,10 +3097,10 @@ let netEvents = [];                         // host → guest: visual effects an
 
 // Run fn as your friend: their wizard is "player", blue's units are the targets,
 // and their own spells, helpers and pools are the live lists.
-function withSide(side, fn) {
-  if (side !== 'red' || !versus || net.role !== 'host') return fn();
+function withSide(side, fn, caster) {
+  if (side !== 'red' || !(versus ? net.role === 'host' : aiMagic())) return fn();
   const saved = { player, foes, shots, allies, traps, zones, waves, meteors, storms, discovered, seq };
-  player = rivalP;
+  player = caster || rivalP;
   foes = blueTargets();
   ({ shots, allies, traps, zones, waves, meteors, storms, discovered, seq } = redSide);
   curSide = 'red';
@@ -5029,6 +5148,7 @@ function drawWorld() {
   }
   drawTraps();
   if (versus && net.role === 'host') withSide('red', drawTraps);
+  else if (aiMagic() && leadMage) withSide('red', drawTraps, leadMage);
   drawBoat();
   drawScrolls();
   for (const c of chests) drawChest(c);
@@ -5061,7 +5181,7 @@ function drawWorld() {
     // your friend's wizard, helpers and spells
     if (net.role === 'host') withSide('red', () => { for (const a of allies) drawAlly(a); drawPlayer(); drawSideFx(); });
     else if (otherHero) drawPlayer(otherHero);
-  }
+  } else if (aiMagic() && leadMage) withSide('red', () => { for (const a of allies) drawAlly(a); drawSideFx(); }, leadMage);
   drawSideFx();
   drawSharedFx();
   ctx.restore();
@@ -5843,7 +5963,12 @@ function drawBattleEnd(win) {
     : 'Time’s up.';
   ctx.fillText(why, W / 2, y + 64);
   ctx.fillText(teams.groundTo ? `Most ground: ${teams.groundTo === 'blue' ? 'you' : 'red'} (+${GROUND_BONUS})   ·   Your kills ${kills}` : `Ground level   ·   Your kills ${kills}`, W / 2, y + 86);
-  const ty = drawScoreTable(y + 104);
+  let ty = drawScoreTable(y + 104);
+  if (difficulty === 'vhard' && !versus && teams.redUsed) {
+    ctx.fillStyle = '#ff8ab0'; ctx.font = '13px system-ui, sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText(`Red’s wizards cast ${teams.redUsed.size} different spells`, W / 2, ty + 20);
+    ty += 22;
+  }
   if (overlayT > 1) {
     ctx.fillStyle = '#c77dff';
     ctx.font = 'bold 17px system-ui, sans-serif';
