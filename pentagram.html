@@ -1585,14 +1585,16 @@ let friends = [];   // blue units and structures (your side)
 let bshots = [];    // shots from units and towers
 let teams = null;
 let links = [];     // laser walls between friendly towers
-const MATCH_TIME = 300, TERRITORY_EVERY = 15, BUILD_EVERY = 22, SIGIL_WALL = 15;
+const MATCH_TIME = 300, TERRITORY_EVERY = 15, BUILD_EVERY = 10, SIGIL_WALL = 15;
+const FRONT_X = WORLD - WORLD * 2 * 0.3; // each side starts holding the 30% of the map behind this line
 const TEAM_COLOR = { blue: '#4aa8ff', red: '#ff4a5a' };
 const UNITS = {
   minion: { name: 'Minion', pts: 1, hp: 6,   spd: 78, r: 11, range: 26,  dmg: 1,   cd: 1.0, aggro: 220, flying: true },
   wizard: { name: 'Wizard', pts: 3, hp: 26,  spd: 86, r: 15, range: 250, dmg: 2.5, cd: 1.4, aggro: 330, ranged: true },
   titan:  { name: 'Titan',  pts: 5, hp: 110, spd: 36, r: 34, range: 52,  dmg: 7,   cd: 1.8, aggro: 260, splash: 65 },
-  turret: { name: 'Turret', pts: 5, hp: 120, spd: 0,  r: 26, range: 280, dmg: 3,   cd: 1.2, aggro: 280, ranged: true, structure: true, reach: 290 },
-  nexus:  { name: 'Base',   pts: 0, hp: 999, spd: 0,  r: 55, range: 330, dmg: 4,   cd: 1.5, aggro: 330, ranged: true, structure: true, reach: 430 },
+  // turrets sting but don't dominate; a few focused hits bring one down
+  turret: { name: 'Turret', pts: 5, hp: 30,  spd: 0,  r: 24, range: 240, dmg: 1.5, cd: 1.6, aggro: 240, ranged: true, structure: true },
+  nexus:  { name: 'Base',   pts: 0, hp: 999, spd: 0,  r: 55, range: 300, dmg: 2.5, cd: 1.6, aggro: 300, ranged: true, structure: true },
   sigil:  { name: 'Sigil',  pts: 30, hp: 40, spd: 0,  r: 20, range: 0,   dmg: 0,   cd: 99,  aggro: 0,   structure: true, passive: true },
 };
 for (const k in UNITS) { UNITS[k].mult = {}; UNITS[k].color = '#ccc'; }
@@ -1625,38 +1627,73 @@ function addUnit(team, kind, x, y) {
   return u;
 }
 
-// ── territory: a grid of cells, each owned by the nearest tower that reaches it ──
-const CELL = 100, COLS = Math.ceil(WORLD * 2 / CELL), ROWS = Math.ceil(ARENA_H * 2 / CELL);
+// ── territory ──
+// Each side's towers are joined by lines; the shape they make together with that
+// side's back edge of the map is its ground. Where two shapes overlap, the ground
+// goes to whoever's tower is nearer. Counted on a grid of small cells.
+const CELL = 50, COLS = Math.ceil(WORLD * 2 / CELL), ROWS = Math.ceil(ARENA_H * 2 / CELL);
 const terr = new Int8Array(COLS * ROWS); // 0 open ground, 1 blue, 2 red
+let hulls = { blue: [], red: [] };
 function cellCenter(i, j) { return { x: -WORLD + (i + 0.5) * CELL, y: -ARENA_H + (j + 0.5) * CELL }; }
 function cellOwner(x, y) {
   const i = Math.floor((x + WORLD) / CELL), j = Math.floor((y + ARENA_H) / CELL);
   if (i < 0 || j < 0 || i >= COLS || j >= ROWS) return -1;
   return terr[j * COLS + i];
 }
+
+// convex hull (monotone chain); points keep their tower reference if they have one
+function hull(pts) {
+  const p = pts.slice().sort((a, b) => a.x - b.x || a.y - b.y);
+  if (p.length < 3) return p;
+  const cross = (o, a, b) => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+  const lo = [], hi = [];
+  for (const q of p) { while (lo.length >= 2 && cross(lo[lo.length - 2], lo[lo.length - 1], q) <= 0) lo.pop(); lo.push(q); }
+  for (let i = p.length - 1; i >= 0; i--) { const q = p[i]; while (hi.length >= 2 && cross(hi[hi.length - 2], hi[hi.length - 1], q) <= 0) hi.pop(); hi.push(q); }
+  return lo.slice(0, -1).concat(hi.slice(0, -1));
+}
+function polyArea(poly) {
+  let a = 0;
+  for (let i = 0; i < poly.length; i++) { const p = poly[i], q = poly[(i + 1) % poly.length]; a += p.x * q.y - q.x * p.y; }
+  return Math.abs(a) / 2;
+}
+function inPoly(x, y, poly) {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const a = poly[i], b = poly[j];
+    if ((a.y > y) !== (b.y > y) && x < (b.x - a.x) * (y - a.y) / (b.y - a.y) + a.x) inside = !inside;
+  }
+  return inside;
+}
+function teamShape(team, extra) {
+  const sx = teamSide(team) * WORLD;
+  const pts = towersOf(team).map(t => ({ x: t.x, y: t.y, t }));
+  if (extra) pts.push(extra);
+  pts.push({ x: sx, y: -ARENA_H }, { x: sx, y: ARENA_H });
+  return hull(pts);
+}
+
 function computeTerritory() {
-  const towers = towersOf('blue').concat(towersOf('red'));
+  hulls.blue = teamShape('blue');
+  hulls.red = teamShape('red');
+  const bt = towersOf('blue'), rt = towersOf('red');
+  const nearest = (list, x, y) => Math.min(...list.map(t => Math.hypot(t.x - x, t.y - y)));
   let b = 0, r = 0;
   for (let j = 0; j < ROWS; j++) for (let i = 0; i < COLS; i++) {
     const c = cellCenter(i, j);
-    let best = null, bd = Infinity;
-    for (const t of towers) {
-      const d = Math.hypot(t.x - c.x, t.y - c.y);
-      if (d < t.def.reach && d < bd) { bd = d; best = t; }
-    }
-    const v = best ? (best.team === 'blue' ? 1 : 2) : 0;
+    const inB = inPoly(c.x, c.y, hulls.blue), inR = inPoly(c.x, c.y, hulls.red);
+    let v = inB ? 1 : 0;
+    if (inR && (!inB || nearest(rt, c.x, c.y) < nearest(bt, c.x, c.y))) v = 2;
     terr[j * COLS + i] = v;
     if (v === 1) b++; else if (v === 2) r++;
   }
   teams.blue.cells = b; teams.red.cells = r;
-  // each tower's laser wall runs to its nearest friendly tower
+  // the lines joining each side's towers (the edge of its shape) are laser walls
   links = [];
   for (const team of ['blue', 'red']) {
-    const ts = towersOf(team);
-    for (const t of ts) {
-      let near = null, nd = 950;
-      for (const o of ts) { if (o === t) continue; const d = Math.hypot(o.x - t.x, o.y - t.y); if (d < nd) { nd = d; near = o; } }
-      if (near && !links.some(l => (l.a === near && l.b === t))) links.push({ a: t, b: near, team });
+    const h = hulls[team];
+    for (let i = 0; i < h.length; i++) {
+      const a = h[i], c = h[(i + 1) % h.length];
+      if (a.t && c.t) links.push({ a: a.t, b: c.t, team });
     }
   }
 }
@@ -1670,7 +1707,7 @@ function canBuildAt(x, y) {
 function buildTurret(team, x, y) {
   addUnit(team, 'turret', x, y);
   computeTerritory();
-  ring(x, y, 290, TEAM_COLOR[team], 0.8);
+  ring(x, y, 120, TEAM_COLOR[team], 0.8);
   burst(x, y, TEAM_COLOR[team], 30, 260);
   SFX.summon();
   showBanner(team === 'blue' ? 'Turret built!' : 'Red built a turret', 'It claims the ground around it', 2.5);
@@ -1682,22 +1719,24 @@ function buildTitan(team) {
   showBanner(team === 'blue' ? 'Your titan marches out!' : 'Red sends a titan!', '', 2.5);
 }
 
-// red's choice on its build turn: grab ground while behind on space, otherwise a titan
+// red's build turn: a turret on the open spot that adds the most ground, or a
+// titan when there's nowhere worth building
 function redBuild() {
-  if (teams.red.cells <= teams.blue.cells) {
-    let best = null, bs = -Infinity;
-    const reds = towersOf('red');
-    for (let j = 0; j < ROWS; j++) for (let i = 0; i < COLS; i++) {
-      if (terr[j * COLS + i] !== 0) continue;
-      const c = cellCenter(i, j);
-      if (!canBuildAt(c.x, c.y)) continue;
-      const d = Math.min(...reds.map(t => Math.hypot(t.x - c.x, t.y - c.y)));
-      const sc = -Math.abs(d - 300) + rnd(0, 60); // just past the edge of its ground
-      if (sc > bs) { bs = sc; best = c; }
-    }
-    if (best) { buildTurret('red', best.x, best.y); return; }
+  // Hard: red finds the best spot. Easy: any spot that gains a fair bit.
+  const base = polyArea(hulls.red), good = [];
+  let best = null, gain = 20000;
+  for (let k = 0; k < 60; k++) {
+    const i = Math.floor(Math.random() * COLS), j = 1 + Math.floor(Math.random() * (ROWS - 2));
+    if (terr[j * COLS + i] !== 0) continue;
+    const c = cellCenter(i, j);
+    if (!canBuildAt(c.x, c.y)) continue;
+    const g = polyArea(teamShape('red', c)) - base;
+    if (g > 20000) good.push(c);
+    if (g > gain) { gain = g; best = c; }
   }
-  buildTitan('red');
+  if (difficulty === 'easy' && good.length) best = good[Math.floor(Math.random() * good.length)];
+  if (best) buildTurret('red', best.x, best.y);
+  else buildTitan('red');
 }
 
 // put a team's sigil somewhere in its own ground, away from its base
@@ -1736,13 +1775,15 @@ function startBattle(diff) {
     blue: { score: 0, cells: 0, wave: 4, minions: 4, wizards: 2, wizQ: [], sigilT: 0 },
     red:  { score: 0, cells: 0, wave: 4, minions: hard ? 7 : 4, wizards: hard ? 3 : 2, wizQ: [], sigilT: 0 },
     time: MATCH_TIME, terrT: TERRITORY_EVERY, terrRecalc: 0,
-    build: { team: 'blue', t: 12 }, pending: null, result: null,
+    build: { team: 'blue', t: BUILD_EVERY }, pending: null, result: null,
   };
   for (const team of ['blue', 'red']) {
     const sd = teamSide(team);
     addUnit(team, 'nexus', sd * BASE_X, 0);
-    addUnit(team, 'turret', sd * 1050, -230);
-    addUnit(team, 'turret', sd * 1050, 230);
+    // the middle turret sits a little forward so every one of the three holds ground
+    addUnit(team, 'turret', sd * FRONT_X, -ARENA_H + 20);
+    addUnit(team, 'turret', sd * (FRONT_X - 70), 0);
+    addUnit(team, 'turret', sd * FRONT_X, ARENA_H - 20);
     const n = teams[team].wizards;
     for (let i = 0; i < n; i++) addUnit(team, 'wizard', sd * (BASE_X - 130), (i - (n - 1) / 2) * 110);
   }
@@ -1912,12 +1953,12 @@ function updateBattle(dt) {
   // build turns alternate between the sides
   if (T.pending) {
     T.pending.t -= dt;
-    if (T.pending.t <= 0) { T.pending = null; buildTitan('blue'); } // you didn't choose: a titan it is
+    if (T.pending.t <= 0) { T.pending = null; castMessage('Build turn passed', '#aaa'); }
   } else {
     T.build.t -= dt;
     if (T.build.t <= 0) {
       if (T.build.team === 'blue') {
-        T.pending = { t: 12 };
+        T.pending = { t: BUILD_EVERY - 1 };
         showBanner('Your build turn!', 'Turret: stand on open ground · or send a Titan', 3);
         SFX.discover();
       } else redBuild();
@@ -1925,6 +1966,7 @@ function updateBattle(dt) {
       T.build.t = BUILD_EVERY;
     }
   }
+  if (T.pending) T.build.t = Math.max(T.build.t, T.pending.t + 1); // red waits for you to finish
 
   for (const team of ['blue', 'red']) {
     const S = T[team], sd = teamSide(team);
@@ -2337,7 +2379,7 @@ function wrapText(text, x, y, maxW, lineH) {
 }
 
 // ── world rendering ──────────────────────────────────────────────────────────
-function drawArena() {
+function drawArena(camX, camY) {
   ctx.fillStyle = '#152018';
   ctx.fillRect(-WORLD, -ARENA_H, WORLD * 2, ARENA_H * 2);
   // each side's land carries its colour
@@ -2351,8 +2393,10 @@ function drawArena() {
   ctx.fillRect(-BASE_X, -60, BASE_X * 2, 120);
   ctx.strokeStyle = 'rgba(255,255,255,0.08)'; ctx.setLineDash([18, 18]); ctx.lineWidth = 2;
   ctx.beginPath(); ctx.moveTo(0, -ARENA_H); ctx.lineTo(0, ARENA_H); ctx.stroke(); ctx.setLineDash([]);
-  // claimed ground
-  for (let j = 0; j < ROWS; j++) for (let i = 0; i < COLS; i++) {
+  // claimed ground (only the cells on screen)
+  const i0 = Math.max(0, Math.floor((camX + WORLD) / CELL)), i1 = Math.min(COLS - 1, Math.floor((camX + W + WORLD) / CELL));
+  const j0 = Math.max(0, Math.floor((camY + ARENA_H) / CELL)), j1 = Math.min(ROWS - 1, Math.floor((camY + H + ARENA_H) / CELL));
+  for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
     const v = terr[j * COLS + i];
     if (!v) continue;
     ctx.fillStyle = v === 1 ? 'rgba(74,168,255,0.11)' : 'rgba(255,74,90,0.11)';
@@ -2377,7 +2421,7 @@ function drawLasers() {
 function drawGround(camX, camY) {
   ctx.fillStyle = '#060509';
   ctx.fillRect(camX, camY, W, H);
-  if (mode === 'battle') { drawArena(); return; }
+  if (mode === 'battle') { drawArena(camX, camY); return; }
   ctx.fillStyle = '#152018';
   ctx.fillRect(-WORLD, -WORLD, WORLD * 2, WORLD * 2);
 
@@ -3282,7 +3326,7 @@ function drawBuildButtons() {
     ctx.fillText(turret ? 'Build Turret' : 'Send Titan', bb.x + bb.w / 2, bb.y + 20);
     ctx.font = '10px system-ui, sans-serif';
     ctx.fillStyle = '#aaa';
-    ctx.fillText(turret ? (ok ? 'here, on open ground' : 'walk onto open ground') : `auto in ${Math.ceil(teams.pending.t)}s`, bb.x + bb.w / 2, bb.y + 36);
+    ctx.fillText(turret ? (ok ? 'here, on open ground' : 'walk onto open ground') : `turn ends in ${Math.ceil(teams.pending.t)}s`, bb.x + bb.w / 2, bb.y + 36);
   }
 }
 
@@ -3307,9 +3351,16 @@ function drawHunt(x, y) {
 }
 
 function drawBattleMap() {
-  const w = Math.min(110, W * 0.26), h = w * ARENA_H / WORLD, x = W - w - 12, y = 12, k = w / (WORLD * 2);
+  const w = Math.min(160, W * 0.38), h = w * ARENA_H / WORLD, x = W - w - 12, y = 12, k = w / (WORLD * 2);
   const mx = v => x + (v + WORLD) * k, my = v => y + (v + ARENA_H) * k;
   ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(x, y, w, h);
+  const cw = CELL * k;
+  for (let j = 0; j < ROWS; j++) for (let i = 0; i < COLS; i++) {
+    const v = terr[j * COLS + i];
+    if (!v) continue;
+    ctx.fillStyle = v === 1 ? 'rgba(74,168,255,0.45)' : 'rgba(255,74,90,0.45)';
+    ctx.fillRect(x + i * cw, y + j * cw, cw + 0.5, cw + 0.5);
+  }
   ctx.strokeStyle = 'rgba(199,125,255,0.5)'; ctx.lineWidth = 1; ctx.strokeRect(x, y, w, h);
   for (const list of [friends, foes]) for (const u of list) {
     if (u.dead) continue;
