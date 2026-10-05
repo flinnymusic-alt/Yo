@@ -177,6 +177,20 @@ const TIER_COLOR = ['', '', '#bbb', '#8fd0ff', '#b98cff', '#ff8a3a', '#ffd24a', 
 // several quick shots; strong ones give fewer and root you while they charge.
 const TIER_SHOTS  = [0, 0, 5, 3, 2, 1, 1, 1];
 const TIER_WINDUP = [0, 0, 0, 0.25, 0.7, 1.2, 1.6, 2.2]; // seconds standing still per shot
+// Complexity: length isn't everything. A chain gets stronger with more
+// element types in it, and with a richer repetition pattern (how many
+// different repeat counts it uses). 2 Spirit + 3 Air + 1 Water (counts 3,2,1)
+// beats 2 + 2 + 2 (counts all the same), and both beat six of one rune.
+function complexityOf(key) {
+  const counts = {};
+  for (const c of key) counts[c] = (counts[c] || 0) + 1;
+  const n = Object.values(counts);
+  return key.length + 0.6 * (n.length - 1) + 0.4 * (new Set(n).size - 1);
+}
+// extra power on top of what the spell's length already gives it
+const potencyOf = key => Math.round(1.2 ** (complexityOf(key) - key.length) * 100) / 100;
+let potency = 1; // the power multiplier of whatever spell effect is running right now
+
 // Spells that aim go on the FIRE button; everything else happens on release.
 const isAttack = sp => sp.kind === 'attack' || sp.kind === 'poison' || sp.kind === 'control';
 
@@ -786,6 +800,7 @@ function drainCharge(type) {
 
 function damageFoe(f, dmg, rawType, fromHelper) {
   if (f.dead) return;
+  dmg *= potency;
   if (f.proxyOf) { const d = dmg * (player.empower > 0 && !fromHelper ? 2 : 1); hurtPlayer(d, heroOf(f)); return d; }
   if (f.helper) { f.helper.hp -= dmg; burst(f.x, f.y, '#ccc', 4, 100); if (f.helper.hp <= 0) f.helper.life = 0; return dmg; }
   const type = ELEM_OF[rawType] || rawType; // lightning → air, poison → earth, holy → spirit
@@ -936,6 +951,7 @@ function hurtPlayer(d, p = player) {
 }
 
 function healPlayer(n) {
+  n *= potency;
   player.hp = Math.min(player.maxHp, player.hp + n);
   floatText(player.x, player.y - 30, '+' + fmt(n), '#6f6', 16);
   burst(player.x, player.y, '#6f6', 14, 150);
@@ -947,7 +963,7 @@ function launch(x, y, dir, o) {
     x: x + dir.x * 18, y: y + dir.y * 18, vx: dir.x * o.speed, vy: dir.y * o.speed,
     r: o.r, dmg: o.dmg, type: o.type, fx: o.fx, boom: o.boom, boomR: o.boomR,
     pierce: o.pierce || 0, life: o.life || 1.6, hit: new Set(), color: TYPE_COLOR[o.type],
-    spec: o.spec, ally: o.ally,
+    spec: o.spec, ally: o.ally, pot: potency !== 1 ? potency : undefined, // a helper's shot keeps its power
   });
 }
 
@@ -1125,6 +1141,7 @@ function dragonBreath() {
 
 function updateStorms(dt) {
   for (const s of storms) {
+    potency = s.pot || 1;
     s.t -= dt;
     if (s.t > 0) continue;
     s.t = 0.2;
@@ -1160,7 +1177,7 @@ function applyWovenFx(f, sp, dealt, src, inPool) {
   if (fx.has('shock')) applyCC(f, 'stun', 0.35);
   if (fx.has('confuse')) applyCC(f, 'confuse', 2.5 * sp.dur);
   if (fx.has('poison')) { f.poison = Math.max(f.poison || 0, 3); f.poisonDps = Math.max(f.poisonDps || 0, 0.8); }
-  if (fx.has('drain') && dealt) healPlayer(dealt * 0.35);
+  if (fx.has('drain') && dealt) healPlayer(dealt * 0.35 / potency); // dealt already carries the power
 }
 
 // Elements react: lightning electrifies water, fire ignites poison, water steams out fire.
@@ -1305,6 +1322,29 @@ function summon(kind) {
   burst(player.x + Math.cos(a) * 40, player.y + Math.sin(a) * 40, kind === 'dragon' ? '#ff5a2a' : '#fff', kind === 'dragon' ? 50 : 16, 260);
 }
 
+// Run a spell at its complexity's power: what it creates remembers that power,
+// and the buffs it gives last longer.
+const BUFF_KEYS = ['skin', 'haste', 'empower', 'ward', 'mirror', 'sanct', 'regen', 'phoenix', 'omni'];
+function castWithPotency(key, fn) {
+  const pot = potencyOf(key);
+  const lists = () => [shots, zones, storms, traps, allies, meteors, waves, tempSolids];
+  const before = lists().map(l => new Set(l));
+  const buffs = BUFF_KEYS.map(k => player[k] || 0);
+  const prev = potency;
+  potency = pot;
+  try { fn(); }
+  finally {
+    potency = prev;
+    lists().forEach((l, i) => { for (const o of l) if (!before[i].has(o) && o.pot == null) o.pot = pot; });
+    BUFF_KEYS.forEach((k, i) => {
+      const gain = (player[k] || 0) - buffs[i];
+      if (gain > 0 && k !== 'phoenix') player[k] = buffs[i] + (k === 'ward' ? Math.round(gain * pot) : gain * pot);
+    });
+  }
+}
+// run one live effect (a shot, pool, trap…) at the power it was cast with
+function atPotency(o, fn) { const prev = potency; potency = (o && o.pot) || 1; try { return fn(); } finally { potency = prev; } }
+
 function castSequence() {
   if (!seq.length) return;
   const key = seq.join('');
@@ -1327,27 +1367,28 @@ function castSequence() {
   if (player.mana < sp.cost) { castMessage('Not enough mana', '#6af'); return; }
   player.mana -= sp.cost;
   const tier = key.length;
-  castMessage(tier >= 4 ? `${sp.name} · ${TIERS[tier]}` : sp.name, TIER_COLOR[tier]);
+  const pot = potencyOf(key), potTxt = pot > 1 ? ` · power ×${pot.toFixed(2)}` : '';
+  castMessage((tier >= 4 ? `${sp.name} · ${TIERS[tier]}` : sp.name) + potTxt, TIER_COLOR[tier]);
   burst(player.x, player.y, ELEMENTS[key[tier - 1]].color, 6 * tier, 100 + 50 * tier);
   if (isAttack(sp) || sp.fire) {
     // aimed spells load onto the FIRE button; weaving a new one replaces the old
-    if (sp.fire) sp.cast();
+    if (sp.fire) castWithPotency(key, () => sp.cast());
     const n = sp.shots || TIER_SHOTS[tier];
     player.loaded = { key, left: n };
-    castMessage(`${sp.name} ×${n} · tap FIRE`, TIER_COLOR[tier]);
+    castMessage(`${sp.name} ×${n}${potTxt} · tap FIRE`, TIER_COLOR[tier]);
     SFX.weave(key); SFX.loaded();
     if (sp.fire) SFX.summon();
   } else {
     if (tier >= 4) shake = Math.max(shake, (tier - 3) * 4);
     SFX.weave(key);
     (sp.kind === 'heal' ? SFX.heal : sp.kind === 'summon' ? SFX.summon : SFX.buff)();
-    sp.cast();
+    castWithPotency(key, () => sp.cast());
   }
   if (!discovered.has(key)) {
     discovered.add(key);
     SFX.discover();
     showBanner(tier >= 5 ? `${TIERS[tier].toUpperCase()} SPELL!` : 'New spell discovered!',
-               `${sp.name} · tier ${tier} ${TIERS[tier]} · ${sp.kind}`, tier >= 5 ? 4 : 3);
+               `${sp.name} · tier ${tier} ${TIERS[tier]} · complexity ${complexityOf(key).toFixed(1)}`, tier >= 5 ? 4 : 3);
   }
 }
 
@@ -1370,7 +1411,7 @@ function releaseSpell(key) {
   if (tier >= 4) shake = Math.max(shake, (tier - 3) * 4);
   burst(player.x, player.y, TIER_COLOR[tier], 4 * tier, 80 + 40 * tier);
   const sp = SPELLS[key];
-  (sp.fire || sp.cast)();
+  castWithPotency(key, () => (sp.fire || sp.cast)());
 }
 
 function shootArrow(wx, wy) {
@@ -1586,6 +1627,7 @@ function updateFoes(realDt) {
 
 function updateShots(dt) {
   for (const s of shots) {
+    potency = s.pot || 1;
     s.x += s.vx * dt; s.y += s.vy * dt; s.life -= dt;
     if (inWall(s.x, s.y)) { s.life = 0; burst(s.x, s.y, '#999', 4, 100); continue; }
     for (const f of foes) {
@@ -1599,7 +1641,7 @@ function updateShots(dt) {
         if (s.fx === 'burn') f.burn = Math.max(f.burn || 0, 2);
         if (s.fx === 'freeze') applyCC(f, 'freeze', 3);
         if (s.fx === 'hex') applyCC(f, 'hex', 6);
-        if (s.fx === 'drain' && dealt) healPlayer(dealt * 0.6);
+        if (s.fx === 'drain' && dealt) healPlayer(dealt * 0.6 / potency);
         if (s.fx === 'poison') { f.poison = Math.max(f.poison, 3); f.poisonDps = Math.max(f.poisonDps, 0.6); }
         if (s.fx === 'explode') { SFX.explode(false); aoe(s.x, s.y, s.boomR, s.boom, s.type, 120); burst(s.x, s.y, s.color, 22, 300); }
         else if (s.fx === 'woven') elemHit(ELEM_OF[s.type] || s.type, s.x, s.y, 0.8);
@@ -1634,6 +1676,7 @@ function updateShots(dt) {
 
 function updateAllies(dt) {
   for (const a of allies) {
+    potency = a.pot || 1;
     a.life -= dt; a.cd -= dt;
     if (a.kind === 'wisp') {
       // circles you and slowly heals you
@@ -1675,6 +1718,7 @@ function updateAllies(dt) {
 
 function updateEffects(dt) {
   for (const z of zones) {
+    potency = z.pot || 1;
     z.life -= dt; z.tick -= dt;
     if (z.tick <= 0) {
       z.tick = 0.5;
@@ -1696,6 +1740,7 @@ function updateEffects(dt) {
       }
     }
   }
+  potency = 1;
   for (const z of zones) {
     if (z.type === 'vortex') {
       // drag everything inside toward the eye
@@ -1711,7 +1756,7 @@ function updateEffects(dt) {
       if (z.charged > 0 && z.charged < 90) z.charged -= dt;
       // a sacred circle (or any pool with a Spirit upgrade) heals you while you stand in it
       if ((z.spec.elem === 'spirit' || z.spec.heal) && Math.hypot(player.x - z.x, player.y - z.y) < z.r)
-        player.hp = Math.min(player.maxHp, player.hp + 1.5 * dt);
+        player.hp = Math.min(player.maxHp, player.hp + 1.5 * (z.pot || 1) * dt);
       // a whirlwind drags enemies toward its eye
       if (z.spec.elem === 'air') for (const f of foes) {
         if (f.dead || f.structure) continue;
@@ -1720,13 +1765,14 @@ function updateEffects(dt) {
       }
     }
     if (z.type === 'spring' && Math.hypot(player.x - z.x, player.y - z.y) < z.r) {
-      player.hp = Math.min(player.maxHp, player.hp + 2.5 * dt);
+      player.hp = Math.min(player.maxHp, player.hp + 2.5 * (z.pot || 1) * dt);
       player.mana = Math.min(player.maxMana, player.mana + 1 * dt);
     }
   }
   zones = zones.filter(z => z.life > 0);
 
   for (const t of traps) {
+    potency = t.pot || 1;
     t.arm -= dt; t.life -= dt;
     if (t.arm > 0) continue;
     if (foes.some(f => !f.dead && Math.hypot(f.x - t.x, f.y - t.y) < f.r + 26)) {
@@ -1740,6 +1786,7 @@ function updateEffects(dt) {
   traps = traps.filter(t => t.life > 0);
 
   for (const b of tempSolids) {
+    potency = b.pot || 1;
     if (curSide === 'blue') b.life -= dt;
     if (!b.spec || (b.side || 'blue') !== curSide) continue;
     b.tick -= dt;
@@ -1760,6 +1807,7 @@ function updateEffects(dt) {
   });
 
   for (const w of waves) {
+    potency = w.pot || 1;
     w.r += w.speed * dt;
     for (const f of foes) {
       if (f.dead || w.hit.has(f)) continue;
@@ -1773,11 +1821,12 @@ function updateEffects(dt) {
   waves = waves.filter(w => w.r < w.maxR);
 
   for (const m of meteors) {
+    potency = m.pot || 1;
     m.t -= dt;
     if (m.t <= 0) {
       aoe(m.x, m.y, 200, 25, 'fire', 380);
       SFX.explode(true);
-      zones.push({ x: m.x, y: m.y, r: 140, life: 4, max: 4, tick: 0, type: 'fire' });
+      zones.push({ x: m.x, y: m.y, r: 140, life: 4, max: 4, tick: 0, type: 'fire', pot: potency });
       burst(m.x, m.y, '#ff5a2a', 80, 560);
       burst(m.x, m.y, '#ffd24a', 40, 340);
       shake = Math.max(shake, 20);
@@ -1785,6 +1834,7 @@ function updateEffects(dt) {
     }
   }
   meteors = meteors.filter(m => m.t > 0);
+  potency = 1;
   if (curSide === 'blue') decayVisuals(dt);
 }
 
@@ -1881,10 +1931,12 @@ function update(dt) {
   if (mode === 'battle') updateBattle(dt);
   else spawnFoes(dt * timeScale());
   updateFoes(dt);
+  potency = 1;
   updateShots(dt);
   updateAllies(dt);
   updateStorms(dt);
   updateEffects(dt);
+  potency = 1;
   if (versus) updateRival(dt);
 
   for (const c of chests) {
@@ -2834,10 +2886,12 @@ function updateRival(dt) {
   rivalProxy.x = rivalP.x; rivalProxy.y = rivalP.y; rivalProxy.dead = !!rivalP.dead;
   withSide('red', () => {
     if (!player.dead) heroTimers(dt);
+    potency = 1;
     updateShots(dt);
     updateAllies(dt);
     updateStorms(dt);
     updateEffects(dt);
+    potency = 1;
   });
   // ship the battle to your friend
   net.sendT -= dt;
@@ -4952,6 +5006,16 @@ function drawSlots(list, highlight) {
     ctx.stroke();
     if (i < list.length) drawGlyph(list[i], x + s / 2, y + s / 2, s * 0.8, ELEMENTS[list[i]].color);
   }
+  // how complex (and so how strong) the chain is so far
+  if (list.length >= 2) {
+    const key = list.join(''), pot = potencyOf(key), lx = x0 + total + 8;
+    ctx.textAlign = 'left';
+    ctx.font = 'bold 11px system-ui, sans-serif';
+    ctx.fillStyle = '#aaa';
+    ctx.fillText(`cx ${complexityOf(key).toFixed(1)}`, lx, PENT.slotY - 2);
+    ctx.fillStyle = pot > 1 ? '#ffd24a' : '#777';
+    ctx.fillText(`×${pot.toFixed(2)}`, lx, PENT.slotY + 11);
+  }
 }
 
 function drawPentagram(ghost) {
@@ -5098,7 +5162,7 @@ function drawReveal() {
   y += 22;
   ctx.fillStyle = TIER_COLOR[combo.length];
   ctx.font = 'bold 13px system-ui, sans-serif';
-  ctx.fillText(`TIER ${combo.length} · ${TIERS[combo.length].toUpperCase()}`, W / 2, y);
+  ctx.fillText(`TIER ${combo.length} · ${TIERS[combo.length].toUpperCase()} · COMPLEXITY ${complexityOf(combo).toFixed(1)} · POWER ×${potencyOf(combo).toFixed(2)}`, W / 2, y);
   y += 40;
   ctx.fillStyle = '#fff';
   ctx.font = `bold ${Math.min(36, W / 11)}px Georgia, serif`;
