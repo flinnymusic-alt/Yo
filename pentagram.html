@@ -5757,19 +5757,21 @@ let menuPage = 'main';
 let menuFx = [], menuT = 0, menuCast = 0;
 function goMenu(page) { menuPage = page; SFX.buff(); }
 
-// a menu button: just the word, in capitals, as big as its space allows
+// a menu button: just the word, in capitals, filling its row top to bottom;
+// a long word is squished sideways to fit rather than shrunk
 function menuButton(b) {
   const word = b.title.toUpperCase();
-  ctx.textAlign = 'center';
-  let fs = b.h * 0.9;
+  const fs = b.h * 1.3; // capitals are about 0.7 of the font size: this fills the row
   ctx.font = `${fs}px ${SERIF_BIG}`;
-  const w = ctx.measureText(word).width;
-  if (w > b.w * 0.96) { fs *= b.w * 0.96 / w; ctx.font = `${fs}px ${SERIF_BIG}`; }
-  const by = b.y + b.h / 2 + fs * 0.34; // caps sit in the middle
+  ctx.textAlign = 'center';
+  const w = ctx.measureText(word).width, sx = Math.min(1, b.w / w);
+  ctx.save();
+  ctx.translate(b.x + b.w / 2, b.y + b.h / 2 + fs * 0.35);
+  ctx.scale(sx, 1);
   if (b.selected) { ctx.shadowColor = b.color; ctx.shadowBlur = 18; }
   ctx.fillStyle = b.color;
-  ctx.fillText(word, b.x + b.w / 2, by);
-  ctx.shadowBlur = 0;
+  ctx.fillText(word, 0, 0);
+  ctx.restore();
 }
 
 // your hero, big, doing a little routine: the wizard twirls sparks from the
