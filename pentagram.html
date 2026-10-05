@@ -203,12 +203,12 @@ const isAttack = sp => sp.kind === 'attack' || sp.kind === 'poison' || sp.kind =
 // Nothing fires by itself: every hit comes from a press of FIRE (or an arrow).
 const SPELLS = {
   // ── 2 · Minor: cheap pokes and tricks ──
-  FF:      { name: 'Firebolt',        kind: 'attack',  cost: 3,  cast() { shoot({ dmg: 1.5, type: 'fire', speed: 520, r: 7, fx: 'burn' }); } },
-  WW:      { name: 'Frost Shard',     kind: 'attack',  cost: 3,  cast() { shoot({ dmg: 1, type: 'water', speed: 600, r: 6, fx: 'slow' }); } },
-  EE:      { name: 'Stone Spike',     kind: 'attack',  cost: 3,  cast() { shoot({ dmg: 2, type: 'earth', speed: 380, r: 8 }); } },
+  FF:      { name: 'Firebolt',        kind: 'attack',  cost: 3,  cast() { shoot({ dmg: 1.5, type: 'fire', speed: 520, r: 7, fx: 'burn', look: 'firebolt' }); } },
+  WW:      { name: 'Frost Shard',     kind: 'attack',  cost: 3,  cast() { shoot({ dmg: 1, type: 'water', speed: 600, r: 6, fx: 'slow', look: 'frost' }); } },
+  EE:      { name: 'Stone Spike',     kind: 'attack',  cost: 3,  cast() { shoot({ dmg: 2, type: 'earth', speed: 380, r: 8, look: 'spike' }); } },
   AA:      { name: 'Gust',            kind: 'attack',  cost: 3,  cast() { aoe(player.x, player.y, 150, 0.5, 'air', 320); } },
-  EW:      { name: 'Venom Dart',      kind: 'poison',  cost: 3,  cast() { shoot({ dmg: 0.3, type: 'poison', speed: 560, r: 6, fx: 'poison' }); } },
-  SS:      { name: 'Soul Siphon',     kind: 'attack',  cost: 3,  cast() { shoot({ dmg: 1.5, type: 'spirit', speed: 560, r: 6, fx: 'drain' }); } },
+  EW:      { name: 'Venom Dart',      kind: 'poison',  cost: 3,  cast() { shoot({ dmg: 0.3, type: 'poison', speed: 560, r: 6, fx: 'poison', look: 'venom' }); } },
+  SS:      { name: 'Soul Siphon',     kind: 'attack',  cost: 3,  cast() { shoot({ dmg: 1.5, type: 'spirit', speed: 560, r: 6, fx: 'drain', look: 'siphon' }); } },
   FE:      { name: 'Ember Trap',      kind: 'attack',  cost: 3,  cast() { layTrap(); } },
   WE:      { name: 'Quagmire',        kind: 'control', cost: 3,  cast() { const p = targetPoint(420, 140); zones.push({ x: p.x, y: p.y, r: 85, life: 4, max: 4, tick: 0, type: 'mud' }); } },
   WS:      { name: 'Mend',            kind: 'heal',    cost: 3,  cast() { healPlayer(3); } },
@@ -217,14 +217,14 @@ const SPELLS = {
   SA:      { name: 'Blink',           kind: 'move',    cost: 2,  cast() { blink(); } },
   // ── 3 · Adept: real spells ──
   AWA:     { name: 'Chain Lightning', kind: 'attack',  cost: 7,  cast() { chainLightning(3.5, 5); } },
-  FFA:     { name: 'Fireball',        kind: 'attack',  cost: 7,  cast() { shoot({ dmg: 3, type: 'fire', speed: 450, r: 11, fx: 'explode', boom: 3.5, boomR: 100 }); } },
-  SSA:     { name: 'Spirit Lance',    kind: 'attack',  cost: 7,  cast() { shoot({ dmg: 4.5, type: 'spirit', speed: 760, r: 8, pierce: 3 }); } },
+  FFA:     { name: 'Fireball',        kind: 'attack',  cost: 7,  cast() { shoot({ dmg: 3, type: 'fire', speed: 450, r: 11, fx: 'explode', boom: 3.5, boomR: 100, look: 'fireball' }); } },
+  SSA:     { name: 'Spirit Lance',    kind: 'attack',  cost: 7,  cast() { shoot({ dmg: 4.5, type: 'spirit', speed: 760, r: 8, pierce: 3, look: 'lance' }); } },
   FAF:     { name: 'Flame Wave',      kind: 'attack',  cost: 7,  cast() { cone(player.x, player.y, aimAngle(), 180, 0.6, 2.5, 'fire', 'burn'); } },
   EWS:     { name: 'Plague Cloud',    kind: 'poison',  cost: 7,  cast() { plagueCloud(); } },
-  WWA:     { name: 'Ice Lance',       kind: 'control', cost: 6,  cast() { shoot({ dmg: 2, type: 'water', speed: 650, r: 8, fx: 'freeze' }); } },
+  WWA:     { name: 'Ice Lance',       kind: 'control', cost: 6,  cast() { shoot({ dmg: 2, type: 'water', speed: 650, r: 8, fx: 'freeze', pierce: 1, look: 'icelance' }); } },
   EEA:     { name: 'Earthquake',      kind: 'control', cost: 6,  cast() { quake(); } },
   SFS:     { name: 'Terror',          kind: 'control', cost: 6,  cast() { areaCC(player.x, player.y, 260, 'fear', 3.5, '#b070ff'); } },
-  EWE:     { name: 'Hex',             kind: 'control', cost: 6,  cast() { shoot({ dmg: 0.5, type: 'poison', speed: 520, r: 8, fx: 'hex' }); } },
+  EWE:     { name: 'Hex',             kind: 'control', cost: 6,  cast() { shoot({ dmg: 0.5, type: 'poison', speed: 520, r: 8, fx: 'hex', look: 'hex' }); } },
   SWS:     { name: 'Ward',            kind: 'defence', cost: 5,  cast() { player.ward = 4; } },
   SWA:     { name: 'Mirror Shield',   kind: 'defence', cost: 6,  cast() { player.mirror = 5; } },
   EAE:     { name: 'Stone Wall',      kind: 'defence', cost: 6,  cast() { stoneWall(); } },
@@ -278,6 +278,16 @@ const CRITTER = {
   spirit: { name: 'Lantern Sprite', hp: 12, spd: 170, range: 260, dmg: 0.7, cd: 1.0, heals: true },
 };
 const MOD_WORD = { F: 'Blazing', W: 'Lingering', E: 'Heavy', A: 'Charged', S: 'Bewitching' };
+// In a 4-rune weave the last rune is its finish: one extra trick that depends
+// on the shape, so swapping the last two runes gives a different spell.
+const FINISH_WORD = {
+  bolt:     { F: 'Bursting', W: 'Splashing', E: 'Shattering', A: 'Chaining', S: 'Seeking' },
+  wall:     { F: 'Exploding', W: 'Enduring', E: 'Towering', A: 'Repelling', S: 'Soothing' },
+  pool:     { F: 'Erupting', W: 'Spreading', E: 'Buried', A: 'Drifting', S: 'Pulling' },
+  burst:    { F: 'Echoing', W: 'Ringing', E: 'Quaking', A: 'Sparking', S: 'Mending' },
+  creature: { F: 'Volatile', W: 'Kindly', E: 'Armoured', A: 'Swift', S: 'Keen-eyed' },
+  blessing: { F: 'Fiery', W: 'Flowing', E: 'Grounding', A: 'Racing', S: 'Warding' },
+};
 const BASE_FX  = { fire: 'burn', water: 'slow', earth: 'knock', air: 'shock', spirit: 'drain' };
 const MOD_FX   = { F: 'burn', W: 'slow', E: 'knock', A: 'shock', S: 'confuse' };
 const KEEP_PCT = { 3: 52, 4: 45 };
@@ -307,9 +317,10 @@ function makeWoven(key) {
   if (spec.fx.has('slow') && n('W') >= (elem === 'water' ? 1 : 2)) spec.fx.add('freeze');
   if (elem === 'earth' && n('W')) spec.fx.add('poison'); // wet earth turns to poison mud
   if (form === 'pool' && mods[mods.length - 1] === 'E') spec.mine = true;
+  if (tier === 4) { spec.infuse = mods[0]; spec.finish = mods[1]; }
   // name: upgrade words, then the base name
   const words = [];
-  const nameMods = spec.mine ? mods.slice(0, -1) : mods;
+  const nameMods = spec.mine ? mods.slice(0, -1) : spec.finish ? mods.slice(0, 1) : mods;
   for (const m of nameMods) {
     const w = MOD_WORD[m], i = words.indexOf(w);
     if (i >= 0) words[i] = 'Greater ' + w; else if (!words.includes('Greater ' + w)) words.push(w);
@@ -318,6 +329,7 @@ function makeWoven(key) {
              : form === 'creature' ? CRITTER[elem].name : spec.mine ? MINE_NAME[elem] : POOL_NAME[elem];
   const kind = form === 'wall' ? 'defence' : form === 'creature' ? 'summon' : form === 'pool' ? 'control'
              : form === 'burst' && elem === 'spirit' ? 'buff' : 'attack';
+  if (spec.finish && !spec.mine) words.unshift(FINISH_WORD[form === 'burst' && elem === 'spirit' ? 'blessing' : form][spec.finish]);
   return { name: [...words, base].join(' '), kind, cost: (tier === 4 ? 9 : 6) + (form === 'creature' ? 1 : 0), woven: spec, cast() { castWoven(spec); } };
 }
 
@@ -969,6 +981,7 @@ function launch(x, y, dir, o) {
     r: o.r, dmg: o.dmg, type: o.type, fx: o.fx, boom: o.boom, boomR: o.boomR,
     pierce: o.pierce || 0, life: o.life || 1.6, hit: new Set(), color: TYPE_COLOR[o.type],
     spec: o.spec, ally: o.ally, pot: potency !== 1 ? potency : undefined, // a helper's shot keeps its power
+    look: o.look || (o.fx === 'woven' ? 'woven' : o.type), spin: rnd(0, TAU), born: elapsed,
   });
 }
 
@@ -988,6 +1001,7 @@ function chainLightning(dmg, jumps) {
     cur = nearestFoe(cur.x, cur.y, 230, hit);
   }
   fx.push({ kind: 'bolt', pts, life: 0.3, max: 0.3 });
+  for (const p of pts.slice(1)) { shapeBits(p.x, p.y, 'shard', '#fff6a0', 4, 160); fx.push({ kind: 'rays', x: p.x, y: p.y, r: 26, color: '#a0ffff', life: 0.25, max: 0.25, rot: rnd(0, TAU) }); }
 }
 
 function targetPoint(range, ahead) {
@@ -1095,7 +1109,10 @@ function cone(x, y, ang, range, half, dmg, type, effect) {
     damageFoe(f, dmg, type);
     if (effect === 'burn') { f.burn = Math.max(f.burn || 0, 3); }
   }
-  fx.push({ kind: 'cone', x, y, ang, range, half, color: TYPE_COLOR[type], life: 0.35, max: 0.35 });
+  if (type === 'fire') {
+    fx.push({ kind: 'flamewave', x, y, ang, range, half, life: 0.45, max: 0.45 });
+    for (let i = 0; i < 3; i++) { const d = range * (0.4 + i * 0.25); puff(x + Math.cos(ang) * d, y + Math.sin(ang) * d, '#8a7a70', 1, 18, 30); }
+  } else fx.push({ kind: 'cone', x, y, ang, range, half, color: TYPE_COLOR[type], life: 0.35, max: 0.35 });
   react(type, x + Math.cos(ang) * range * 0.6, y + Math.sin(ang) * range * 0.6, range * 0.5);
 }
 
@@ -1128,8 +1145,8 @@ function stoneWall() {
   for (let i = -3; i <= 3; i++) {
     const x = cx + px * i * 26, y = cy + py * i * 26;
     if (isWater(x, y)) continue;
-    tempSolids.push({ x, y, r: 16, life: 9, kind: 'boulder', side: curSide });
-    burst(x, y, TYPE_COLOR.earth, 5, 120);
+    tempSolids.push({ x, y, r: 16, life: 9, kind: 'boulder', side: curSide, born: elapsed + (i + 3) * 0.04 });
+    puff(x, y + 8, '#c2a57a', 1, 14, 10);
   }
   shake = Math.max(shake, 5);
 }
@@ -1169,6 +1186,152 @@ function updateStorms(dt) {
 const ALLY_LIFE = { wisp: 15, imp: 8, golem: 20, dragon: 30 };
 const ALLY_R = { wisp: 9, imp: 10, golem: 18, dragon: 26 };
 const ALLY_HP = { imp: 10, golem: 40 };
+// ── spell flair: trails, impacts, sigils and finishes ──
+// Every cast draws a sigil under the caster made of that spell's own runes,
+// in order, so no two spells look the same as they go off.
+function castSigil(key, x, y, small) {
+  fx.push({ kind: 'sigil', key, x, y: y + 10, rot: rnd(0, TAU), life: small ? 0.45 : 1, max: small ? 0.45 : 1, small: !!small });
+}
+// jagged cracks running out across the ground
+function crackLines(x, y, r, n) {
+  const lines = [];
+  for (let i = 0; i < n; i++) {
+    let a = i * TAU / n + rnd(-0.3, 0.3), px = x, py = y;
+    const pts = [{ x: px, y: py }];
+    for (let k = 0; k < 5; k++) { a += rnd(-0.5, 0.5); px += Math.cos(a) * r / 5; py += Math.sin(a) * r / 5; pts.push({ x: px, y: py }); }
+    lines.push(pts);
+  }
+  return { x, y, lines };
+}
+// a shape-particle: 'star', 'plus', 'shard' or 'drop'
+function shapeBits(x, y, shape, color, n, spd, up, size) {
+  for (let i = 0; i < n; i++) {
+    const a = rnd(0, TAU), v = rnd(spd * 0.3, spd);
+    particles.push({ shape, x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v - (up || 0), r: rnd(2.5, 4) * (size || 1), life: 1, decay: rnd(1, 1.8),
+                     color, rot: rnd(0, TAU), spin: rnd(-8, 8) });
+  }
+}
+// what each kind of shot leaves behind in the air
+function shotTrailFx(s, dt) {
+  const k = dt * 60, r = Math.random;
+  const back = (spd, col, rad, life, extra) => {
+    const sp = Math.hypot(s.vx, s.vy) || 1;
+    particles.push(Object.assign({ x: s.x - s.vx / sp * s.r, y: s.y - s.vy / sp * s.r, vx: -s.vx / sp * spd + rnd(-20, 20), vy: -s.vy / sp * spd + rnd(-20, 20),
+                                   r: rad, life, decay: 2.4, color: col }, extra || {}));
+  };
+  switch (s.look) {
+    case 'firebolt': if (r() < 0.7 * k) back(60, r() < 0.5 ? '#ffb04a' : '#ff5a2a', rnd(2, 3.5), 0.8); break;
+    case 'frost':    if (r() < 0.5 * k) back(30, '#e8f8ff', 2, 0.7, { shape: 'star', rot: 0, spin: 6 }); break;
+    case 'spike':    if (r() < 0.25 * k) back(20, '#b59a72', 6, 0.6, { puff: true, decay: 2 }); break;
+    case 'venom':    if (r() < 0.5 * k) particles.push({ shape: 'drop', x: s.x, y: s.y, vx: 0, vy: 70, r: 2.5, life: 0.7, decay: 2, color: '#7dff4a', rot: 0, spin: 0 }); break;
+    case 'siphon':   if (r() < 0.6 * k) back(40, r() < 0.5 ? '#e6ccff' : '#c77dff', 2.2, 0.9); break;
+    case 'fireball': if (r() < 0.6 * k) back(30, '#8a7a70', 9, 0.8, { puff: true, decay: 1.6 }); if (r() < 0.8 * k) back(80, '#ffd24a', 2.5, 0.7); break;
+    case 'lance':    if (r() < 0.9 * k) back(0, '#fff6ff', 2, 0.35); break;
+    case 'icelance': if (r() < 0.5 * k) back(10, '#e8f6ff', 7, 0.5, { puff: true, decay: 2.2 }); break;
+    case 'hex':      if (r() < 0.5 * k) back(30, '#b070ff', 2, 0.8, { shape: 'star', rot: 0, spin: 4 }); break;
+    case 'woven': {
+      if (!s.spec || s.ally) break;
+      // the infusion shows in the trail
+      const inf = s.spec.infuse || s.spec.key[2];
+      if (r() > 0.5 * k) break;
+      if (inf === 'F') back(50, '#ffb04a', 2.4, 0.7);
+      else if (inf === 'W') particles.push({ shape: 'drop', x: s.x, y: s.y, vx: 0, vy: 60, r: 2.2, life: 0.6, decay: 2, color: '#9fd8ff', rot: 0, spin: 0 });
+      else if (inf === 'E') back(20, '#b59a72', 5, 0.5, { puff: true, decay: 2.2 });
+      else if (inf === 'A') back(80, '#fff6a0', 1.6, 0.4, { shape: 'shard', rot: rnd(0, TAU), spin: 0 });
+      else back(30, '#e6ccff', 2, 0.8, { shape: 'star', rot: 0, spin: 5 });
+      break;
+    }
+  }
+}
+// what each kind of shot does as it hits (looks, and a few small twists)
+function shotImpact(s, f) {
+  switch (s.look) {
+    case 'firebolt': puff(s.x, s.y, '#ffb04a', 1, 12, 20); burst(s.x, s.y, '#ff8a3a', 8, 160); break;
+    case 'frost':
+      // shatters: little shards nick whoever's close
+      shapeBits(s.x, s.y, 'shard', '#dff4ff', 6, 220, 0, 1.2);
+      ring(s.x, s.y, 26, '#cfefff', 0.3);
+      for (const o of foes) if (o !== f && !o.dead && Math.hypot(o.x - s.x, o.y - s.y) < 55 + o.r) { damageFoe(o, s.dmg * 0.4, 'water'); o.slow = Math.max(o.slow || 0, 1.5); }
+      break;
+    case 'spike':
+      // a heavy rock: it shoves
+      if (!f.structure) knock(f, s.x - s.vx * 0.05, s.y - s.vy * 0.05, 170);
+      puff(s.x, s.y, '#c2a57a', 2, 12, 10); shapeBits(s.x, s.y, 'shard', '#8a6a44', 5, 180, 40);
+      break;
+    case 'venom': {
+      // the poison splashes onto one more foe nearby
+      shapeBits(s.x, s.y, 'drop', '#7dff4a', 7, 160, 30);
+      const o = nearestFoe(s.x, s.y, 110, new Set([f]));
+      if (o) { o.poison = Math.max(o.poison || 0, 2); o.poisonDps = Math.max(o.poisonDps || 0, 0.5); fx.push({ kind: 'streak', x1: s.x, y1: s.y, x2: o.x, y2: o.y, color: '#7dff4a', life: 0.3, max: 0.3 }); }
+      break;
+    }
+    case 'siphon':
+      // a stream of light flows back to the caster
+      for (let i = 0; i < 10; i++) {
+        const dx = player.x - s.x, dy = player.y - s.y, d = Math.hypot(dx, dy) || 1;
+        particles.push({ x: s.x + rnd(-8, 8), y: s.y + rnd(-8, 8), vx: dx / d * rnd(250, 420), vy: dy / d * rnd(250, 420), r: 2.5, life: 0.9, decay: 1.6, color: '#e6ccff', home: true });
+      }
+      break;
+    case 'fireball':
+      fx.push({ kind: 'nova', elem: 'fire', x: s.x, y: s.y, r: s.boomR || 100, life: 0.5, max: 0.5 });
+      puff(s.x, s.y, '#8a7a70', 4, 22, 40); puff(s.x, s.y, '#ffb04a', 2, 26, 20);
+      burst(s.x, s.y, '#ffd24a', 18, 320);
+      break;
+    case 'lance':
+      fx.push({ kind: 'rays', x: s.x, y: s.y, r: 40, color: '#fff6ff', life: 0.3, max: 0.3, rot: rnd(0, TAU) });
+      break;
+    case 'icelance':
+      shapeBits(s.x, s.y, 'shard', '#e8f8ff', 8, 200, 0, 1.4);
+      puff(s.x, s.y, '#e8f6ff', 2, 14, 6);
+      break;
+    case 'hex':
+      puff(s.x, s.y, '#b070ff', 2, 16, 20); shapeBits(s.x, s.y, 'star', '#e6ccff', 6, 120, 30);
+      break;
+    case 'prism': case 'mirror':
+      shapeBits(s.x, s.y, 'shard', ['#ff5a2a', '#ffd24a', '#7dff4a', '#3ab0ff', '#c77dff'][Math.floor(Math.random() * 5)], 6, 200);
+      break;
+    default:
+      if (s.look !== 'woven') burst(s.x, s.y, s.color, 6, 150);
+  }
+}
+
+// a woven bolt's finish on a hit
+function wovenFinishHit(s, f) {
+  const sp = s.spec;
+  if (!sp || !sp.finish || s.ally || s.shard) return;
+  const col = TYPE_COLOR[sp.elem];
+  switch (sp.finish) {
+    case 'F': // Bursting: a small blast
+      wovenBurstAt(s.x, s.y, 60 * sp.size, 1.2 * sp.power, sp);
+      puff(s.x, s.y, '#ffb04a', 2, 16, 20);
+      break;
+    case 'W': // Splashing: leaves a little pool of its element
+      zones.push({ type: 'woven', x: s.x, y: s.y, r: 48 * sp.size, life: 2.5, max: 2.5, tick: 0, spec: sp, charged: 0 });
+      shapeBits(s.x, s.y, 'drop', col, 8, 160, 40);
+      break;
+    case 'E': { // Shattering: splits into shards that fly on
+      const a = Math.atan2(s.vy, s.vx);
+      for (const da of [-0.5, 0, 0.5]) {
+        launch(s.x, s.y, { x: Math.cos(a + da), y: Math.sin(a + da) }, { dmg: 0.7 * sp.power, type: sp.elem, speed: 420, r: 4, fx: 'woven', spec: sp, life: 0.5, look: 'woven' });
+        shots[shots.length - 1].shard = true; shots[shots.length - 1].hit = new Set([f]);
+      }
+      shapeBits(s.x, s.y, 'shard', col, 6, 200);
+      break;
+    }
+    case 'A': { // Chaining: a spark jumps to one more foe
+      const o = nearestFoe(s.x, s.y, 170, new Set([f]));
+      if (o) {
+        damageFoe(o, 1.2 * sp.power, 'lightning'); applyWovenFx(o, sp, 0, s);
+        fx.push({ kind: 'bolt', pts: [{ x: s.x, y: s.y }, { x: o.x, y: o.y }], life: 0.25, max: 0.25, color: '#fff6a0' });
+      }
+      break;
+    }
+    case 'S': // Seeking: (it already curved in) a puff of light
+      fx.push({ kind: 'rays', x: s.x, y: s.y, r: 30, color: col, life: 0.3, max: 0.3, rot: rnd(0, TAU) });
+      break;
+  }
+}
+
 // ── woven spells in action ──
 function solidTemps() { return tempSolids.filter(b => b.solid !== false); }
 
@@ -1218,6 +1381,7 @@ function wovenBurstAt(x, y, rad, dmg, sp) {
     applyWovenFx(f, sp, dealt, { x, y });
   }
   ring(x, y, rad, TYPE_COLOR[sp.elem], 0.45);
+  fx.push({ kind: 'nova', elem: sp.elem, x, y, r: rad, life: 0.5, max: 0.5 });
   elemHit(sp.elem, x, y, 1.6 * sp.size);
   react(sp.elem, x, y, rad);
 }
@@ -1241,11 +1405,28 @@ function castWoven(sp) {
       if (sp.key.includes('E', 2)) player.skin = Math.max(player.skin, t);
       if (sp.key.includes('A', 2)) player.haste = Math.max(player.haste, t);
       if (sp.key.includes('S', 2)) player.ward = Math.max(player.ward, 2);
+      // the finish adds one more gift
+      if (sp.finish === 'F') wovenBurstAt(player.x, player.y, 110, 1.2 * sp.power, { ...sp, elem: 'fire', fx: new Set(['burn']) });
+      else if (sp.finish === 'W') healPlayer(2);
+      else if (sp.finish === 'E') for (const f of foes) { if (!f.dead && !f.structure && Math.hypot(f.x - player.x, f.y - player.y) < 140) knock(f, player.x, player.y, 260); }
+      else if (sp.finish === 'A') player.haste = Math.max(player.haste, 3) + 2;
+      else if (sp.finish === 'S') player.ward = (player.ward || 0) + 1;
+      fx.push({ kind: 'rays', x: player.x, y: player.y, r: 80, color: '#fff6b0', life: 0.7, max: 0.7, rot: 0 });
       ring(player.x, player.y, 90, col, 0.6);
-      burst(player.x, player.y, '#fff6b0', 30, 220);
+      shapeBits(player.x, player.y, 'plus', '#fff6b0', 10, 120, 80);
       return;
     }
-    wovenBurstAt(player.x, player.y, 150 * sp.size * (1 + 0.2 * (sp.count - 1)), 2 * sp.power, sp);
+    const rad = 150 * sp.size * (1 + 0.2 * (sp.count - 1));
+    wovenBurstAt(player.x, player.y, rad, 2 * sp.power, sp);
+    if (sp.finish === 'F') {
+      // Echoing: a second pulse a moment later, on the caster's side
+      const x = player.x, y = player.y, side = curSide, caster = player;
+      setTimeout(() => { if (state === 'play' || state === 'dead') withSide(side, () => wovenBurstAt(x, y, rad * 0.8, 1.2 * sp.power, sp), caster); }, 450);
+    }
+    else if (sp.finish === 'W') zones.push({ type: 'woven', x: player.x, y: player.y, r: rad * 0.75, life: 2.5, max: 2.5, tick: 0, spec: sp, charged: 0, ringZone: true });
+    else if (sp.finish === 'E') { for (const f of foes) if (!f.dead && !f.structure && Math.hypot(f.x - player.x, f.y - player.y) < rad + f.r) knock(f, player.x, player.y, 380); fx.push({ kind: 'cracks', ...crackLines(player.x, player.y, rad * 0.8, 7), life: 1.2, max: 1.2 }); }
+    else if (sp.finish === 'A') for (let i = 0; i < 6; i++) { const a = i * TAU / 6; launch(player.x, player.y, { x: Math.cos(a), y: Math.sin(a) }, { dmg: 0.8 * sp.power, type: sp.elem, speed: 460, r: 4, fx: 'woven', spec: sp, life: 0.6 }); shots[shots.length - 1].shard = true; }
+    else if (sp.finish === 'S') { const n = foes.filter(f => !f.dead && Math.hypot(f.x - player.x, f.y - player.y) < rad + f.r).length; if (n) healPlayer(0.5 * n); }
   } else if (sp.form === 'pool') {
     if (sp.mine) {
       if (traps.length >= 8) traps.shift();
@@ -1254,18 +1435,21 @@ function castWoven(sp) {
       return;
     }
     const p = targetPoint(480, 150);
-    zones.push({ type: 'woven', x: p.x, y: p.y, r: 90 * sp.size, life: 5 * sp.dur, max: 5 * sp.dur, tick: 0, spec: sp, charged: 0 });
+    zones.push({ type: 'woven', x: p.x, y: p.y, r: 90 * sp.size, r0: 90 * sp.size, life: 5 * sp.dur, max: 5 * sp.dur, tick: 0, spec: sp, charged: 0 });
     if (sp.elem === 'air' && sp.count > 1) zones[zones.length - 1].charged = 99; // a charged whirlwind is a lightning storm
     react(sp.elem, p.x, p.y, 90 * sp.size);
   } else if (sp.form === 'wall') {
     const a = aimFrom(player, 500);
     const cx = player.x + a.x * 75, cy = player.y + a.y * 75, px = -a.y, py = a.x;
-    const segs = Math.round(5 * sp.size) + (sp.count - 1) * 2;
+    const segs = Math.round(5 * sp.size) + (sp.count - 1) * 2 + (sp.finish === 'E' ? 2 : 0); // Towering: longer
+    const life = 8 * sp.dur * (sp.finish === 'W' ? 1.5 : 1); // Enduring: lasts longer
     for (let i = 0; i < segs; i++) {
       const o = (i - (segs - 1) / 2) * 27, x = cx + px * o, y = cy + py * o;
       if (isWater(x, y) || (mode === 'battle' && !inArena(x, y, 16))) continue;
-      tempSolids.push({ x, y, r: 15, life: 8 * sp.dur, kind: 'wall', elem: sp.elem, spec: sp, solid: sp.elem !== 'spirit', tick: 0, side: curSide });
-      burst(x, y, col, 4, 100);
+      tempSolids.push({ x, y, r: 15, life, kind: 'wall', elem: sp.elem, spec: sp, solid: sp.elem !== 'spirit', tick: 0, side: curSide, born: elapsed });
+      puff(x, y + 6, '#c2a57a', 1, 12, 8);
+      // Repelling: the wall shoves foes away as it rises
+      if (sp.finish === 'A') for (const f of foes) if (!f.dead && !f.structure && Math.hypot(f.x - x, f.y - y) < 70) knock(f, x, y, 260);
     }
     shake = Math.max(shake, 4);
   } else if (sp.form === 'creature') {
@@ -1284,8 +1468,9 @@ function makeRoom() {
 function summonCritter(sp) {
   makeRoom();
   const C = CRITTER[sp.elem], a = rnd(0, TAU);
+  const tough = sp.finish === 'E' ? 1.5 : 1; // Armoured
   allies.push({ kind: 'critter', elem: sp.elem, spec: sp, x: player.x + Math.cos(a) * 40, y: player.y + Math.sin(a) * 40,
-                life: 25 * sp.dur, max: 25 * sp.dur, hp: C.hp * sp.size, maxHp: C.hp * sp.size, cd: 0.6, ang: a,
+                life: 25 * sp.dur, max: 25 * sp.dur, hp: C.hp * sp.size * tough, maxHp: C.hp * sp.size * tough, cd: 0.6, ang: a,
                 r: 10 * Math.sqrt(sp.size), taunt: !!C.taunt, healT: 2 });
   burst(player.x + Math.cos(a) * 40, player.y + Math.sin(a) * 40, TYPE_COLOR[sp.elem], 24, 220);
 }
@@ -1294,11 +1479,12 @@ function updateCritter(a, dt) {
   const C = CRITTER[a.elem], sp = a.spec;
   const t = nearestFoe(a.x, a.y, 420);
   const engage = t && Math.hypot(t.x - player.x, t.y - player.y) < 520;
-  const spd = C.spd * (1 + 0.2 * (sp.count - 1));
+  const swift = sp.finish === 'A' ? 1.3 : 1, keen = sp.finish === 'S' ? 1.4 : 1;
+  const spd = C.spd * (1 + 0.2 * (sp.count - 1)) * swift;
   if (engage && C.melee) {
     const d = moveToward(a, t.x, t.y, spd, dt, a.r + t.r);
     if (d <= a.r + t.r + 8 && a.cd <= 0) {
-      a.cd = C.cd;
+      a.cd = C.cd / swift;
       const dealt = damageFoe(t, C.dmg * sp.power, a.elem, true);
       applyWovenFx(t, sp, dealt, a);
       elemHit(a.elem, t.x, t.y, 0.6);
@@ -1307,12 +1493,12 @@ function updateCritter(a, dt) {
     // keep near you, circling
     a.ang += dt * (C.spd / 140);
     moveToward(a, player.x + Math.cos(a.ang) * 60, player.y + Math.sin(a.ang) * 45, spd, dt, 4);
-    if (engage && a.cd <= 0 && Math.hypot(t.x - a.x, t.y - a.y) < C.range) {
-      a.cd = C.cd / (1 + 0.3 * (sp.count - 1));
-      launch(a.x, a.y, aimFrom(a, C.range), { dmg: C.dmg * sp.power, type: a.elem, speed: 480, r: 5, fx: 'woven', spec: sp, ally: true });
+    if (engage && a.cd <= 0 && Math.hypot(t.x - a.x, t.y - a.y) < C.range * keen) {
+      a.cd = C.cd / (1 + 0.3 * (sp.count - 1)) / swift;
+      launch(a.x, a.y, aimFrom(a, C.range * keen), { dmg: C.dmg * sp.power, type: a.elem, speed: 480, r: 5, fx: 'woven', spec: sp, ally: true });
     }
   }
-  if (C.heals || sp.heal) {
+  if (C.heals || sp.heal || sp.finish === 'W') { // Kindly helpers heal you too
     a.healT -= dt;
     if (a.healT <= 0) { a.healT = 2; if (player.hp < player.maxHp) healPlayer(0.6); }
   }
@@ -1330,6 +1516,42 @@ function summon(kind) {
 // Run a spell at its complexity's power: what it creates remembers that power,
 // and the buffs it gives last longer.
 const BUFF_KEYS = ['skin', 'haste', 'empower', 'ward', 'mirror', 'sanct', 'regen', 'phoenix', 'omni'];
+// one flourish per hand-made spell as it goes off (at the caster)
+const FLAIR = {
+  AA:   p => { fx.push({ kind: 'arcs', x: p.x, y: p.y, r: 150, color: '#fffbe0', rot: rnd(0, TAU), life: 0.5, max: 0.5 }); leafSwirl(p.x, p.y, 12, 280); },
+  FE:   p => { puff(p.x, p.y + 6, '#ffb04a', 1, 12, 10); },
+  WE:   p => { const t = targetPoint(420, 140); puff(t.x, t.y, '#7a5a32', 3, 22, 4); shapeBits(t.x, t.y, 'drop', '#8a6a44', 8, 150, 60); },
+  WS:   p => { shapeBits(p.x, p.y, 'plus', '#9dffb0', 9, 70, 90, 1.2); puff(p.x, p.y, '#9dffb0', 1, 26, 10); },
+  ES:   p => { for (let i = 0; i < 10; i++) { const a = i * TAU / 10; particles.push({ shape: 'shard', x: p.x + Math.cos(a) * 70, y: p.y + Math.sin(a) * 70, vx: -Math.cos(a) * 260, vy: -Math.sin(a) * 260, r: 4, life: 0.35, decay: 2.8, color: '#a8845a', rot: a, spin: 0 }); } },
+  AS:   p => { fx.push({ kind: 'arcs', x: p.x, y: p.y, r: 50, color: '#fff6a0', rot: rnd(0, TAU), life: 0.4, max: 0.4 }); },
+  SA:   p => { if (p.blinkFrom) { fx.push({ kind: 'streak', x1: p.blinkFrom.x, y1: p.blinkFrom.y, x2: p.x, y2: p.y, color: '#e6ccff', life: 0.35, max: 0.35 }); puff(p.blinkFrom.x, p.blinkFrom.y, '#c77dff', 2, 18, 20); fx.push({ kind: 'rays', x: p.x, y: p.y, r: 40, color: '#e6ccff', life: 0.35, max: 0.35, rot: 0 }); } },
+  EWS:  p => { const t = targetPoint(500, 150); puff(t.x, t.y, '#7dff4a', 4, 30, 10); },
+  EEA:  p => { fx.push({ kind: 'cracks', ...crackLines(p.x, p.y, 230, 8), life: 1.4, max: 1.4 }); puff(p.x, p.y, '#c2a57a', 5, 26, 12); shapeBits(p.x, p.y, 'shard', '#8a6a44', 12, 260, 80); },
+  SFS:  p => { fx.push({ kind: 'tendrils', x: p.x, y: p.y, r: 260, rot: rnd(0, TAU), life: 0.8, max: 0.8 }); puff(p.x, p.y, '#4a2070', 3, 30, 5); },
+  SWS:  p => { shapeBits(p.x, p.y, 'star', '#e6ccff', 8, 90, 30); },
+  SWA:  p => { fx.push({ kind: 'rays', x: p.x, y: p.y, r: 46, color: '#e6ccff', life: 0.5, max: 0.5, rot: 0.3 }); shapeBits(p.x, p.y, 'shard', '#f3e6ff', 8, 140); },
+  EAE:  p => { },
+  SSW:  p => { leafSwirl(p.x, p.y, 10, 120); shapeBits(p.x, p.y, 'plus', '#9dffb0', 5, 50, 70); },
+  FSF:  p => { puff(p.x, p.y, '#ffb04a', 2, 28, 30); burst(p.x, p.y, '#ffd24a', 16, 200); },
+  SAS:  p => { shapeBits(p.x, p.y, 'star', '#e6ccff', 10, 120, 40); },
+  FSE:  p => { puff(p.x, p.y, '#8a7a70', 2, 20, 20); burst(p.x, p.y, '#ff8a3a', 14, 200); },
+  WWWA: p => { shapeBits(p.x, p.y, 'drop', '#9fd8ff', 16, 260, 60); },
+  AWAW: p => { fx.push({ kind: 'arcs', x: p.x, y: p.y - 60, r: 90, color: '#c8d0e0', rot: 0, life: 0.6, max: 0.6 }); },
+  AEEA: p => { const t = targetPoint(500, 200); leafSwirl(t.x, t.y, 14, 220); },
+  SWSW: p => { shapeBits(p.x, p.y, 'star', '#ff8ad8', 18, 300, 0, 1.2); },
+  ASSA: p => { fx.push({ kind: 'clock', x: p.x, y: p.y, r: 120, color: '#9fd0ff', life: 1, max: 1 }); },
+  WWSS: p => { shapeBits(p.x, p.y, 'drop', '#9dffd0', 12, 140, 120); },
+  EESE: p => { for (let i = 0; i < 12; i++) { const a = i * TAU / 12; particles.push({ shape: 'shard', x: p.x + Math.cos(a) * 90, y: p.y + Math.sin(a) * 90, vx: -Math.cos(a) * 300, vy: -Math.sin(a) * 300, r: 5, life: 0.32, decay: 3, color: '#8a7a66', rot: a, spin: 0 }); } puff(p.x, p.y, '#c2a57a', 3, 22, 10); },
+  FEFEF: p => { },
+  WAWAW: p => { fx.push({ kind: 'nova', elem: 'water', x: p.x, y: p.y, r: 460, life: 0.8, max: 0.8 }); shapeBits(p.x, p.y, 'star', '#e8f8ff', 30, 420, 0, 1.3); },
+  EESEE: p => { puff(p.x, p.y, '#a0a0a0', 6, 34, 8); fx.push({ kind: 'cracks', ...crackLines(p.x, p.y, 300, 10), life: 1.2, max: 1.2 }); },
+  SASAS: p => { fx.push({ kind: 'clock', x: p.x, y: p.y, r: 200, color: '#ffffff', life: 1.2, max: 1.2 }); },
+  SWWWS: p => { fx.push({ kind: 'pillars', x: p.x, y: p.y, r: 60, life: 1.6, max: 1.6 }); fx.push({ kind: 'rays', x: p.x, y: p.y, r: 120, color: '#fff6b0', life: 0.8, max: 0.8, rot: 0 }); },
+  SAFEWS: p => { for (const c of ['#ff5a2a', '#ffd24a', '#7dff4a', '#3ab0ff', '#c77dff']) shapeBits(p.x, p.y, 'star', c, 6, 260, 40, 1.2); fx.push({ kind: 'rays', x: p.x, y: p.y, r: 140, color: '#ffd24a', life: 0.9, max: 0.9, rot: 0 }); },
+  FFSAFF: p => { puff(p.x, p.y - 30, '#8a7a70', 3, 30, 40); },
+  FSFSFS: p => { puff(p.x, p.y, '#ffb04a', 4, 34, 50); fx.push({ kind: 'rays', x: p.x, y: p.y, r: 110, color: '#ff8a3a', life: 0.8, max: 0.8, rot: 0 }); },
+  SFWEASS: p => { fx.push({ kind: 'cracks', ...crackLines(p.x, p.y, 600, 14), life: 2, max: 2 }); fx.push({ kind: 'pillars', x: p.x, y: p.y, r: 140, life: 1.6, max: 1.6 }); },
+};
 function castWithPotency(key, fn) {
   const pot = potencyOf(key);
   const lists = () => [shots, zones, storms, traps, allies, meteors, waves, tempSolids];
@@ -1337,7 +1559,8 @@ function castWithPotency(key, fn) {
   const buffs = BUFF_KEYS.map(k => player[k] || 0);
   const prev = potency;
   potency = pot;
-  try { fn(); }
+  const from = { x: player.x, y: player.y };
+  try { fn(); if (FLAIR[key]) FLAIR[key]({ x: player.x, y: player.y, blinkFrom: key === 'SA' ? from : null }); }
   finally {
     potency = prev;
     lists().forEach((l, i) => { for (const o of l) if (!before[i].has(o) && o.pot == null) o.pot = pot; });
@@ -1371,6 +1594,7 @@ function castSequence() {
   }
   if (player.mana < sp.cost) { castMessage('Not enough mana', '#6af'); return; }
   player.mana -= sp.cost;
+  castSigil(key, player.x, player.y);
   const tier = key.length;
   const pot = potencyOf(key), potTxt = pot > 1 ? ` · power ×${pot.toFixed(2)}` : '';
   castMessage((tier >= 4 ? `${sp.name} · ${TIERS[tier]}` : sp.name) + potTxt, TIER_COLOR[tier]);
@@ -1416,6 +1640,7 @@ function releaseSpell(key) {
   if (tier >= 4) shake = Math.max(shake, (tier - 3) * 4);
   burst(player.x, player.y, TIER_COLOR[tier], 4 * tier, 80 + 40 * tier);
   const sp = SPELLS[key];
+  castSigil(key, player.x, player.y, true);
   castWithPotency(key, () => (sp.fire || sp.cast)());
 }
 
@@ -1633,7 +1858,18 @@ function updateFoes(realDt) {
 function updateShots(dt) {
   for (const s of shots) {
     potency = s.pot || 1;
-    s.x += s.vx * dt; s.y += s.vy * dt; s.life -= dt;
+    // Seeking weaves curve toward the nearest foe
+    if (s.spec && s.spec.finish === 'S' && s.fx === 'woven') {
+      const t = nearestFoe(s.x, s.y, 320, s.hit);
+      if (t) {
+        const sp = Math.hypot(s.vx, s.vy), want = Math.atan2(t.y - s.y, t.x - s.x), cur = Math.atan2(s.vy, s.vx);
+        let d = Math.atan2(Math.sin(want - cur), Math.cos(want - cur));
+        const a = cur + clamp(d, -5 * dt, 5 * dt);
+        s.vx = Math.cos(a) * sp; s.vy = Math.sin(a) * sp;
+      }
+    }
+    s.x += s.vx * dt; s.y += s.vy * dt; s.life -= dt; s.spin += dt * 8;
+    shotTrailFx(s, dt);
     if (inWall(s.x, s.y)) { s.life = 0; burst(s.x, s.y, '#999', 4, 100); continue; }
     for (const f of foes) {
       if (s.life <= 0) break;
@@ -1641,16 +1877,16 @@ function updateShots(dt) {
       if (Math.hypot(f.x - s.x, f.y - s.y) < s.r + f.r) {
         s.hit.add(f);
         const dealt = damageFoe(f, s.dmg, s.type, s.ally);
-        if (s.fx === 'woven') { applyWovenFx(f, s.spec, dealt, s); react(s.type, s.x, s.y, 40); }
+        if (s.fx === 'woven') { applyWovenFx(f, s.spec, dealt, s); react(s.type, s.x, s.y, 40); wovenFinishHit(s, f); }
+        shotImpact(s, f);
         if (s.fx === 'slow') f.slow = 2.5;
         if (s.fx === 'burn') f.burn = Math.max(f.burn || 0, 2);
         if (s.fx === 'freeze') applyCC(f, 'freeze', 3);
         if (s.fx === 'hex') applyCC(f, 'hex', 6);
         if (s.fx === 'drain' && dealt) healPlayer(dealt * 0.6 / potency);
         if (s.fx === 'poison') { f.poison = Math.max(f.poison, 3); f.poisonDps = Math.max(f.poisonDps, 0.6); }
-        if (s.fx === 'explode') { SFX.explode(false); aoe(s.x, s.y, s.boomR, s.boom, s.type, 120); burst(s.x, s.y, s.color, 22, 300); }
+        if (s.fx === 'explode') { SFX.explode(false); aoe(s.x, s.y, s.boomR, s.boom, s.type, 120); }
         else if (s.fx === 'woven') elemHit(ELEM_OF[s.type] || s.type, s.x, s.y, 0.8);
-        else burst(s.x, s.y, s.color, 5, 140);
         if (s.pierce-- <= 0) s.life = 0;
       }
     }
@@ -1711,7 +1947,11 @@ function updateAllies(dt) {
   }
   allies = allies.filter(a => {
     if (a.life > 0) return true;
-    if (a.kind === 'imp') {
+    if (a.kind === 'critter' && a.spec.finish === 'F') {
+      // a Volatile helper goes out with a bang
+      wovenBurstAt(a.x, a.y, 80, 2 * a.spec.power, a.spec);
+      puff(a.x, a.y, '#8a7a70', 3, 18, 30);
+    } else if (a.kind === 'imp') {
       // the decoy goes out with a bang
       aoe(a.x, a.y, 90, 4, 'fire', 220);
       burst(a.x, a.y, '#ff8a3a', 30, 320);
@@ -1759,6 +1999,14 @@ function updateEffects(dt) {
     }
     if (z.type === 'woven') {
       if (z.charged > 0 && z.charged < 90) z.charged -= dt;
+      const fin = z.spec.finish;
+      if (fin === 'W' && z.r0) z.r = Math.min(z.r0 * 1.7, z.r + z.r0 * 0.15 * dt);                 // Spreading
+      if (fin === 'A' && z.r0) { const t = nearestFoe(z.x, z.y, 500); if (t) moveToward(z, t.x, t.y, 45, dt, 0); } // Drifting
+      if (fin === 'S' && z.r0) for (const f of foes) {                                                 // Pulling
+        if (f.dead || f.structure) continue;
+        const dx = z.x - f.x, dy = z.y - f.y, d = Math.hypot(dx, dy);
+        if (d < z.r * 1.3 && d > 8) { const pull = (f.boss ? 15 : 70) * dt; f.x += dx / d * pull; f.y += dy / d * pull; }
+      }
       // a sacred circle (or any pool with a Spirit upgrade) heals you while you stand in it
       if ((z.spec.elem === 'spirit' || z.spec.heal) && Math.hypot(player.x - z.x, player.y - z.y) < z.r)
         player.hp = Math.min(player.maxHp, player.hp + 1.5 * (z.pot || 1) * dt);
@@ -1774,6 +2022,13 @@ function updateEffects(dt) {
       player.mana = Math.min(player.maxMana, player.mana + 1 * dt);
     }
   }
+  for (const z of zones) if (z.life <= 0 && z.type === 'woven' && z.spec.finish === 'F' && z.r0 && !z.erupted) {
+    // Erupting: the pool goes up in one last blast
+    z.erupted = true; potency = z.pot || 1;
+    wovenBurstAt(z.x, z.y, z.r * 1.1, 3 * z.spec.power, z.spec);
+    puff(z.x, z.y, '#8a7a70', 3, 24, 40);
+  }
+  potency = 1;
   zones = zones.filter(z => z.life > 0);
 
   for (const t of traps) {
@@ -1783,7 +2038,8 @@ function updateEffects(dt) {
     if (foes.some(f => !f.dead && Math.hypot(f.x - t.x, f.y - t.y) < f.r + 26)) {
       if (t.spec) { wovenBurstAt(t.x, t.y, 85 * t.spec.size, 3.5 * t.spec.power, t.spec); SFX.explode(false); t.life = 0; continue; }
       aoe(t.x, t.y, 75, 4, 'fire', 260);
-      burst(t.x, t.y, '#ff8a3a', 26, 300);
+      fx.push({ kind: 'nova', elem: 'fire', x: t.x, y: t.y, r: 75, life: 0.5, max: 0.5 });
+      puff(t.x, t.y, '#8a7a70', 3, 20, 40);
       SFX.explode(false);
       t.life = 0;
     }
@@ -1804,16 +2060,24 @@ function updateEffects(dt) {
       applyWovenFx(f, b.spec, dealt, b);
       if (b.elem === 'spirit') applyCC(f, 'confuse', 3 * b.spec.dur);
     }
+    // Soothing walls mend the caster who shelters by them
+    if (b.spec.finish === 'S' && Math.hypot(player.x - b.x, player.y - b.y) < 70) { player.hp = Math.min(player.maxHp, player.hp + 0.25); shapeBits(b.x, b.y - 10, 'plus', '#9dffb0', 1, 30, 50); }
   }
   if (curSide === 'blue') tempSolids = tempSolids.filter(b => {
     if (b.life > 0) return true;
-    burst(b.x, b.y, TYPE_COLOR.earth, 6, 100);
+    if (b.spec && b.spec.finish === 'F') {
+      // Exploding walls go off as they crumble (on their caster's side)
+      const caster = b.side === 'red' ? (versus ? rivalP : leadMage) : player;
+      if (b.side !== 'red' || caster) withSide(b.side || 'blue', () => wovenBurstAt(b.x, b.y, 55, 1.5 * b.spec.power, b.spec), caster);
+    }
+    puff(b.x, b.y, '#c2a57a', 1, 12, 10);
     return false;
   });
 
   for (const w of waves) {
     potency = w.pot || 1;
     w.r += w.speed * dt;
+    if (Math.random() < 0.8) { const a = rnd(0, TAU); particles.push({ shape: 'drop', x: w.x + Math.cos(a) * w.r, y: w.y + Math.sin(a) * w.r, vx: Math.cos(a) * 80, vy: Math.sin(a) * 80 - 90, r: 3, life: 0.7, decay: 1.8, color: '#e8f8ff', rot: 0, spin: 0 }); }
     for (const f of foes) {
       if (f.dead || w.hit.has(f)) continue;
       if (Math.abs(Math.hypot(f.x - w.x, f.y - w.y) - w.r) < f.r + 14) {
@@ -1832,6 +2096,9 @@ function updateEffects(dt) {
       aoe(m.x, m.y, 200, 25, 'fire', 380);
       SFX.explode(true);
       zones.push({ x: m.x, y: m.y, r: 140, life: 4, max: 4, tick: 0, type: 'fire', pot: potency });
+      fx.push({ kind: 'cracks', ...crackLines(m.x, m.y, 220, 9), life: 2, max: 2 });
+      fx.push({ kind: 'nova', elem: 'fire', x: m.x, y: m.y, r: 200, life: 0.6, max: 0.6 });
+      puff(m.x, m.y, '#8a7a70', 6, 40, 50);
       burst(m.x, m.y, '#ff5a2a', 80, 560);
       burst(m.x, m.y, '#ffd24a', 40, 340);
       shake = Math.max(shake, 20);
@@ -1850,8 +2117,10 @@ function decayVisuals(dt) {
 
   const w = windAt();
   for (const p of particles) {
+    if (p.home) { const dx = player.x - p.x, dy = player.y - p.y, d = Math.hypot(dx, dy) || 1; p.vx += dx / d * 900 * dt; p.vy += dy / d * 900 * dt; if (d < 16) p.life = 0; }
+    if (p.shape) { p.rot += (p.spin || 0) * dt; if (p.shape === 'drop') p.vy += 160 * dt; }
     p.x += p.vx * dt; p.y += p.vy * dt;
-    const damp = Math.max(0, 1 - (p.puff || p.leaf ? 1.5 : 4) * dt);
+    const damp = Math.max(0, 1 - (p.puff || p.leaf ? 1.5 : p.home ? 0.5 : p.shape ? 2.5 : 4) * dt);
     p.vx *= damp; p.vy *= damp;
     if (p.puff || p.leaf) p.vx += w * 30 * dt; // the breeze carries smoke and leaves
     if (p.leaf) { p.rot += p.spin * dt; p.vy += 10 * dt; }
@@ -4054,7 +4323,7 @@ function hash2(i, j) {
   h = Math.imul(h ^ (h >>> 13), 1274126177);
   return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
 }
-const clear = col => col.length === 7 ? col + '00' : col.replace(/[\d.]+\)$/, '0)');
+const clear = col => col[0] === '#' ? col.slice(0, 7) + '00' : col.replace(/[\d.]+\)$/, '0)');
 
 // the meadow: painted once onto a tile, then repeated under everything
 let meadow = null;
@@ -5104,9 +5373,20 @@ function drawCritter(a) {
   }
 }
 
+// a woven helper wears its finish: a fuse, bubbles, armour, speed sparks or a halo
+function drawCritterFinish(a) {
+  const f = a.spec && a.spec.finish, t = elapsed, r = a.r;
+  if (!f) return;
+  if (f === 'F') { circle(a.x + r * 0.6, a.y - r * 1.1, 2.5 + Math.sin(t * 20) * 1, '#ffd24a'); ctx.strokeStyle = '#6b4a2e'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(a.x + r * 0.3, a.y - r * 0.6); ctx.lineTo(a.x + r * 0.6, a.y - r * 1.05); ctx.stroke(); }
+  else if (f === 'W') for (let i = 0; i < 3; i++) { const k = (t * 0.8 + i / 3) % 1; circle(a.x + Math.sin(t * 3 + i) * r * 0.6, a.y - r - k * 18, 2 * (1 - k) + 0.5, 'rgba(200,240,255,0.8)'); }
+  else if (f === 'E') circle(a.x, a.y, r + 3, null, '#8a8a8e', 2.5);
+  else if (f === 'A') { ctx.strokeStyle = '#fff6a0'; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.moveTo(a.x - r * 1.2, a.y - 2); ctx.lineTo(a.x - r * 2, a.y - 2); ctx.moveTo(a.x - r * 1.1, a.y + 3); ctx.lineTo(a.x - r * 1.7, a.y + 3); ctx.stroke(); }
+  else if (f === 'S') { ctx.strokeStyle = '#ffe9a8'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.ellipse(a.x, a.y - r - 5, r * 0.7, r * 0.25, 0, 0, TAU); ctx.stroke(); }
+}
+
 function drawAlly(a) {
   const fade = Math.min(1, a.life / 2);
-  if (a.kind === 'critter') { ctx.globalAlpha = 0.4 + fade * 0.6; drawCritter(a); ctx.globalAlpha = 1; return; }
+  if (a.kind === 'critter') { ctx.globalAlpha = 0.4 + fade * 0.6; drawCritter(a); drawCritterFinish(a); ctx.globalAlpha = 1; return; }
   ctx.globalAlpha = 0.4 + fade * 0.6;
   if (a.kind === 'wisp') {
     const g = ctx.createRadialGradient(a.x, a.y, 0, a.x, a.y, 20);
@@ -5188,7 +5468,15 @@ function drawPlayer(p = player) {
   } else drawWizardFigure(x, y, p.face.x, p.robe, p.hat, orb);
   ctx.restore();
 
-  if (p.skin > 0) circle(x, y, 24, null, 'rgba(181,131,74,0.9)', 4);
+  if (p.skin > 0) {
+    // Stoneskin: six stone plates turning slowly around you
+    for (let i = 0; i < 6; i++) {
+      const a = elapsed * 0.8 + i * TAU / 6;
+      ctx.save(); ctx.translate(x + Math.cos(a) * 24, y + Math.sin(a) * 20); ctx.rotate(a);
+      ctx.fillStyle = '#a8845a'; ctx.fillRect(-4, -7, 8, 14); ctx.fillStyle = '#c9a77a'; ctx.fillRect(-4, -7, 3, 14);
+      ctx.restore();
+    }
+  }
   if (p.omni > 0) {
     // a ring of every element's colour, spinning, plus a gold crown
     for (let i = 0; i < OMNI_TYPES.length; i++) {
@@ -5201,17 +5489,53 @@ function drawPlayer(p = player) {
     ctx.lineTo(x + 5, y - 38); ctx.lineTo(x + 11, y - 44); ctx.lineTo(x + 11, y - 34); ctx.closePath(); ctx.fill();
   }
   if (p.mirror > 0) {
-    ctx.strokeStyle = `rgba(230,220,255,${0.5 + Math.sin(elapsed * 10) * 0.3})`; ctx.lineWidth = 3;
-    ctx.beginPath(); ctx.arc(x, y, 30, 0, TAU); ctx.stroke();
+    // Mirror Shield: a turning bubble of glassy facets that catch the light
+    ctx.save(); ctx.translate(x, y); ctx.rotate(elapsed * 0.6);
+    for (let i = 0; i < 6; i++) {
+      const a = i * TAU / 6, sh = 0.35 + 0.45 * Math.max(0, Math.sin(elapsed * 4 + i * 1.3));
+      ctx.fillStyle = `rgba(230,220,255,${sh * 0.35})`; ctx.strokeStyle = `rgba(255,255,255,${sh})`; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(Math.cos(a) * 32, Math.sin(a) * 32); ctx.lineTo(Math.cos(a + TAU / 6) * 32, Math.sin(a + TAU / 6) * 32); ctx.closePath();
+      ctx.fill(); ctx.beginPath(); ctx.moveTo(Math.cos(a) * 32, Math.sin(a) * 32); ctx.lineTo(Math.cos(a + TAU / 6) * 32, Math.sin(a + TAU / 6) * 32); ctx.stroke();
+    }
+    ctx.restore();
   }
-  if (p.sanct > 0) circle(x, y, 38, 'rgba(255,246,176,0.18)', 'rgba(255,246,176,0.9)', 3);
-  if (p.regen > 0 && Math.random() < 0.2) particles.push({ x: x + rnd(-12, 12), y: y + 10, vx: 0, vy: -40, r: 2.5, life: 0.8, decay: 1.5, color: '#8f8' });
-  if (p.phoenix > 0) circle(x, y + 14, 5 + Math.sin(elapsed * 4), '#ff8a3a');
+  if (p.sanct > 0) {
+    // Sanctuary: a golden dome with light rising through it
+    const g = ctx.createRadialGradient(x, y, 10, x, y, 40);
+    g.addColorStop(0, 'rgba(255,246,176,0.05)'); g.addColorStop(1, 'rgba(255,246,176,0.35)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, 40, 0, TAU); ctx.fill();
+    circle(x, y, 40, null, 'rgba(255,246,176,0.9)', 2);
+    if (Math.random() < 0.4) particles.push({ shape: 'plus', x: x + rnd(-30, 30), y: y + rnd(-10, 20), vx: 0, vy: -50, r: 3, life: 0.8, decay: 1.4, color: '#fff6b0', rot: 0, spin: 0 });
+  }
+  if (p.regen > 0 && Math.random() < 0.25) {
+    // Rejuvenate: leaves spiral up around you
+    const a = rnd(0, TAU);
+    particles.push({ leaf: true, x: x + Math.cos(a) * 18, y: y + 12, vx: -Math.sin(a) * 40, vy: -50, r: 3.5, life: 1, decay: 1.2, color: Math.random() < 0.7 ? '#8fdf6a' : '#d6f2a0', rot: a, spin: 6 });
+  }
+  if (p.empower > 0 && Math.random() < 0.35) particles.push({ x: x + rnd(-12, 12), y: y + rnd(-6, 12), vx: rnd(-10, 10), vy: -90, r: 2.5, life: 0.8, decay: 1.6, color: Math.random() < 0.5 ? '#ffb04a' : '#ff5a2a' });
+  if (p.phoenix > 0) {
+    // Phoenix: little wings of flame waiting to carry you back
+    const f = Math.sin(elapsed * 6) * 0.25;
+    for (const sd of [-1, 1]) {
+      ctx.fillStyle = 'rgba(255,138,58,0.55)';
+      ctx.beginPath(); ctx.moveTo(x + sd * 6, y);
+      ctx.quadraticCurveTo(x + sd * 30, y - 26 - f * 20, x + sd * 34, y - 4); ctx.quadraticCurveTo(x + sd * 22, y + 2, x + sd * 6, y + 6); ctx.fill();
+    }
+  }
+  if (p.haste > 0 && p.moving && p.face) {
+    // Haste: speed lines streaming behind you
+    ctx.strokeStyle = 'rgba(255,246,160,0.6)'; ctx.lineWidth = 2; ctx.lineCap = 'round';
+    for (let i = 0; i < 3; i++) {
+      const o = (i - 1) * 9, px = -p.face.y, py = p.face.x;
+      ctx.beginPath(); ctx.moveTo(x - p.face.x * 18 + px * o, y - p.face.y * 18 + py * o); ctx.lineTo(x - p.face.x * (34 + i * 6) + px * o, y - p.face.y * (34 + i * 6) + py * o); ctx.stroke();
+    }
+  }
   if (p.ward > 0) {
-    circle(x, y, 30, 'rgba(199,125,255,0.12)', 'rgba(199,125,255,0.8)', 2);
+    // Ward: spirit runes circling you, one per blow it can stop
+    circle(x, y, 30, 'rgba(199,125,255,0.10)', 'rgba(199,125,255,0.6)', 1.5);
     for (let i = 0; i < p.ward; i++) {
       const a = elapsed * 2 + i * TAU / p.ward;
-      circle(x + Math.cos(a) * 30, y + Math.sin(a) * 30, 3, '#e6ccff');
+      drawGlyph('S', x + Math.cos(a) * 30, y + Math.sin(a) * 30, 10, '#e6ccff');
     }
   }
 }
@@ -5229,10 +5553,135 @@ function drawShot(s) {
     ctx.moveTo(s.x - ux * 22 + uy * 4, s.y - uy * 22 - ux * 4); ctx.lineTo(s.x - ux * 18, s.y - uy * 18); ctx.stroke();
     return;
   }
-  const g = ctx.createRadialGradient(s.x, s.y, 0, s.x, s.y, s.r * 2.2);
-  g.addColorStop(0, '#fff'); g.addColorStop(0.35, s.color); g.addColorStop(1, 'rgba(0,0,0,0)');
-  ctx.fillStyle = g;
-  ctx.beginPath(); ctx.arc(s.x, s.y, s.r * 2.2, 0, TAU); ctx.fill();
+  const sp = Math.hypot(s.vx, s.vy) || 1, ux = s.vx / sp, uy = s.vy / sp, r = s.r, t = elapsed;
+  const glow = (rad, col) => { const g = ctx.createRadialGradient(s.x, s.y, 0, s.x, s.y, rad); g.addColorStop(0, col); g.addColorStop(1, clear(col)); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(s.x, s.y, rad, 0, TAU); ctx.fill(); };
+  const along = () => ctx.rotate(Math.atan2(uy, ux));
+  const look = s.look === 'woven' ? 'w-' + ((s.spec && s.spec.elem) || ELEM_OF[s.type] || s.type) : s.look;
+  switch (look) {
+    case 'firebolt': case 'w-fire': {
+      glow(r * 2.6, '#ff8a3a55');
+      ctx.save(); ctx.translate(s.x, s.y); along();
+      const fl = 1 + Math.sin(t * 30 + s.spin) * 0.15;
+      ctx.fillStyle = '#ff5a2a';
+      ctx.beginPath(); ctx.moveTo(-r * 3 * fl, 0); ctx.quadraticCurveTo(-r, -r * 1.2, r, 0); ctx.quadraticCurveTo(-r, r * 1.2, -r * 3 * fl, 0); ctx.fill();
+      ctx.fillStyle = '#ffd24a';
+      ctx.beginPath(); ctx.moveTo(-r * 1.8 * fl, 0); ctx.quadraticCurveTo(-r * 0.4, -r * 0.6, r * 0.7, 0); ctx.quadraticCurveTo(-r * 0.4, r * 0.6, -r * 1.8 * fl, 0); ctx.fill();
+      circle(r * 0.2, 0, r * 0.35, '#fff6d0');
+      ctx.restore(); break;
+    }
+    case 'frost': {
+      glow(r * 2.4, '#bfe6ff66');
+      ctx.save(); ctx.translate(s.x, s.y); ctx.rotate(s.spin);
+      ctx.strokeStyle = '#e8f8ff'; ctx.lineWidth = 2; ctx.lineCap = 'round';
+      for (let i = 0; i < 6; i++) { const an = i * TAU / 6; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(Math.cos(an) * r * 1.4, Math.sin(an) * r * 1.4);
+        ctx.moveTo(Math.cos(an) * r * 0.8, Math.sin(an) * r * 0.8); ctx.lineTo(Math.cos(an + 0.5) * r, Math.sin(an + 0.5) * r); ctx.stroke(); }
+      circle(0, 0, r * 0.4, '#ffffff');
+      ctx.restore(); break;
+    }
+    case 'spike': case 'w-earth': {
+      ctx.save(); ctx.translate(s.x, s.y); ctx.rotate(s.spin * 0.8);
+      ctx.fillStyle = '#8a6a44'; ctx.beginPath();
+      for (let i = 0; i < 6; i++) { const an = i * TAU / 6, rr = r * (i % 2 ? 0.9 : 1.3); ctx.lineTo(Math.cos(an) * rr, Math.sin(an) * rr); }
+      ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#b5946a'; ctx.beginPath(); ctx.arc(-r * 0.3, -r * 0.3, r * 0.45, 0, TAU); ctx.fill();
+      ctx.restore(); break;
+    }
+    case 'venom': {
+      glow(r * 2, '#7dff4a44');
+      ctx.save(); ctx.translate(s.x, s.y); along();
+      ctx.fillStyle = '#4caf50'; ctx.beginPath(); ctx.moveTo(r * 1.8, 0); ctx.lineTo(-r * 0.4, -r * 0.55); ctx.lineTo(-r * 2.2, 0); ctx.lineTo(-r * 0.4, r * 0.55); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#c8ff8a'; ctx.beginPath(); ctx.moveTo(r * 1.8, 0); ctx.lineTo(r * 0.6, -r * 0.25); ctx.lineTo(r * 0.6, r * 0.25); ctx.fill();
+      ctx.restore(); break;
+    }
+    case 'siphon': {
+      // a little ghost with a wavy tail
+      ctx.save(); ctx.translate(s.x, s.y); along();
+      ctx.strokeStyle = 'rgba(230,204,255,0.7)'; ctx.lineWidth = r * 0.9; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(0, 0);
+      for (let k = 1; k <= 8; k++) ctx.lineTo(-k * r * 0.6, Math.sin(t * 18 - k * 0.9) * r * 0.5 * (k / 8));
+      ctx.stroke(); ctx.restore();
+      glow(r * 2.2, '#c77dff77'); circle(s.x, s.y, r * 0.8, '#f3e6ff');
+      circle(s.x - 1.5, s.y - 1, 1.1, '#5a2a8a'); circle(s.x + 1.5, s.y - 1, 1.1, '#5a2a8a');
+      break;
+    }
+    case 'fireball': {
+      glow(r * 3, '#ff8a3a66');
+      ctx.save(); ctx.translate(s.x, s.y); ctx.rotate(s.spin);
+      for (let i = 0; i < 3; i++) { ctx.rotate(TAU / 3); ctx.fillStyle = i % 2 ? '#ff5a2a' : '#ff8a3a'; ctx.beginPath(); ctx.ellipse(r * 0.4, 0, r * 1.1, r * 0.6, 0.6, 0, TAU); ctx.fill(); }
+      ctx.restore();
+      circle(s.x, s.y, r * 0.75, '#ffd24a'); circle(s.x, s.y, r * 0.4, '#fffbe6');
+      break;
+    }
+    case 'lance': {
+      // a spear of light with afterimages
+      for (let k = 3; k >= 0; k--) {
+        ctx.globalAlpha = k ? 0.18 * (4 - k) : 1;
+        ctx.save(); ctx.translate(s.x - ux * k * 14, s.y - uy * k * 14); along();
+        const g = ctx.createLinearGradient(-r * 4, 0, r * 1.5, 0); g.addColorStop(0, 'rgba(230,204,255,0)'); g.addColorStop(1, '#ffffff');
+        ctx.fillStyle = g; ctx.beginPath(); ctx.moveTo(r * 1.8, 0); ctx.lineTo(-r * 4, -r * 0.4); ctx.lineTo(-r * 4, r * 0.4); ctx.closePath(); ctx.fill();
+        ctx.restore();
+      }
+      ctx.globalAlpha = 1; glow(r * 1.8, '#e6ccff88');
+      break;
+    }
+    case 'icelance': {
+      glow(r * 2.4, '#cfefff55');
+      ctx.save(); ctx.translate(s.x, s.y); along();
+      ctx.fillStyle = '#cfefff'; ctx.beginPath(); ctx.moveTo(r * 2.2, 0); ctx.lineTo(-r * 2.6, -r * 0.7); ctx.lineTo(-r * 2, 0); ctx.lineTo(-r * 2.6, r * 0.7); ctx.closePath(); ctx.fill();
+      ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(r * 2, 0); ctx.lineTo(-r * 1.8, -r * 0.2); ctx.stroke();
+      ctx.restore(); break;
+    }
+    case 'hex': {
+      glow(r * 2.4, '#b070ff55');
+      ctx.save(); ctx.translate(s.x, s.y); ctx.rotate(s.spin * 0.7);
+      ctx.strokeStyle = '#d6b0ff'; ctx.lineWidth = 1.6;
+      ctx.beginPath(); ctx.arc(0, 0, r * 1.1, 0, TAU); ctx.stroke();
+      ctx.beginPath();
+      for (let i = 0; i <= 5; i++) { const an = -Math.PI / 2 + ((i * 2) % 5) * TAU / 5; ctx.lineTo(Math.cos(an) * r, Math.sin(an) * r); }
+      ctx.stroke(); ctx.restore(); break;
+    }
+    case 'prism': case 'mirror': {
+      ctx.save(); ctx.translate(s.x, s.y); along();
+      const g = ctx.createLinearGradient(-r * 2, 0, r * 2, 0);
+      ['#ff5a2a', '#ffd24a', '#7dff4a', '#3ab0ff', '#c77dff'].forEach((c, i) => g.addColorStop(i / 4, c));
+      ctx.fillStyle = s.look === 'mirror' ? '#e6ccff' : g;
+      ctx.beginPath(); ctx.moveTo(r * 2, 0); ctx.lineTo(0, -r * 0.7); ctx.lineTo(-r * 2, 0); ctx.lineTo(0, r * 0.7); ctx.closePath(); ctx.fill();
+      ctx.restore(); glow(r * 2, '#ffffff55'); break;
+    }
+    case 'w-water': {
+      glow(r * 2.2, '#3ab0ff55');
+      ctx.save(); ctx.translate(s.x, s.y); along();
+      ctx.fillStyle = '#3ab0ff'; ctx.beginPath(); ctx.moveTo(-r * 2, 0); ctx.quadraticCurveTo(-r * 0.2, -r * 1.1, r, 0); ctx.quadraticCurveTo(-r * 0.2, r * 1.1, -r * 2, 0); ctx.fill();
+      ctx.restore(); circle(s.x - r * 0.2, s.y - r * 0.3, r * 0.3, '#e8f8ff'); break;
+    }
+    case 'w-air': {
+      glow(r * 2.6, '#fff6a066'); circle(s.x, s.y, r * 0.7, '#fffbe0');
+      ctx.strokeStyle = '#fff6a0'; ctx.lineWidth = 1.5;
+      for (let i = 0; i < 3; i++) { const an = s.spin * 2 + i * TAU / 3; ctx.beginPath(); ctx.moveTo(s.x, s.y); ctx.lineTo(s.x + Math.cos(an) * r * 1.2, s.y + Math.sin(an) * r * 1.2); ctx.lineTo(s.x + Math.cos(an + 0.5) * r * 1.9, s.y + Math.sin(an + 0.5) * r * 1.9); ctx.stroke(); }
+      break;
+    }
+    case 'w-spirit': {
+      glow(r * 2.4, '#c77dff66');
+      ctx.save(); ctx.translate(s.x, s.y); ctx.rotate(s.spin); ctx.fillStyle = '#f3e6ff'; ctx.beginPath();
+      for (let i = 0; i < 10; i++) { const rr = i % 2 ? r * 0.45 : r * 1.3, an = i * Math.PI / 5; ctx.lineTo(Math.cos(an) * rr, Math.sin(an) * rr); }
+      ctx.closePath(); ctx.fill(); ctx.restore(); break;
+    }
+    default: {
+      const g = ctx.createRadialGradient(s.x, s.y, 0, s.x, s.y, r * 2.2);
+      g.addColorStop(0, '#fff'); g.addColorStop(0.35, s.color); g.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(s.x, s.y, r * 2.2, 0, TAU); ctx.fill();
+    }
+  }
+  // a woven bolt shows its finish
+  if (s.look === 'woven' && s.spec && s.spec.finish && !s.shard && !s.ally) {
+    const f = s.spec.finish, col = TYPE_COLOR[s.spec.elem];
+    if (f === 'S') { ctx.strokeStyle = '#ffffffaa'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(s.x, s.y, r * 2, s.spin, s.spin + 4); ctx.stroke(); }
+    else if (f === 'F') { ctx.globalAlpha = 0.5 + 0.5 * Math.sin(t * 20); circle(s.x, s.y, r * 1.6, null, '#ffb04a', 2); ctx.globalAlpha = 1; }
+    else if (f === 'A') { ctx.strokeStyle = '#fff6a0'; ctx.lineWidth = 1; for (let i = 0; i < 2; i++) { const an = rnd(0, TAU); ctx.beginPath(); ctx.moveTo(s.x + Math.cos(an) * r, s.y + Math.sin(an) * r); ctx.lineTo(s.x + Math.cos(an) * r * 2.2 + rnd(-3, 3), s.y + Math.sin(an) * r * 2.2 + rnd(-3, 3)); ctx.stroke(); } }
+    else if (f === 'W') circle(s.x, s.y, r * (1.5 + Math.sin(t * 12) * 0.25), null, '#bfe6ffaa', 1.5);
+    else if (f === 'E') { ctx.save(); ctx.translate(s.x, s.y); ctx.rotate(-s.spin); ctx.strokeStyle = col; ctx.lineWidth = 1.5; ctx.strokeRect(-r * 1.3, -r * 1.3, r * 2.6, r * 2.6); ctx.restore(); }
+  }
 }
 
 function drawZone(z) {
@@ -5253,15 +5702,27 @@ function drawZone(z) {
       ctx.stroke();
     }
     circle(z.x, z.y, 14, '#0a0a14', '#cfe8ff', 2);
+    // debris whirling in toward the eye
+    for (let i = 0; i < 14; i++) {
+      const rr = z.r * (1 - ((elapsed * 0.35 + i / 14) % 1)), an = elapsed * 3.5 + i * 2.4 + (1 - rr / z.r) * 6;
+      ctx.save(); ctx.translate(z.x + Math.cos(an) * rr, z.y + Math.sin(an) * rr); ctx.rotate(an * 2);
+      ctx.fillStyle = i % 3 ? '#8fbf4a' : '#8a6a44'; ctx.globalAlpha = a;
+      ctx.beginPath(); ctx.ellipse(0, 0, i % 3 ? 4 : 3, i % 3 ? 2 : 3, 0, 0, TAU); ctx.fill();
+      ctx.restore();
+    }
+    ctx.globalAlpha = 1;
   } else if (z.type === 'spring') {
     const g = ctx.createRadialGradient(z.x, z.y, 0, z.x, z.y, z.r);
     g.addColorStop(0, `rgba(120,255,170,${0.4 * a})`); g.addColorStop(1, 'rgba(60,200,140,0)');
     ctx.fillStyle = g; ctx.beginPath(); ctx.arc(z.x, z.y, z.r, 0, TAU); ctx.fill();
     circle(z.x, z.y, z.r, null, `rgba(140,255,190,${0.6 * a})`, 2);
-    for (let i = 0; i < 6; i++) {
-      const y = z.y + z.r * 0.5 - ((elapsed * 30 + i * 17) % (z.r));
-      circle(z.x + Math.cos(i * 1.9) * z.r * 0.5, y, 3, `rgba(200,255,220,${a})`);
+    // a little fountain at the heart, arcs of water falling back
+    for (let i = 0; i < 10; i++) {
+      const k = (elapsed * 0.9 + i / 10) % 1, an = i * TAU / 10;
+      const px = z.x + Math.cos(an) * z.r * 0.6 * k, py = z.y + Math.sin(an) * z.r * 0.35 * k - Math.sin(k * Math.PI) * 34;
+      circle(px, py, 3, `rgba(220,255,235,${a * (1 - k * 0.5)})`);
     }
+    circle(z.x, z.y - 6, 6, `rgba(230,255,240,${a})`);
   }
 }
 
@@ -5288,6 +5749,13 @@ function drawWovenPool(z, a) {
     ctx.strokeStyle = '#e6ccff'; ctx.lineWidth = 2; ctx.beginPath();
     for (let i = 0; i <= 5; i++) { const an = -Math.PI / 2 + ((i * 2) % 5) * TAU / 5; const px = Math.cos(an) * z.r * 0.7, py = Math.sin(an) * z.r * 0.7; i ? ctx.lineTo(px, py) : ctx.moveTo(px, py); }
     ctx.stroke(); ctx.restore();
+  }
+  const fin = z.spec.finish;
+  if (fin && z.r0) {
+    if (fin === 'W') { ctx.setLineDash([6, 6]); circle(z.x, z.y, z.r + 6, null, c + '88', 1.5); ctx.setLineDash([]); }             // Spreading
+    else if (fin === 'A') { ctx.strokeStyle = 'rgba(255,250,200,0.6)'; ctx.lineWidth = 2; for (let i = 0; i < 3; i++) { const yy = z.y - z.r * 0.4 + i * z.r * 0.4, xx = z.x - z.r * 0.5 + ((t * 40 + i * 20) % (z.r)); ctx.beginPath(); ctx.moveTo(xx - 10, yy); ctx.lineTo(xx + 10, yy); ctx.stroke(); } } // Drifting
+    else if (fin === 'S') { ctx.strokeStyle = c + 'aa'; ctx.lineWidth = 1.5; for (let i = 0; i < 4; i++) { ctx.beginPath(); for (let k = 0; k < 16; k++) { const rr = z.r * (1 - k / 16), an = -t * 2 + i * TAU / 4 + k * 0.3; k ? ctx.lineTo(z.x + Math.cos(an) * rr, z.y + Math.sin(an) * rr) : ctx.moveTo(z.x + Math.cos(an) * rr, z.y + Math.sin(an) * rr); } ctx.stroke(); } } // Pulling
+    else if (fin === 'F') { const k = 1 - z.life / z.max; circle(z.x, z.y, 6 + k * 14 + Math.sin(t * (6 + k * 20)) * 3, `rgba(255,${200 - k * 120},80,${0.4 + k * 0.5})`); }             // Erupting
   }
   if (z.charged > 0) {
     // crackling lightning across the water
@@ -5316,9 +5784,20 @@ function drawSideFx() {
     if (z.type === 'fire') { g.addColorStop(0, `rgba(255,110,40,${a * 1.5})`); g.addColorStop(1, 'rgba(120,30,10,0)'); }
     else { g.addColorStop(0, `rgba(125,255,74,${a})`); g.addColorStop(1, 'rgba(60,140,30,0)'); }
     ctx.fillStyle = g; ctx.beginPath(); ctx.arc(z.x, z.y, z.r, 0, TAU); ctx.fill();
-    for (let i = 0; i < 5; i++) {
-      const bx = z.x + Math.cos(i * 1.3 + elapsed) * z.r * 0.6, by = z.y + Math.sin(i * 2.1 + elapsed * 1.3) * z.r * 0.6;
-      circle(bx, by, 4, z.type === 'fire' ? `rgba(255,200,90,${a * 2})` : `rgba(160,255,110,${a * 1.5})`);
+    if (z.type === 'fire') {
+      for (let i = 0; i < 9; i++) {
+        const px = z.x + Math.cos(i * 2.3) * z.r * 0.6, py = z.y + Math.sin(i * 1.9) * z.r * 0.5, h = 8 + Math.sin(elapsed * 9 + i) * 4;
+        ctx.fillStyle = `rgba(255,${150 + (i % 3) * 30},60,${a * 2})`; ctx.beginPath(); ctx.moveTo(px - 5, py); ctx.quadraticCurveTo(px, py - h * 2, px + 5, py); ctx.fill();
+      }
+    } else {
+      // Plague Cloud: green billows rolling and drifting
+      for (let i = 0; i < 7; i++) {
+        const bx = z.x + Math.cos(i * 1.3 + elapsed * 0.6) * z.r * 0.55, by = z.y + Math.sin(i * 2.1 + elapsed * 0.8) * z.r * 0.45, rr = 22 + Math.sin(elapsed * 2 + i) * 5;
+        const pg = ctx.createRadialGradient(bx, by, 0, bx, by, rr);
+        pg.addColorStop(0, `rgba(160,255,110,${a * 1.6})`); pg.addColorStop(1, 'rgba(120,200,80,0)');
+        ctx.fillStyle = pg; ctx.beginPath(); ctx.arc(bx, by, rr, 0, TAU); ctx.fill();
+      }
+      for (let i = 0; i < 4; i++) { const k = (elapsed * 0.7 + i / 4) % 1; circle(z.x + Math.cos(i * 2) * z.r * 0.4, z.y + Math.sin(i * 3) * z.r * 0.3 - k * 20, 2.5 * (1 - k), `rgba(200,255,150,${a * 2})`); }
     }
   }
   const ch = player.charging;
@@ -5340,14 +5819,36 @@ function drawSideFx() {
     }
   }
   for (const w of waves) {
+    // a rolling wave: deep water, a lighter face, and a crest of foam
     const a = 1 - w.r / w.maxR;
-    circle(w.x, w.y, w.r, null, `rgba(58,176,255,${a})`, 14);
-    circle(w.x, w.y, w.r - 10, null, `rgba(200,240,255,${a * 0.7})`, 3);
+    circle(w.x, w.y, w.r - 12, null, `rgba(40,120,200,${a * 0.6})`, 18);
+    circle(w.x, w.y, w.r, null, `rgba(80,180,240,${a})`, 10);
+    for (let i = 0; i < 40; i++) {
+      const an = i * TAU / 40, rr = w.r + 5 + Math.sin(elapsed * 14 + i * 1.7) * 3;
+      circle(w.x + Math.cos(an) * rr, w.y + Math.sin(an) * rr, 3 + (i % 3), `rgba(240,250,255,${a})`);
+    }
+  }
+  if (storms.length) {
+    // Thunderstorm: a dark cloud rolls along above you
+    const cx = player.x, cy = player.y - 150;
+    ctx.globalAlpha = 0.75;
+    for (const [ox, oy, r] of [[0, 0, 50], [-55, 10, 38], [55, 8, 40], [-25, -22, 34], [28, -20, 36], [90, 18, 26], [-90, 18, 26]]) circle(cx + ox + Math.sin(elapsed + ox) * 4, cy + oy, r, '#4a5268');
+    for (const [ox, oy, r] of [[-20, -26, 22], [26, -24, 20], [0, -10, 26]]) circle(cx + ox, cy + oy, r, '#6a7488');
+    ctx.globalAlpha = 1;
+    if (Math.random() < 0.15) { ctx.fillStyle = 'rgba(200,240,255,0.25)'; ctx.beginPath(); ctx.arc(cx, cy, 90, 0, TAU); ctx.fill(); }
   }
   for (const m of meteors) {
     const k = 1 - m.t / m.max;
     circle(m.x, m.y, 200, `rgba(255,90,42,${0.08 + k * 0.15})`, `rgba(255,90,42,${0.4 + k * 0.4})`, 2);
+    // its shadow grows as it falls; a long fiery tail follows it in
+    ctx.fillStyle = `rgba(30,20,20,${0.15 + k * 0.35})`; ctx.beginPath(); ctx.ellipse(m.x, m.y, 30 + k * 40, (30 + k * 40) * 0.45, 0, 0, TAU); ctx.fill();
     const hx = m.x - 260 * (1 - k), hy = m.y - 420 * (1 - k);
+    const tail = ctx.createLinearGradient(hx - 130, hy - 210, hx, hy);
+    tail.addColorStop(0, 'rgba(255,90,42,0)'); tail.addColorStop(1, 'rgba(255,200,90,0.85)');
+    ctx.strokeStyle = tail; ctx.lineWidth = 18; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(hx - 130, hy - 210); ctx.lineTo(hx, hy); ctx.stroke();
+    if (Math.random() < 0.6) particles.push({ x: hx, y: hy, vx: rnd(-60, 0), vy: rnd(-90, -20), r: 3, life: 0.7, decay: 1.8, color: '#ffd24a' });
+    circle(hx, hy, 14, '#5a3a2a');
     const g = ctx.createRadialGradient(hx, hy, 0, hx, hy, 30);
     g.addColorStop(0, '#fff'); g.addColorStop(0.4, '#ffb04a'); g.addColorStop(1, 'rgba(255,90,42,0)');
     ctx.fillStyle = g; ctx.beginPath(); ctx.arc(hx, hy, 30, 0, TAU); ctx.fill();
@@ -5356,6 +5857,81 @@ function drawSideFx() {
 }
 
 // visuals everyone shares: rings, bolts, particles, floating numbers
+// a shaped particle: a twinkling star, a healing plus, a glinting shard, a drop
+function drawShapeBit(p, a) {
+  ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.rot || 0);
+  ctx.globalAlpha = a; ctx.fillStyle = p.color;
+  const r = p.r * (0.5 + 0.5 * a);
+  if (p.shape === 'star') {
+    ctx.beginPath();
+    for (let i = 0; i < 8; i++) { const rr = i % 2 ? r * 0.35 : r * 1.3, an = i * Math.PI / 4; ctx.lineTo(Math.cos(an) * rr, Math.sin(an) * rr); }
+    ctx.closePath(); ctx.fill();
+  } else if (p.shape === 'plus') {
+    ctx.fillRect(-r * 0.3, -r, r * 0.6, r * 2); ctx.fillRect(-r, -r * 0.3, r * 2, r * 0.6);
+  } else if (p.shape === 'shard') {
+    ctx.beginPath(); ctx.moveTo(r * 1.6, 0); ctx.lineTo(0, r * 0.45); ctx.lineTo(-r * 1.2, 0); ctx.lineTo(0, -r * 0.45); ctx.closePath(); ctx.fill();
+    ctx.globalAlpha = a * 0.8; ctx.fillStyle = '#fff'; ctx.fillRect(-r * 0.2, -r * 0.12, r * 0.8, r * 0.24);
+  } else if (p.shape === 'drop') {
+    ctx.beginPath(); ctx.moveTo(0, -r * 1.4); ctx.quadraticCurveTo(r, 0, 0, r); ctx.quadraticCurveTo(-r, 0, 0, -r * 1.4); ctx.fill();
+  }
+  ctx.restore();
+}
+// the casting sigil: the spell's runes around a turning circle, joined in casting order
+function drawSigil(e, a) {
+  const n = e.key.length, k = 1 - a, R = (e.small ? 16 : 22 + n * 7) * (0.75 + k * 0.5);
+  ctx.save(); ctx.translate(e.x, e.y); ctx.scale(1, 0.55);
+  ctx.globalAlpha = Math.min(1, a * 1.8) * (e.small ? 0.7 : 0.9);
+  const rot = e.rot + k * 2.2;
+  ctx.strokeStyle = TIER_COLOR[n] || '#fff'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(0, 0, R, 0, TAU); ctx.stroke();
+  ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(0, 0, R * 0.78, 0, TAU); ctx.stroke();
+  const pts = [];
+  for (let i = 0; i < n; i++) { const an = -Math.PI / 2 + i * TAU / n + rot; pts.push([Math.cos(an) * R * 0.78, Math.sin(an) * R * 0.78]); }
+  ctx.lineWidth = 1.6;
+  for (let i = 0; i < n; i++) {
+    const [x1, y1] = pts[i], [x2, y2] = pts[(i + 1 + (n > 4 ? 1 : 0)) % n];
+    ctx.strokeStyle = ELEMENTS[e.key[i]].color;
+    ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+  }
+  if (!e.small) for (let i = 0; i < n; i++) {
+    const an = -Math.PI / 2 + i * TAU / n + rot;
+    drawGlyph(e.key[i], Math.cos(an) * (R + 9), Math.sin(an) * (R + 9), 11, ELEMENTS[e.key[i]].color);
+  }
+  ctx.restore();
+  ctx.globalAlpha = 1;
+}
+// a woven burst, shaped by its element
+function drawNova(e, a) {
+  const k = 1 - a, rr = e.r * (0.35 + k * 0.7), c = TYPE_COLOR[e.elem];
+  ctx.globalAlpha = a;
+  if (e.elem === 'fire') {
+    for (let i = 0; i < 18; i++) {
+      const an = i * TAU / 18, h = 10 + Math.sin(elapsed * 25 + i) * 4;
+      const x = e.x + Math.cos(an) * rr, y = e.y + Math.sin(an) * rr;
+      ctx.fillStyle = i % 2 ? '#ffb04a' : '#ff5a2a';
+      ctx.beginPath(); ctx.moveTo(x - 5, y); ctx.quadraticCurveTo(x, y - h * 2.2, x + 5, y); ctx.fill();
+    }
+  } else if (e.elem === 'water') {
+    circle(e.x, e.y, rr, null, '#bfe6ff', 4);
+    for (let i = 0; i < 16; i++) { const an = i * TAU / 16 + k; circle(e.x + Math.cos(an) * rr * 1.08, e.y + Math.sin(an) * rr * 1.08 - k * 10, 3, '#e8f8ff'); }
+  } else if (e.elem === 'earth') {
+    for (let i = 0; i < 14; i++) {
+      const an = i * TAU / 14, x = e.x + Math.cos(an) * rr, y = e.y + Math.sin(an) * rr - Math.sin(k * Math.PI) * 14;
+      ctx.fillStyle = i % 2 ? '#8a6a44' : '#a8845a';
+      ctx.beginPath(); ctx.moveTo(x - 6, y + 4); ctx.lineTo(x - 2, y - 7); ctx.lineTo(x + 6, y + 3); ctx.closePath(); ctx.fill();
+    }
+  } else if (e.elem === 'air') {
+    ctx.strokeStyle = '#fff6a0'; ctx.lineWidth = 2.5; ctx.beginPath();
+    for (let i = 0; i <= 40; i++) { const an = i * TAU / 40, r2 = rr + (i % 2 ? 9 : -9); i ? ctx.lineTo(e.x + Math.cos(an) * r2, e.y + Math.sin(an) * r2) : ctx.moveTo(e.x + Math.cos(an) * r2, e.y + Math.sin(an) * r2); }
+    ctx.stroke();
+  } else {
+    ctx.strokeStyle = c; ctx.lineWidth = 2;
+    for (let i = 0; i < 12; i++) { const an = i * TAU / 12 + k; ctx.beginPath(); ctx.moveTo(e.x + Math.cos(an) * rr * 0.4, e.y + Math.sin(an) * rr * 0.4); ctx.lineTo(e.x + Math.cos(an) * rr, e.y + Math.sin(an) * rr); ctx.stroke(); }
+    circle(e.x, e.y, rr, null, '#e6ccff', 2);
+  }
+  ctx.globalAlpha = 1;
+}
+
 function drawSharedFx() {
   for (const e of fx) {
     const a = e.life / e.max;
@@ -5371,18 +5947,101 @@ function drawSharedFx() {
       ctx.closePath(); ctx.fill();
       ctx.globalAlpha = 1;
     } else if (e.kind === 'bolt') {
-      ctx.strokeStyle = e.color || `rgba(160,255,255,${a})`;
-      ctx.globalAlpha = e.color ? a : 1;
-      ctx.lineWidth = 3;
-      ctx.beginPath();
+      // lightning: a wide soft glow, a white-hot core, and little forks
+      const path = [];
       for (let i = 0; i < e.pts.length - 1; i++) {
         const p = e.pts[i], q = e.pts[i + 1];
-        ctx.moveTo(p.x, p.y);
-        for (let k = 1; k < 6; k++) ctx.lineTo(p.x + (q.x - p.x) * k / 6 + rnd(-10, 10), p.y + (q.y - p.y) * k / 6 + rnd(-10, 10));
-        ctx.lineTo(q.x, q.y);
+        path.push([p.x, p.y]);
+        for (let k = 1; k < 7; k++) path.push([p.x + (q.x - p.x) * k / 7 + rnd(-11, 11), p.y + (q.y - p.y) * k / 7 + rnd(-11, 11)]);
+        path.push([q.x, q.y]);
       }
-      ctx.stroke();
+      const stroke = (w, col, al) => { ctx.globalAlpha = al; ctx.strokeStyle = col; ctx.lineWidth = w; ctx.beginPath(); path.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)); ctx.stroke(); };
+      ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+      stroke(10, e.color || '#8ff6ff', a * 0.25);
+      stroke(4, e.color || '#a0ffff', a * 0.8);
+      stroke(1.5, '#ffffff', a);
+      ctx.globalAlpha = a * 0.7; ctx.strokeStyle = e.color || '#a0ffff'; ctx.lineWidth = 1.5;
+      for (let i = 2; i < path.length - 1; i += 3) {
+        const [x, y] = path[i];
+        ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + rnd(-22, 22), y + rnd(-22, 22)); ctx.stroke();
+      }
       ctx.globalAlpha = 1;
+    } else if (e.kind === 'sigil') {
+      drawSigil(e, a);
+    } else if (e.kind === 'nova') {
+      drawNova(e, a);
+    } else if (e.kind === 'rays') {
+      // a starburst of light
+      ctx.globalAlpha = a; ctx.strokeStyle = e.color; ctx.lineCap = 'round';
+      for (let i = 0; i < 10; i++) {
+        const an = e.rot + i * TAU / 10, r1 = e.r * (0.2 + (1 - a) * 0.5), r2 = e.r * (0.6 + (1 - a) * 0.8) * (i % 2 ? 0.7 : 1);
+        ctx.lineWidth = i % 2 ? 1.5 : 3;
+        ctx.beginPath(); ctx.moveTo(e.x + Math.cos(an) * r1, e.y + Math.sin(an) * r1); ctx.lineTo(e.x + Math.cos(an) * r2, e.y + Math.sin(an) * r2); ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+    } else if (e.kind === 'streak') {
+      ctx.globalAlpha = a; ctx.lineCap = 'round';
+      ctx.strokeStyle = e.color; ctx.lineWidth = 6 * a; ctx.globalAlpha = a * 0.35;
+      ctx.beginPath(); ctx.moveTo(e.x1, e.y1); ctx.lineTo(e.x2, e.y2); ctx.stroke();
+      ctx.lineWidth = 2; ctx.globalAlpha = a;
+      ctx.beginPath(); ctx.moveTo(e.x1, e.y1); ctx.lineTo(e.x2, e.y2); ctx.stroke();
+      ctx.globalAlpha = 1;
+    } else if (e.kind === 'cracks') {
+      // the ground splits, then the cracks close up
+      ctx.globalAlpha = Math.min(1, a * 2); ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+      for (const [w, col] of [[5, 'rgba(60,40,20,0.75)'], [2, 'rgba(255,190,110,0.7)']]) {
+        ctx.strokeStyle = col; ctx.lineWidth = w;
+        for (const pts of e.lines) { ctx.beginPath(); pts.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); ctx.stroke(); }
+      }
+      ctx.globalAlpha = 1;
+    } else if (e.kind === 'arcs') {
+      // wind: crescent gusts sweeping outward
+      ctx.globalAlpha = a; ctx.strokeStyle = e.color; ctx.lineCap = 'round';
+      for (let i = 0; i < 6; i++) {
+        const rr = e.r * (0.3 + (1 - a) * 0.8) + i * 6, an = e.rot + i * TAU / 6 + (1 - a) * 2;
+        ctx.lineWidth = 3 - i * 0.3;
+        ctx.beginPath(); ctx.arc(e.x, e.y, rr, an, an + 1.1); ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+    } else if (e.kind === 'flamewave') {
+      // a rolling front of flame tongues sweeping outward
+      const k = 1 - a, rr = e.range * (0.25 + k * 0.85);
+      for (let i = 0; i <= 14; i++) {
+        const an = e.ang - e.half + (i / 14) * e.half * 2, h = 16 + Math.sin(elapsed * 20 + i * 1.7) * 6;
+        const x = e.x + Math.cos(an) * rr, y = e.y + Math.sin(an) * rr;
+        const g = ctx.createRadialGradient(x, y, 0, x, y, h * 1.3);
+        g.addColorStop(0, `rgba(255,246,176,${a})`); g.addColorStop(0.45, `rgba(255,140,58,${a * 0.9})`); g.addColorStop(1, 'rgba(255,90,42,0)');
+        ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, h * 1.3, 0, TAU); ctx.fill();
+      }
+    } else if (e.kind === 'tendrils') {
+      // terror: dark wisps creeping outward
+      ctx.globalAlpha = a; ctx.strokeStyle = '#4a2070'; ctx.lineCap = 'round';
+      for (let i = 0; i < 12; i++) {
+        const an = i * TAU / 12 + e.rot, len = e.r * (0.3 + (1 - a) * 0.8);
+        ctx.lineWidth = 5 * a + 1;
+        ctx.beginPath(); ctx.moveTo(e.x, e.y);
+        for (let k = 1; k <= 6; k++) { const d = len * k / 6, w = Math.sin(elapsed * 9 + k + i) * 10; ctx.lineTo(e.x + Math.cos(an) * d - Math.sin(an) * w, e.y + Math.sin(an) * d + Math.cos(an) * w); }
+        ctx.stroke();
+        circle(e.x + Math.cos(an) * len, e.y + Math.sin(an) * len, 3, '#c9a0ff');
+      }
+      ctx.globalAlpha = 1;
+    } else if (e.kind === 'clock') {
+      // a clock face for time magic, its hand racing round
+      ctx.globalAlpha = a * 0.9; ctx.strokeStyle = e.color; ctx.lineWidth = 2;
+      const rr = e.r * (0.7 + (1 - a) * 0.4);
+      ctx.beginPath(); ctx.arc(e.x, e.y, rr, 0, TAU); ctx.stroke();
+      for (let i = 0; i < 12; i++) { const an = i * TAU / 12; ctx.beginPath(); ctx.moveTo(e.x + Math.cos(an) * rr * 0.86, e.y + Math.sin(an) * rr * 0.86); ctx.lineTo(e.x + Math.cos(an) * rr, e.y + Math.sin(an) * rr); ctx.stroke(); }
+      const h = (1 - a) * TAU * 2 - Math.PI / 2;
+      ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(e.x, e.y); ctx.lineTo(e.x + Math.cos(h) * rr * 0.8, e.y + Math.sin(h) * rr * 0.8); ctx.stroke();
+      ctx.globalAlpha = 1;
+    } else if (e.kind === 'pillars') {
+      // shafts of light rising around a holy place
+      for (let i = 0; i < 8; i++) {
+        const an = i * TAU / 8 + elapsed * 0.4, x = e.x + Math.cos(an) * e.r, y = e.y + Math.sin(an) * e.r * 0.6;
+        const g = ctx.createLinearGradient(x, y, x, y - 120);
+        g.addColorStop(0, `rgba(255,246,176,${a * 0.6})`); g.addColorStop(1, 'rgba(255,246,176,0)');
+        ctx.fillStyle = g; ctx.fillRect(x - 6, y - 120, 12, 120);
+      }
     }
   }
   for (const s of enemyShots) {
@@ -5407,6 +6066,7 @@ function drawSharedFx() {
       ctx.restore();
       continue;
     }
+    if (p.shape) { drawShapeBit(p, a); continue; }
     // sparks glow softly and shrink away
     const rr = p.r * (0.45 + 0.55 * a);
     ctx.globalAlpha = a * 0.25; circle(p.x, p.y, rr * 2.3, p.color);
@@ -5444,6 +6104,10 @@ function drawWorld() {
   for (const b of tempSolids) {
     ctx.globalAlpha = Math.min(1, b.life);
     const t = elapsed;
+    // walls burst up out of the ground
+    const rise = b.born ? clamp((elapsed - b.born) / 0.22, 0, 1) : 1;
+    ctx.save();
+    if (rise < 1) { ctx.translate(b.x, b.y + b.r); ctx.scale(1, 0.15 + 0.85 * rise); ctx.translate(-b.x, -(b.y + b.r)); }
     if (b.elem === 'fire') {
       // a pillar of flame
       const h = b.r * (1.6 + Math.sin(t * 10 + b.x) * 0.25);
@@ -5470,6 +6134,14 @@ function drawWorld() {
       circle(b.x, b.y, b.r, '#7a6a55', '#4e4236', 3);
       circle(b.x - 4, b.y - 4, b.r * 0.4, '#958268');
     }
+    ctx.restore();
+    // a woven wall shows its finish
+    const fin = b.spec && b.spec.finish;
+    if (fin === 'S') circle(b.x, b.y, b.r + 6 + Math.sin(t * 3 + b.x) * 2, null, 'rgba(157,255,176,0.6)', 2);
+    else if (fin === 'F' && Math.random() < 0.2) particles.push({ x: b.x + rnd(-8, 8), y: b.y - 6, vx: 0, vy: -50, r: 2, life: 0.6, decay: 2, color: '#ffb04a' });
+    else if (fin === 'W') { ctx.globalAlpha *= 0.5 + 0.5 * Math.sin(t * 5 + b.y); drawShapeBit({ shape: 'star', x: b.x + 6, y: b.y - b.r, r: 3, color: '#e8f8ff', rot: t }, 1); }
+    else if (fin === 'A') { ctx.strokeStyle = 'rgba(255,250,200,0.6)'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(b.x, b.y, b.r + 5, t * 5, t * 5 + 1.5); ctx.stroke(); }
+    else if (fin === 'E') { ctx.strokeStyle = 'rgba(90,70,40,0.7)'; ctx.lineWidth = 2; ctx.strokeRect(b.x - b.r * 0.7, b.y - b.r * 0.7, b.r * 1.4, b.r * 1.4); }
     ctx.globalAlpha = 1;
   }
   drawTraps();
