@@ -2308,6 +2308,7 @@ let friends = [];   // blue units and structures (your side)
 let bshots = [];    // shots from units and towers
 let teams = null;
 let links = [];     // laser walls between friendly towers
+const BUILD_CLOSE = 15; // no building in the last 15 seconds
 const MATCH_TIME = 300, BUILD_EVERY = 10, SIGIL_WALL = 15, GROUND_BONUS = 140, BASE_BONUS = 60;
 const FRONT_X = WORLD * 0.32; // the line (±) behind which each side holds 30% of the oval at the start
 const TEAM_COLOR = { blue: '#4aa8ff', red: '#ff4a5a' };
@@ -3323,8 +3324,16 @@ function updateBattle(dt) {
   T.resT = (T.resT ?? 0) - dt;
   if (T.resT <= 0) { T.resT = 0.5; computeResonance(); }
 
+  // the last 15 seconds: building closes (any turn under way is called off)
+  if (T.time <= BUILD_CLOSE && !T.buildClosed) {
+    T.buildClosed = true;
+    T.pending = null; T.pendingRed = null; T.bonus = { blue: 0, red: 0 };
+    showBanner('Building is closed', 'Final 15 seconds: fight for every point!', 3);
+    netEvents.push(['banner', 'Building is closed', 'Final 15 seconds: fight for every point!', 3]);
+  }
   // build turns alternate between the sides
-  if (T.pending) {
+  if (T.buildClosed) { /* no more builds */ }
+  else if (T.pending) {
     T.pending.t -= dt;
     if (T.pending.t <= 0) { T.pending = null; castMessage('Build turn passed', '#aaa'); }
   } else {
@@ -3344,6 +3353,7 @@ function updateBattle(dt) {
   }
   // a broken sigil earns its breaker an extra build turn
   T.bonus = T.bonus || { blue: 0, red: 0 };
+  if (T.buildClosed) T.bonus = { blue: 0, red: 0 };
   if (T.bonus.blue > 0 && !T.pending) {
     T.bonus.blue--;
     T.pending = { t: BUILD_EVERY - 1 };
@@ -3451,7 +3461,7 @@ function buildButtons() {
   ];
 }
 function buildChoice(key) {
-  if (!teams || !teams.pending || state !== 'play') return false;
+  if (!teams || !teams.pending || state !== 'play' || teams.time <= BUILD_CLOSE) return false;
   if (net.role === 'guest') {
     if (key === 'turret' && !canBuildAt(player.x, player.y)) { castMessage('Can’t build here: not in red ground or on a tree, rock or tower', '#ccc'); return true; }
     // the turn ends when the host confirms it (if the spot is refused, you can still try again)
@@ -3616,7 +3626,7 @@ function hostReceive(m) {
     case 'fire': if (!rivalP.dead) R(fireLoaded); break;
     case 'arrow': if (!rivalP.dead) R(() => shootArrow(m.x, m.y)); break;
     case 'build':
-      if (teams.pendingRed && !rivalP.dead) {
+      if (teams.pendingRed && !rivalP.dead && teams.time > BUILD_CLOSE) {
         teams.buildElemRed = ELEM_CYCLE.includes(m.elem) ? m.elem : 'fire';
         if (m.key === 'turret') {
           if (canBuildAt(rivalP.x, rivalP.y, 'red')) { buildTurret('red', rivalP.x, rivalP.y, teams.buildElemRed); teams.pendingRed = null; }
@@ -6509,7 +6519,9 @@ function clockText(t) { return `${Math.floor(t / 60)}:${Math.floor(t % 60).toStr
 function drawBuildClock(cx, cy) {
   const T = teams, r = 14;
   let frac, num, col, label, sub, now = false;
-  if (T.pending) {           // your turn right now
+  if (T.time <= BUILD_CLOSE) { // the final stretch: no more building
+    frac = 0; num = '–'; col = '#888'; label = 'BUILDING CLOSED'; sub = 'final 15 seconds';
+  } else if (T.pending) {      // your turn right now
     frac = T.pending.t / (BUILD_EVERY - 1); num = Math.ceil(T.pending.t); col = '#ffd24a';
     label = 'BUILD NOW'; sub = 'turret or titan'; now = true;
   } else if (T.pendingRed) { // a duel friend choosing
@@ -7059,7 +7071,7 @@ const HOWTO = [
   ['h', 'Battle'],
   ['p', 'Your base is on the left, red’s is on the right. Most points after 5 minutes wins.'],
   ['points'],
-  ['p', 'Every 10 seconds someone gets a build turn. Pick an element, then build a turret where you stand (it claims ground) or send a titan.'],
+  ['p', 'Every 10 seconds someone gets a build turn. Pick an element, then build a turret where you stand (it claims ground) or send a titan. A dial beside the clock counts down to the next turn. No building in the last 15 seconds.'],
   ['p', 'Minion mix: drag the dot to choose which minions you send. FOLLOW keeps your army with you, SPREAD lets it push. Army orders: attack or protect.'],
   ['h', 'Tips'],
   ['p', 'Try every pair of elements first. Two-rune spells are quick and cheap.'],
