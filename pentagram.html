@@ -850,7 +850,7 @@ function damageFoe(f, dmg, rawType, fromHelper) {
     }
   }
   if (player.empower > 0 && !fromHelper) mult *= 2;
-  const d = f.unit ? minionHit(f, mageGuard(f, dmg * mult)) : dmg * mult;
+  const d = f.unit ? minionHit(f, mageGuard(f, dmg * mult)) * resDmgIn(f.team) : dmg * mult;
   f.hp -= d;
   if (rawType !== 'poison') SFX.hit();
   f.flash = 0.12;
@@ -2346,6 +2346,43 @@ function minionHit(u, dmg) {
 // unit against unit: the five-element cycle decides
 function matchup(attElem, defUnit) { return elemMult(attElem, defUnit && defUnit.elem); }
 
+// ── resonance: what a team is made of lends the whole team a power ──
+// Fire: your team hits harder. Earth: your team takes less damage. Water: the
+// enemy moves and attacks slower. Air: your team moves and attacks faster.
+// Spirit: the enemy hits softer and takes more damage.
+// A team's make-up is read live from its units on the field (minion 1,
+// turret 3, titan 4). Each power grows with its share but with diminishing
+// returns, so a mix pays more than piling everything into one element (and a
+// one-element army is easy to counter). The strengths are tuned so that no
+// element is a must-pick or a trap.
+const RES_MAX = { fire: 0.30, earth: 0.23, water: 0.22, air: 0.26, spirit: 0.13 };
+const RES_CURVE = 0.9;   // share^0.9: a gentle lean toward mixing
+const RES_WEIGHT = { turret: 3, titan: 4 };
+const noRes = () => ({ fire: 0, earth: 0, water: 0, air: 0, spirit: 0 });
+function computeResonance() {
+  if (!teams) return;
+  const out = {};
+  for (const team of ['blue', 'red']) {
+    const w = noRes(); let total = 0;
+    for (const u of teamList(team)) {
+      if (u.dead || !u.elem || u.proxyOf) continue;
+      const k = isMinion(u) ? 1 : RES_WEIGHT[u.kind];
+      if (!k) continue;
+      w[u.elem] += k; total += k;
+    }
+    const r = noRes();
+    if (total) for (const e in r) r[e] = RES_MAX[e] * Math.pow(w[e] / total, RES_CURVE);
+    out[team] = r;
+  }
+  teams.res = out;
+}
+const resOf = team => (teams && teams.res && teams.res[team]) || noRes();
+// what resonance does to a unit of this team
+const resDmgOut = team => (1 + resOf(team).fire) * (1 - resOf(otherTeam(team)).spirit);
+const resDmgIn  = team => (1 - resOf(team).earth) * (1 + resOf(otherTeam(team)).spirit);
+const resSpeed  = team => (1 + resOf(team).air) * (1 - resOf(otherTeam(team)).water);
+const resRate   = team => (1 + resOf(team).air) * (1 - resOf(otherTeam(team)).water);
+
 function teamSide(team) { return team === 'blue' ? -1 : 1; }
 function otherTeam(team) { return team === 'blue' ? 'red' : 'blue'; }
 function teamList(team) { return team === 'red' ? foes : friends; }
@@ -2690,7 +2727,7 @@ function objectiveFor(u) {
 function unitAttack(u, tgt) {
   if (u.cd > 0 || u.hex > 0 || u.def.passive) return;
   u.cd = u.def.cd;
-  const atk = tiredAtk(u) * (u.power || 1);
+  const atk = tiredAtk(u) * (u.power || 1) * resDmgOut(u.team);
   if (isMinion(u)) u.tired = Math.min(1, (u.tired || 0) + TIRE_PER_SWING);
   if (u.def.ranged) {
     const dx = tgt.x - u.x, dy = tgt.y - u.y, d = Math.hypot(dx, dy) || 1;
@@ -2715,7 +2752,7 @@ function unitAttack(u, tgt) {
 
 function titanSlam(u) {
   const { x, y, tgt } = u.slamAt;
-  const pw = u.power || 1;
+  const pw = (u.power || 1) * resDmgOut(u.team);
   if (tgt && !tgt.dead) hitUnit(tgt, u.def.dmg * pw * matchup(u.elem, tgt));
   // everything of the other side nearby gets hit too
   const opp = u.team === 'blue' ? foes : friends.concat(state === 'play' ? [player] : []);
@@ -2742,7 +2779,7 @@ function hitUnit(t, dmg) {
     if (t.txtCd <= 0) { floatText(t.x, t.y - t.r - 10, shieldText(t), '#bde', 13); t.txtCd = 0.8; }
     return;
   }
-  t.hp -= minionHit(t, mageGuard(t, dmg));
+  t.hp -= minionHit(t, mageGuard(t, dmg)) * (t.unit ? resDmgIn(t.team) : 1);
   t.flash = 0.12;
   if (t.hp <= 0) unitFell(t);
 }
@@ -2807,7 +2844,7 @@ function battleOver(baseFell) {
 
 function updateUnit(u, dt) {
   if (u.stagger > 0) u.stagger = Math.max(0, u.stagger - STAGGER_FADE * dt);
-  u.cd -= dt * (1 - (u.stagger || 0)); // rattled: attacks come slower
+  u.cd -= dt * (1 - (u.stagger || 0)) * (mode === 'battle' ? resRate(u.team) : 1); // rattled: attacks come slower
   if (u.fireFlash > 0) u.fireFlash -= dt;
   u.flash = Math.max(0, u.flash - dt);
   u.txtCd -= dt;
@@ -2880,7 +2917,7 @@ function updateUnit(u, dt) {
     }
   }
   if (tx !== null) {
-    const spd = u.spd * (u.mage && u.mage.haste > 0 ? 1.6 : 1) * (u.slow > 0 ? 0.5 : 1) * (u.hex > 0 ? 0.4 : 1) * (u.root > 0 ? 0 : 1) * tiredSpd(u);
+    const spd = u.spd * resSpeed(u.team) * (u.mage && u.mage.haste > 0 ? 1.6 : 1) * (u.slow > 0 ? 0.5 : 1) * (u.hex > 0 ? 0.4 : 1) * (u.root > 0 ? 0 : 1) * tiredSpd(u);
     const ox = u.x, oy = u.y;
     moveToward(u, tx, ty, spd, dt, 0);
     const moved = Math.hypot(u.x - ox, u.y - oy);
@@ -3280,6 +3317,8 @@ function updateBattle(dt) {
   // note who holds how much ground, for the graph at the end
   T.landT = (T.landT ?? 0) - dt;
   if (T.landT <= 0 && T.stats) { T.landT = 2; T.stats.land.push([Math.round(MATCH_TIME - T.time), T.blue.cells, T.red.cells]); }
+  T.resT = (T.resT ?? 0) - dt;
+  if (T.resT <= 0) { T.resT = 0.5; computeResonance(); }
 
   // build turns alternate between the sides
   if (T.pending) {
