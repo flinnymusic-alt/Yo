@@ -2355,10 +2355,11 @@ function matchup(attElem, defUnit) { return elemMult(attElem, defUnit && defUnit
 // returns, so a mix pays more than piling everything into one element (and a
 // one-element army is easy to counter). The strengths are tuned so that no
 // element is a must-pick or a trap.
-const RES_MAX = { fire: 0.40, earth: 0.26, water: 0.17, air: 0.25, spirit: 0.15 };
+const RES_MAX = { fire: 0.40, earth: 0.26, water: 0.20, air: 0.25, spirit: 0.15 };
 const RES_CURVE = 0.9;   // share^0.9: a gentle lean toward mixing
 const RES_WEIGHT = { turret: 3, titan: 4 };
 const noRes = () => ({ fire: 0, earth: 0, water: 0, air: 0, spirit: 0 });
+const RES_TEXT = { fire: 'your team hits harder', earth: 'your team takes less damage', water: 'slows the enemy', air: 'speeds your team up', spirit: 'weakens the enemy' };
 function computeResonance() {
   if (!teams) return;
   const out = {};
@@ -2373,6 +2374,8 @@ function computeResonance() {
     const r = noRes();
     if (total) for (const e in r) r[e] = RES_MAX[e] * Math.pow(w[e] / total, RES_CURVE);
     out[team] = r;
+    const S = stats(team);
+    if (S) { S.resSum ??= noRes(); S.resN = (S.resN || 0) + 1; for (const e in r) S.resSum[e] += r[e]; }
   }
   teams.res = out;
 }
@@ -3668,7 +3671,7 @@ function makeSnapshot() {
     t: 'snap', sk: mySkin,
     st: state, res: T.result, bd: state === 'won' || state === 'lost' ? T.breakdown || null : null,
     ss: state === 'won' || state === 'lost' ? T.stats || null : null, eb: T.endedBy || null, bf: T.baseFell || null, gt: T.groundTo || null,
-    sc: [T.blue.score, T.red.score], time: r1(T.time), tl: T.tally ? [T.tally.blue, T.tally.red] : [0, 0],
+    sc: [T.blue.score, T.red.score], time: r1(T.time), tl: T.tally ? [T.tally.blue, T.tally.red] : [0, 0], rs: T.res || null,
     bt: [T.build.team, r1(T.build.t)], pr: T.pendingRed ? r1(T.pendingRed.t) : null,
     me: packHero(rivalP, redSide.discovered.size), host: packHero(hostP, discovered.size),
     u: friends.concat(foes).filter(u => !u.dead && !u.proxyOf).map(u => [
@@ -3750,6 +3753,7 @@ function guestReceive(m) {
   // scores and turns (flipped: you are "blue")
   teams.blue.score = m.sc[1]; teams.red.score = m.sc[0]; teams.time = m.time;
   if (m.tl) teams.tally = { blue: m.tl[1], red: m.tl[0] };
+  if (m.rs) teams.res = { blue: m.rs.red, red: m.rs.blue };
   teams.build = { team: flipTeam(m.bt[0]), t: m.bt[1] };
   if (m.pr === null) teams.pending = null; else if (!teams.pending || teams.pending.t > m.pr + 0.5) teams.pending = { t: m.pr };
   // units: keep the same objects so they glide between pictures
@@ -6583,6 +6587,25 @@ function setMixAt(x, y) {
   teams.blue.dot = { x: px, y: py };
   if (net.role === 'guest') { const now = performance.now(); if (now - (net.mixT || 0) > 150) { net.mixT = now; net.send({ t: 'mix', mix: teams.blue.mix }); } }
 }
+// each side's resonance: the five powers and how strong they are right now
+function drawResonance() {
+  if (mode !== 'battle' || !teams || !teams.res) return;
+  const o = ordersBtnRect(), x0 = o.x, w = o.w, cw = w / 5;
+  let y = o.y + o.h + 6;
+  roundRect(x0, y, w, 46, 6); ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fill();
+  ['blue', 'red'].forEach((team, row) => {
+    const r = resOf(team), yy = y + 4 + row * 21;
+    ctx.fillStyle = TEAM_COLOR[team]; ctx.fillRect(x0 + 2, yy + 2, 2, 15);
+    CHARGE_TYPES.forEach((e, i) => {
+      const v = Math.round(r[e] * 100), cx = x0 + 6 + cw * i + cw * 0.3;
+      ctx.globalAlpha = v ? 1 : 0.3;
+      drawGlyph(ELEM_GLYPH[e], cx, yy + 9, 10, TYPE_COLOR[e]);
+      ctx.fillStyle = "#eee"; ctx.font = `bold 10px ${SERIF}`; ctx.textAlign = "left";
+      if (v) ctx.fillText(String(v), cx + 6, yy + 13);
+      ctx.globalAlpha = 1;
+    });
+  });
+}
 function drawCharges() {
   if (mode !== 'battle' || !player.charge) return;
   const r = 7.5, gap = 4, y = 160;
@@ -6613,6 +6636,7 @@ function drawMixToggle() {
 
 function drawMixTri() {
   drawMixToggle();
+  drawResonance();
   if (mode !== 'battle' || !teams || !mixOpen) return;
   const T = mixTri(), P = T.pts;
   ctx.beginPath();
@@ -6691,7 +6715,8 @@ function drawBuildButtons() {
   }
   const e = teams.buildElem, ch = buildChips()[0], weak = elemWeakTo(e).map(x => ELEM_NAME[x]).join(' & ');
   ctx.textAlign = 'center'; ctx.font = '11px "Big Caslon", "Libre Caslon Text", Georgia, serif'; ctx.fillStyle = '#ddd';
-  ctx.fillText(`${ELEM_NAME[e]}: strong vs ${ELEM_NAME[elemBeats(e)]} · weak vs ${weak}`, W / 2, ch.y + ch.r + 15);
+  ctx.font = `10px ${SERIF}`;
+  ctx.fillText(`${ELEM_NAME[e]}: ${RES_TEXT[e]} · beats ${ELEM_NAME[elemBeats(e)]} · weak to ${weak}`, W / 2, ch.y + ch.r + 15);
   for (const bb of buildButtons()) {
     const turret = bb.key === 'turret', live = !turret || ok;
     roundRect(bb.x, bb.y, bb.w, bb.h, 10);
@@ -6979,6 +7004,7 @@ function drawMenuHero(cx, cy, s, dt) {
 // ── how to play: a scrolling page of plain, short instructions ──
 let howtoScroll = 0, howtoMax = 0, howtoDrag = null;
 const HOWTO = [
+  // ── the basics ──
   ['h', 'The story'],
   ['p', 'Parallel universes are converging. Pick your universe, Wizard or Space, and fight to keep it from being overwritten.'],
   ['h', 'Move'],
@@ -6996,33 +7022,57 @@ const HOWTO = [
   ['p', 'Attack spells load onto the FIRE button. Tap FIRE to send them. Big ones make you stand still while they charge.'],
   ['p', 'Spells cost mana, the blue bar. It refills over time, fastest at your fountain.'],
   ['h', 'How spells are built'],
-  ['p', '1st rune: what the spell is made of.'],
-  ['p', '2nd rune: its shape.'],
+  ['p', '1st rune: what the spell is made of. 2nd rune: its shape.'],
   ['shapes'],
-  ['p', '3rd rune: an upgrade. Fire hits harder, Water lasts longer, Earth is bigger, Air adds shots, Spirit confuses or heals.'],
-  ['p', '4th rune: a finish, one extra trick. Swap the last two runes and you get a different spell.'],
-  ['p', 'A few special spells break the pattern. Chests and scrolls teach them.'],
-  ['h', 'Power'],
-  ['p', 'Longer spells are far stronger: 2 Minor, 3 Adept, 4 Greater, 5 Monstrous, 6 Omni King, 7 Doomsday.'],
-  ['p', 'Using more different elements, and repeating them unevenly, adds extra power. You can see it beside the runes (like ×1.4).'],
-  ['h', 'Elements'],
-  ['cycle'],
-  ['p', 'Each element does double damage to the next one around the circle: Water beats Fire, Fire beats Air, Air beats Earth, Earth beats Spirit, Spirit beats Water.'],
+  ['p', '3rd rune: an upgrade. 4th rune: a finish, one extra trick. Longer spells are far stronger.'],
   ['h', 'Adventure'],
   ['p', 'Explore the land. Open chests and find scrolls to learn spells.'],
   ['p', 'Defeat the five guardians. Each can only be hurt by certain elements, so find its weakness.'],
   ['h', 'Battle'],
   ['p', 'Your base is on the left, red’s is on the right. Most points after 5 minutes wins.'],
-  ['p', 'Kills fill a tally (shown under the ground bar). If your hero falls, it adds 10 to red’s tally.'],
   ['points'],
   ['p', 'Every 10 seconds someone gets a build turn. Pick an element, then build a turret where you stand (it claims ground) or send a titan.'],
-  ['p', 'Breaking the enemy sigil also gives you a bonus build.'],
   ['p', 'Minion mix: drag the dot to choose which minions you send. FOLLOW keeps your army with you, SPREAD lets it push. Army orders: attack or protect.'],
-  ['p', 'Each element has an energy circle. Using one drains it, so mix your elements up.'],
-  ['p', 'Your mana refills slowly in enemy ground. Minions tire as they march, so fight in groups.'],
   ['h', 'Tips'],
   ['p', 'Try every pair of elements first. Two-rune spells are quick and cheap.'],
   ['p', 'A whisper: “Fire, then fire again…”'],
+
+  // ── extra information: all the types and the finer factors ──
+  ['H', 'Extra information'],
+  ['h', 'The element circle'],
+  ['cycle'],
+  ['p', 'Each element does double damage to the next one around the circle, and half damage to the two it is weak to: Water beats Fire, Fire beats Air, Air beats Earth, Earth beats Spirit, Spirit beats Water.'],
+  ['p', 'This counts for your spells, your minions, turrets and titans, and the guardians in Adventure.'],
+  ['h', 'Resonance (team powers)'],
+  ['p', 'What your army is made of gives the whole team a power. It is read live from your units on the field: a minion counts 1, a turret 3, a titan 4.'],
+  ['res'],
+  ['p', 'Each power grows with that element’s share of your army, with diminishing returns: the first part of a mix gives the most. A one-element army also gets countered easily. Mixing pays, and leaning into a favourite is fine too.'],
+  ['p', 'The box under Army orders shows both sides’ powers (blue row is you, red row is them).'],
+  ['h', 'Minions'],
+  ['minions'],
+  ['p', 'A hit rattles a minion: its attacks slow for a moment, so ganging up works.'],
+  ['p', 'Minions tire as they march and fight: up to 40% less damage, 40% more damage taken and 35% slower. The yellow bar under a minion shows its stamina.'],
+  ['h', 'Wizards, titans, turrets'],
+  ['p', 'Wizards: two per side, shooting from range. They retreat to heal when hurt and come back 12 seconds after falling.'],
+  ['p', 'Titans: big, slow walkers whose slam hits everything near the target. They march on enemy turrets.'],
+  ['p', 'Turrets: shoot anything that comes close and claim ground. The lines between your towers mark your land.'],
+  ['p', 'Sigils: each side has one, walled in for 15 seconds after it appears. Breaking the enemy’s is worth 50 and a bonus build.'],
+  ['h', 'Scoring in detail'],
+  ['p', 'Kills fill a tally (shown under the ground bar): a minion adds 1, a titan 5, a wizard 10. Every 5 on the tally is a point. If your hero falls, it adds 10 to red’s tally.'],
+  ['p', 'A turret is worth 5 points. A friend’s wizard in a duel is worth 10. The enemy base is worth 60 and ends the match. Most ground at the end is worth 140.'],
+  ['h', 'Magic in battle'],
+  ['p', 'Each element has an energy circle (the five small circles). Using one drains it, and below 40% that element hits softer, down to 40% damage when empty. Mix your elements up.'],
+  ['p', 'Your mana refills slowly in enemy ground and fastest at your fountain.'],
+  ['h', 'Spell power'],
+  ['p', 'Length sets the tier: 2 Minor, 3 Adept, 4 Greater, 5 Monstrous, 6 Omni King, 7 Doomsday.'],
+  ['p', 'Complexity adds power on top: using more different elements, and repeating them unevenly, raises it. You can see it beside the runes (like ×1.4).'],
+  ['h', 'Upgrades and finishes'],
+  ['p', '3rd rune upgrades: Fire hits harder, Water lasts longer, Earth is bigger, Air adds shots, Spirit confuses or heals.'],
+  ['p', '4th rune finishes, by shape. Bolt: Fire bursts, Water splashes, Earth shatters, Air chains, Spirit seeks. Wall: Fire explodes, Water endures, Earth towers, Air repels, Spirit soothes.'],
+  ['p', 'Pool: Fire erupts, Water spreads, Earth buries it as a mine, Air drifts, Spirit pulls. Burst: Fire echoes, Water rings, Earth quakes, Air sparks, Spirit mends. Creature: Fire volatile, Water kindly, Earth armoured, Air swift, Spirit keen-eyed.'],
+  ['p', 'Swap the last two runes and you get a different spell. A few special spells break the pattern; chests and scrolls teach them.'],
+  ['h', 'Difficulty'],
+  ['p', 'Every level fields the same army and always plays to win. Easy, Medium, Hard and Very Hard differ in how well red plays: how often it rethinks, how good its targets and builds are, how well it masses, defends and focuses fire. On Very Hard its wizards also cast spells.'],
 ];
 function drawHowTo(y, bx, bw) {
   menuButton({ title: 'How to Play', color: '#ffd24a', x: bx, y, w: bw, h: 44 });
@@ -7086,6 +7136,42 @@ function drawHowTo(y, bx, bw) {
       ctx.textAlign = 'center'; ctx.font = `italic 12px ${SERIF}`; ctx.fillStyle = '#ccc';
       ctx.fillText('each arrow points at what it beats', cx, cy + R + 32);
       yy += 160;
+    } else if (kind === 'H') {
+      // the divider before the extra information
+      yy += 30;
+      ctx.strokeStyle = 'rgba(199,125,255,0.5)'; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(L, yy); ctx.lineTo(L + Wd, yy); ctx.stroke();
+      ctx.textAlign = 'center'; ctx.fillStyle = '#c77dff'; ctx.font = `26px ${SERIF_BIG}`;
+      ctx.fillText(text.toUpperCase(), L + Wd / 2, yy + 34);
+      ctx.font = `italic 12px ${SERIF}`; ctx.fillStyle = '#bbb';
+      ctx.fillText('all the types and finer details', L + Wd / 2, yy + 52);
+      yy += 62;
+    } else if (kind === 'res') {
+      // each element's team power, and how strong it gets at full share
+      for (const e of CHARGE_TYPES) {
+        drawGlyph(ELEM_GLYPH[e], L + 10, yy + 9, 13, TYPE_COLOR[e]);
+        ctx.textAlign = 'left'; ctx.fillStyle = TYPE_COLOR[e]; ctx.font = `14px ${SERIF}`;
+        ctx.fillText(ELEM_NAME[e], L + 24, yy + 14);
+        ctx.fillStyle = '#efe9f8'; ctx.font = `13px ${SERIF}`;
+        ctx.fillText(RES_TEXT[e], L + 80, yy + 14);
+        ctx.textAlign = 'right'; ctx.fillStyle = '#ffd24a';
+        ctx.fillText(`up to ${Math.round(RES_MAX[e] * 100)}%`, L + Wd, yy + 14);
+        yy += 21;
+      }
+      yy += 4;
+    } else if (kind === 'minions') {
+      // the five kinds of minion
+      const roles = { wisp: 'flies, shoots from range', archer: 'longest range', imp: 'quick, fights up close', brute: 'tough, fights up close', flyer: 'fastest, flies' };
+      for (const k of MINION_KINDS) {
+        const e = UNITS[k].elem;
+        drawGlyph(ELEM_GLYPH[e], L + 10, yy + 9, 13, TYPE_COLOR[e]);
+        ctx.textAlign = 'left'; ctx.fillStyle = TYPE_COLOR[e]; ctx.font = `14px ${SERIF}`;
+        ctx.fillText(UNITS[k].name, L + 24, yy + 14);
+        ctx.fillStyle = '#efe9f8'; ctx.font = `13px ${SERIF}`;
+        ctx.fillText(roles[k], L + 84, yy + 14);
+        yy += 21;
+      }
+      yy += 4;
     } else if (kind === 'points') {
       // a little table of what scores
       const rows = [['Every 5 on your kill tally', '1'], ['   a minion adds 1, a titan 5, a wizard 10', ''], ['Enemy turret', '5'], ['A friend’s wizard in a duel', '10'], ['Enemy sigil (+ a bonus build)', '50'], ['Enemy base (ends the match)', '60'], ['Most ground at the end', '140']];
@@ -7425,6 +7511,14 @@ function drawBattleEnd(win) {
   if (difficulty === 'vhard' && !versus && teams.redUsed) {
     ctx.textAlign = 'left'; ctx.fillStyle = '#ff8ab0'; ctx.font = `italic 12px ${SERIF}`;
     ctx.fillText(`Red’s wizards used ${teams.redUsed.size} different spells.`, L + 6, y + 12); y += 18;
+  }
+  // resonance
+  y = endHeading('Resonance (average)', L + 6, bw - 12, y + 8);
+  for (const el of CHARGE_TYPES) {
+    const avg = S => S.resN ? Math.round(S.resSum[el] / S.resN * 100) + '%' : '–';
+    drawGlyph(ELEM_GLYPH[el], L + 14, y + 10, 13, TYPE_COLOR[el]);
+    ctx.textAlign = 'left'; ctx.fillStyle = TYPE_COLOR[el]; ctx.font = `13px ${SERIF}`; ctx.fillText(RES_TEXT[el], L + 26, y + 14);
+    y = endPair('', avg(B), avg(R), L + 6, bw - 12, y);
   }
   // builds
   const elemCol = k => TYPE_COLOR[k];
