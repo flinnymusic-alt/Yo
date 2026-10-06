@@ -6505,6 +6505,36 @@ function drawFireButton() {
 // how much ground each side holds, and whose build turn is next
 // the match clock: big, and it warms up as time runs out
 function clockText(t) { return `${Math.floor(t / 60)}:${Math.floor(t % 60).toString().padStart(2, '0')}`; }
+// a dial counting down to the next build turn, beside the match clock
+function drawBuildClock(cx, cy) {
+  const T = teams, r = 14;
+  let frac, num, col, label, sub, now = false;
+  if (T.pending) {           // your turn right now
+    frac = T.pending.t / (BUILD_EVERY - 1); num = Math.ceil(T.pending.t); col = '#ffd24a';
+    label = 'BUILD NOW'; sub = 'turret or titan'; now = true;
+  } else if (T.pendingRed) { // a duel friend choosing
+    frac = T.pendingRed.t / (BUILD_EVERY - 1); num = Math.ceil(T.pendingRed.t); col = TEAM_COLOR.red;
+    label = 'RED BUILDING'; sub = 'choosing now';
+  } else {
+    const mine = T.build.team === 'blue';
+    frac = clamp(T.build.t / BUILD_EVERY, 0, 1); num = Math.ceil(T.build.t); col = TEAM_COLOR[T.build.team];
+    label = mine ? 'YOUR BUILD' : 'RED BUILDS'; sub = `in ${num} second${num === 1 ? '' : 's'}`;
+  }
+  const pulse = now ? 0.75 + 0.25 * Math.abs(Math.sin(elapsed * 6)) : 1;
+  circle(cx, cy, r + 2, 'rgba(0,0,0,0.6)');
+  ctx.strokeStyle = 'rgba(255,255,255,0.15)'; ctx.lineWidth = 3.5;
+  ctx.beginPath(); ctx.arc(cx, cy, r - 1, 0, TAU); ctx.stroke();
+  ctx.globalAlpha = pulse;
+  ctx.strokeStyle = col; ctx.lineWidth = 3.5; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.arc(cx, cy, r - 1, -Math.PI / 2, -Math.PI / 2 + TAU * frac); ctx.stroke();
+  ctx.fillStyle = col; ctx.textAlign = 'center'; ctx.font = `bold 14px ${SERIF}`;
+  ctx.fillText(String(num), cx, cy + 5);
+  ctx.textAlign = 'left'; ctx.font = `bold 12px ${SERIF}`;
+  ctx.fillText(label, cx + r + 7, cy - 1);
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = '#bbb'; ctx.font = `italic 11px ${SERIF}`;
+  ctx.fillText(sub, cx + r + 7, cy + 12);
+}
 function drawMatchClock(x, y) {
   const t = teams.time, late = t <= 30, end = t <= 10;
   const txt = clockText(Math.ceil(t));
@@ -6519,8 +6549,7 @@ function drawMatchClock(x, y) {
   ctx.fillStyle = end ? '#ff6a6a' : late ? '#ffd24a' : '#fff';
   ctx.fillText(txt, x, y);
   ctx.globalAlpha = 1;
-  ctx.font = '11px "Big Caslon", "Libre Caslon Text", Georgia, serif'; ctx.fillStyle = '#aaa';
-  ctx.fillText(`left · most ground at the end +${GROUND_BONUS}`, x + tw + 12, y - 4);
+  drawBuildClock(x + tw + 34, y - 9);
   // the last ten seconds count down in the middle of the field
   if (end && state === 'play') {
     ctx.textAlign = 'center';
@@ -6545,9 +6574,8 @@ function drawBattleStatus(x, y) {
   ctx.fillStyle = '#ccc';
   const tl = (teams.tally && teams.tally.blue) || 0;
   ctx.fillText(`Ground ${Math.round(b * 100)}% / ${Math.round(r * 100)}%   ·   tally ${tl % 5}/5`, x, y + 12);
-  const bt = teams.pending ? `Your build: choose! ${Math.ceil(teams.pending.t)}s` : `Build: ${teams.build.team === 'blue' ? 'you' : 'red'} in ${Math.ceil(teams.build.t)}s`;
-  ctx.fillStyle = teams.pending ? '#ffd24a' : '#aaa';
-  ctx.fillText(bt, x, y + 26);
+  ctx.fillStyle = '#aaa';
+  ctx.fillText(`most ground at the end: +${GROUND_BONUS}`, x, y + 26);
 }
 
 // The minion mix: a pentagon with one corner per element (laid out like the
