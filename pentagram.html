@@ -962,7 +962,7 @@ function hurtPlayer(d, p = player) {
     p.hp = 0;
     state = 'dead';
     // your fall scores for red: 1 point (10 in a duel, where it's your friend's kill)
-    if (mode === 'battle' && teams) { const n = versus ? 10 : 1; teamScore('red', n, p.x, p.y - 40, 'Hero kills'); statKill('red', n); }
+    if (mode === 'battle' && teams) scoreKill('red', 'hero', p.x, p.y - 40);
     SFX.death();
     overlayT = 0;
     seq = []; castPtr = null; finger = null;
@@ -2296,7 +2296,9 @@ function movePlayer(dx, dy, step) {
 // Three ways to score:
 //  · Ground: towers joined by laser lines enclose each side's ground. The
 //    side holding more ground when the match ends scores 140.
-//  · Kills: 1 point for anything you kill (a duel friend's wizard is worth 10).
+//  · Kills fill a tally: a minion adds 1, a titan 5, a wizard (or a hero) 10;
+//    every 5 on the tally is a point. A turret is worth 5 points outright,
+//    and a duel friend's wizard 10.
 //  · Sigils: each side has one sigil in its own ground. Destroying the
 //    other side's scores 50 and earns a bonus build; it reappears elsewhere
 //    behind a 15s wall. Destroying a base scores 60 and ends the match.
@@ -2355,13 +2357,33 @@ function shieldText(u) { return `WALLED ${Math.ceil(u.wall)}s`; }
 function fountainPos(side) { return mode === 'battle' ? { x: (side === 'red' ? 1 : -1) * (BASE_X - 170), y: 0 } : { x: 0, y: 0 }; }
 
 // every point is booked under a heading, for the breakdown at the end
-const SCORE_CATS = ['Minions', 'Wizards', 'Titans', 'Turrets', 'Hero kills', 'Sigils', 'Base', 'Most ground'];
+const SCORE_CATS = ['Kills', 'Turrets', 'Hero kills', 'Sigils', 'Base', 'Most ground'];
+// what each kill adds to the tally (every 5 on the tally is a point)
+const KILL_UNITS = { minion: 1, titan: 5, wizard: 10, hero: 10 };
+const TURRET_PTS = 5, DUEL_HERO_PTS = 10;
 function newStats() {
-  const side = () => ({ spells: {}, turret: {}, titan: {}, minions: {}, sigils: 0, kills: 0, killPts: 0 });
+  const side = () => ({ spells: {}, turret: {}, titan: {}, minions: {}, sigils: 0, killed: { minion: 0, wizard: 0, titan: 0, turret: 0, hero: 0 }, tally: 0, killPts: 0 });
   return { blue: side(), red: side(), land: [] };
 }
 const stats = team => (teams && teams.stats ? teams.stats[team] : null);
-function statKill(team, pts) { const S = stats(team); if (S) { S.kills++; S.killPts += pts; } }
+// a kill: count it, and score it (straight points, or onto the tally)
+function scoreKill(team, what, x, y) {
+  if (!teams) return;
+  const S = stats(team);
+  if (S) S.killed[what] = (S.killed[what] || 0) + 1;
+  let pts = 0, cat = 'Kills';
+  if (what === 'turret') { pts = TURRET_PTS; cat = 'Turrets'; }
+  else if (what === 'hero' && versus) { pts = DUEL_HERO_PTS; cat = 'Hero kills'; }
+  else {
+    const T = teams, before = Math.floor((T.tally ??= { blue: 0, red: 0 })[team] / 5);
+    T.tally[team] += KILL_UNITS[what] || 1;
+    if (S) S.tally = T.tally[team];
+    pts = Math.floor(T.tally[team] / 5) - before;
+    if (!pts) { floatText(x, y, `+${KILL_UNITS[what] || 1}/5`, TEAM_COLOR[team], 11); return; }
+  }
+  if (S) S.killPts += pts;
+  teamScore(team, pts, x, y, cat);
+}
 function bookScore(team, cat, n) {
   const B = teams.breakdown || (teams.breakdown = { blue: {}, red: {} });
   const e = B[team][cat] || (B[team][cat] = { n: 0, pts: 0 });
@@ -2385,8 +2407,7 @@ function addUnit(team, kind, x, y, elem) {
   };
   // Medium and Hard: red's units are a bit tougher and hit a bit harder
   if (team === 'red' && !versus && mode === 'battle' && !def.structure) {
-    u.power = { medium: 1.1, hard: 1.22, vhard: 1.22 }[difficulty] || 1;
-    u.hp = u.maxHp = def.hp * u.power;
+    u.power = 1; // every level fields the same army; the commander is what changes
   }
   u.id = ++unitSeq;
   teamList(team).push(u);
@@ -2503,29 +2524,27 @@ function buildTitan(team, elem) {
 // red's build turn: a turret on the open spot that adds the most ground, or a
 // titan when there's nowhere worth building
 function redBuild() {
-  // Hard: red finds the best spot. Easy: any spot that gains a fair bit.
-  const base = polyArea(hulls.red), good = [];
-  let best = null, gain = 20000;
-  for (let k = 0; k < 60; k++) {
+  const T = teams, sk = aiSkill();
+  const base = polyArea(hulls.red), opts = [];
+  for (let k = 0, n = Math.round(20 + 60 * sk); k < n; k++) {
     const i = Math.floor(Math.random() * COLS), j = 1 + Math.floor(Math.random() * (ROWS - 2));
     if (terr[j * COLS + i] !== 0) continue;
     const c = cellCenter(i, j);
     if (!canBuildAt(c.x, c.y, 'red')) continue;
-    const g = polyArea(teamShape('red', c)) - base;
-    if (g > 20000) good.push(c);
-    if (g > gain) { gain = g; best = c; }
+    opts.push({ c, g: polyArea(teamShape('red', c)) - base });
   }
-  if ((difficulty === 'easy' || difficulty === 'medium') && good.length) best = good[Math.floor(Math.random() * good.length)];
-  // red picks the element that beats what you field most
-  const fav = MINION_KINDS.reduce((a, b) => teams.blue.mix[a] >= teams.blue.mix[b] ? a : b);
-  const want = ELEM_CYCLE.find(e => elemBeats(e) === UNITS[fav].elem);
-  let elem = difficulty === 'easy' || (difficulty === 'medium' && Math.random() < 0.5) ? ELEM_CYCLE[Math.floor(Math.random() * 5)] : want;
-  if (difficulty === 'vhard') {
-    // counter what's really out there: turrets answer your army, titans answer your turrets
-    const army = friends.filter(u => !u.dead && u.elem && !u.structure), towers = friends.filter(u => !u.dead && u.kind === 'turret' && u.elem);
-    elem = counterTo(best ? army : towers) || want;
-  }
-  if (best) buildTurret('red', best.x, best.y, elem);
+  opts.sort((a, b) => b.g - a.g);
+  // a sharp commander takes the best spot; a weaker one takes one of the better ones
+  let best = opts.length ? opts[Math.min(opts.length - 1, Math.floor(Math.random() * Math.max(1, opts.length * (1 - sk) * 0.8)))] : null;
+  if (best && best.g < 12000) best = null;
+  // ground is worth 140: build when the land race is close or lost; when it's
+  // safely won, a sharp commander sends a titan to press for points instead
+  const safeLand = T.red.cells > T.blue.cells * 1.15;
+  if (best && safeLand && Math.random() < sk * 0.7) best = null;
+  // pick the element that counters what's out there (sharper = more often)
+  const army = friends.filter(u => !u.dead && u.elem && !u.structure), towers = friends.filter(u => !u.dead && u.kind === 'turret' && u.elem);
+  const elem = Math.random() < sk ? (counterTo(best ? army : towers) || ELEM_CYCLE[Math.floor(Math.random() * 5)]) : ELEM_CYCLE[Math.floor(Math.random() * 5)];
+  if (best) buildTurret('red', best.c.x, best.c.y, elem);
   else buildTitan('red', elem);
 }
 
@@ -2566,7 +2585,7 @@ function startBattle(diff) {
   // Very Hard: Hard's numbers plus a fourth wizard, and red thinks as one army (see redBrain).
   teams = {
     blue: { score: 0, cells: 0, wave: 4, minions: 10, wizards: 2, wizQ: [], sigilT: 0, mix: evenMix() },
-    red:  { score: 0, cells: 0, wave: 4, minions: hard ? 15 : med ? 12 : 10, wizards: vhard ? 4 : hard ? 3 : 2, wizQ: [], sigilT: 0, mix: evenMix() },
+    red:  { score: 0, cells: 0, wave: 4, minions: 10, wizards: 2, wizQ: [], sigilT: 0, mix: evenMix() },
     buildElem: 'fire', // the element of your next turret or titan
     order: 'spread', // your army: 'spread' pushes on its own, 'follow' sticks with you
     orders: { minion: 'attackTurrets', titan: 'attackTurrets' }, // what each group does when spread out
@@ -2603,7 +2622,7 @@ function findTarget(u) {
     ? foes.concat(rivalHelpers())
     : (state === 'play' && !player.onBoat ? [player] : []).concat(friends, allies.filter(a => a.kind === 'critter'));
   let best = null, bd = u.def.aggro;
-  if (smartRed(u)) {
+  if (smartRed(u) && sharp(u)) {
     let bs = -Infinity;
     for (const o of opp) {
       if (o.dead || (o.unit && shielded(o))) continue;
@@ -2739,10 +2758,8 @@ function unitFell(u) {
   }
   u.dead = true;
   const by = otherTeam(u.team);
-  teamScore(by, u.def.pts, u.x, u.y - u.r - 20,
-            isMinion(u) ? 'Minions' : { wizard: 'Wizards', titan: 'Titans', turret: 'Turrets', sigil: 'Sigils' }[u.kind]);
-  if (u.kind === 'sigil') { const S = stats(by); if (S) S.sigils++; }
-  else if (u.kind !== 'nexus') statKill(by, u.def.pts);
+  if (u.kind === 'sigil') { teamScore(by, u.def.pts, u.x, u.y - u.r - 20, 'Sigils'); const S = stats(by); if (S) S.sigils++; }
+  else if (u.kind !== 'nexus') scoreKill(by, isMinion(u) ? 'minion' : u.kind, u.x, u.y - u.r - 20);
   burst(u.x, u.y, TEAM_COLOR[u.team], u.structure ? 60 : 14, u.structure ? 420 : 240);
   if (u.kind === 'wizard') teams[u.team].wizQ.push({ t: 12 });
   if (u.kind === 'sigil') {
@@ -2809,7 +2826,7 @@ function updateUnit(u, dt) {
   // hurt wizards fall back to their base to heal
   if (u.kind === 'wizard' && u.hp < u.maxHp * 0.3) u.retreat = true;
   // Very Hard: worn-out minions go home to rest instead of fighting at half strength
-  if (smartRed(u) && isMinion(u) && u.tired > 0.7 && !u.retreat) { u.retreat = true; u.inPush = false; }
+  if (smartRed(u) && aiSkill() >= 0.5 && sharp(u) && isMinion(u) && u.tired > 0.7 && !u.retreat) { u.retreat = true; u.inPush = false; }
   const home = nexusOf(u.team);
   let tx = null, ty = null;
   if (u.retreat && home) {
@@ -2851,7 +2868,7 @@ function updateUnit(u, dt) {
       if (d > u.def.range - 4) { tx = t.x; ty = t.y; } else {
         unitAttack(u, t);
         // Very Hard: shooters step back from anything that wants to get close
-        if (smartRed(u) && u.def.ranged && !t.structure && d < u.def.range * 0.5 && !(t.def && t.def.ranged)) { tx = u.x + (u.x - t.x); ty = u.y + (u.y - t.y); }
+        if (smartRed(u) && aiSkill() >= 0.75 && sharp(u) && u.def.ranged && !t.structure && d < u.def.range * 0.5 && !(t.def && t.def.ranged)) { tx = u.x + (u.x - t.x); ty = u.y + (u.y - t.y); }
       }
     } else {
       const o = objectiveFor(u);
@@ -2992,23 +3009,13 @@ function counterTo(list) {
   return top ? ELEM_CYCLE.find(e => elemBeats(e) === top) : null;
 }
 function redMix() {
-  if (difficulty === 'vhard') {
-    // Very Hard reads the field: lots of whatever beats your army and turrets, a few of the rest
-    const w = MINION_KINDS.map(() => 0.15);
-    for (const u of friends) {
-      if (u.dead || !u.elem || u.kind === 'nexus' || u.kind === 'sigil') continue;
-      const counter = MINION_KINDS.find(k => elemBeats(UNITS[k].elem) === u.elem);
-      w[MINION_KINDS.indexOf(counter)] += u.kind === 'titan' || u.kind === 'turret' ? 2 : 1;
-    }
-    const t = w.reduce((a, b) => a + b, 0);
-    return Object.fromEntries(MINION_KINDS.map((k, i) => [k, w[i] / t]));
-  }
-  const w = MINION_KINDS.map(() => 0.3 + Math.random());
-  if (difficulty !== 'easy') {
-    const fav = MINION_KINDS.reduce((a, b) => teams.blue.mix[a] >= teams.blue.mix[b] ? a : b);
-    const favElem = UNITS[fav].elem;
-    const counter = MINION_KINDS.find(k => elemBeats(UNITS[k].elem) === favElem);
-    w[MINION_KINDS.indexOf(counter)] += difficulty === 'medium' ? 0.8 : 1.6;
+  // lean toward whatever beats your army and turrets; the sharper, the harder it leans
+  const sk = aiSkill();
+  const w = MINION_KINDS.map(() => 0.3 + Math.random() * (1 - sk));
+  for (const u of friends) {
+    if (u.dead || !u.elem || u.kind === 'nexus' || u.kind === 'sigil') continue;
+    const counter = MINION_KINDS.find(k => elemBeats(UNITS[k].elem) === u.elem);
+    w[MINION_KINDS.indexOf(counter)] += (u.kind === 'titan' || u.kind === 'turret' ? 0.4 : 0.15) * sk;
   }
   const t = w.reduce((a, b) => a + b, 0);
   return Object.fromEntries(MINION_KINDS.map((k, i) => [k, w[i] / t]));
@@ -3020,56 +3027,133 @@ function redMix() {
 // point, then pushes together. Units near a threatened red building break
 // off to defend it. Each unit focuses fire with its neighbours, ranged units
 // back away from melee, and tired minions go home to rest.
-const smartRed = u => u.team === 'red' && difficulty === 'vhard' && !versus;
+// ── red's commander: every level plays to win ──
+// Red always chases points: it weighs what each target is worth (a sigil 50
+// and a bonus build, a turret 5 plus the ground it holds, the base 60 and the
+// match), watches the scoreboard and the land race, and pushes, defends or
+// gambles to come out ahead. The level sets how WELL it does that: how often
+// it rethinks, how sound its choices are, how tightly the army masses and
+// focuses fire, whether it defends, kites and rests its tired minions.
+const AI_SKILL = { easy: 0.25, medium: 0.5, hard: 0.75, vhard: 1 };
+const aiSkill = () => AI_SKILL[difficulty] ?? 0.5;
+const smartRed = u => u.team === 'red' && !versus && mode === 'battle';
+// some of red's units are sharp and some aren't; better commanders have more sharp ones
+const sharp = u => (u.sharp ??= Math.random() < 0.25 + 0.75 * aiSkill());
+// the final score if things stay as they are
+function projectedScores() {
+  const g = groundLeader();
+  return { red: teams.red.score + (g === 'red' ? GROUND_BONUS : 0), blue: teams.blue.score + (g === 'blue' ? GROUND_BONUS : 0) };
+}
+// how much ground blue would lose without this turret
+function landSwing(t) {
+  const pts = towersOf('blue').filter(o => o !== t).map(o => ({ x: o.x, y: o.y }));
+  pts.push({ x: -WORLD, y: -ARENA_H }, { x: -WORLD, y: ARENA_H });
+  return Math.max(0, polyArea(hulls.blue) - polyArea(hull(pts)));
+}
+const FIELD_AREA = Math.PI * WORLD * ARENA_H;
 function redBrain(dt) {
-  const T = teams, B = T.brain || (T.brain = { phase: 'gather', t: 0, think: 0, target: null, rally: { x: FRONT_X * 0.5, y: 0 }, defend: null });
+  const T = teams, sk = aiSkill();
+  const B = T.brain || (T.brain = { phase: 'gather', t: 0, think: 0, target: null, rally: { x: FRONT_X * 0.5, y: 0 }, defend: null, mood: 'even' });
   B.t += dt; B.think -= dt;
   // who's shooting whom, for focus fire
   T.focus = new Map();
   for (const u of foes) if (!u.dead && u.lastTgt && !u.lastTgt.dead) T.focus.set(u.lastTgt, (T.focus.get(u.lastTgt) || 0) + 1);
   if (B.think > 0) return;
-  B.think = 0.5;
+  B.think = 0.5 + (1 - sk) * 1.5; // sharper commanders rethink more often
   const army = foes.filter(u => !u.dead && !u.structure && !u.proxyOf && !u.retreat);
   const blue = friends.filter(o => !o.dead);
   const fighters = blue.filter(o => !o.structure).concat(state === 'play' && !player.onBoat ? [player] : []);
-  // 1. the target
-  const open = blue.filter(o => o.structure && !shielded(o));
   const home = nexusOf('red');
+
+  // 0. read the scoreboard: behind late on means gamble, well ahead means protect
+  const P = projectedScores(), lead = P.red - P.blue, left = T.time;
+  const landClose = Math.abs(T.red.cells - T.blue.cells) < FIELD_CELLS * 0.08;
+  let mood = lead < -10 && left < 150 ? 'chase' : lead > 70 && left < 120 ? 'protect' : 'even';
+  if (Math.random() > sk) mood = 'even'; // weaker commanders don't adjust
+  if (mood !== B.mood && mood !== 'even' && sk >= 0.5) castMessage(mood === 'chase' ? 'Red throws everything at you!' : 'Red digs in to protect its lead', TEAM_COLOR.red);
+  B.mood = mood;
+
+  // 1. the most valuable target for the effort
   const cost = t => t.hp * 6 + (home ? Math.hypot(t.x - home.x, t.y - home.y) * 0.35 : 0)
                   + fighters.filter(f => Math.hypot(f.x - t.x, f.y - t.y) < 350).length * 40;
-  const sig = open.find(o => o.kind === 'sigil');
-  const turrets = open.filter(o => o.kind === 'turret');
-  B.target = sig || (turrets.length ? turrets.reduce((a, b) => cost(a) <= cost(b) ? a : b) : nexusOf('blue'));
-  if (B.target) B.rally = { x: FRONT_X * 0.5, y: clamp(B.target.y * 0.6, -ARENA_H * 0.45, ARENA_H * 0.45) };
-  // 2. gather, then push together
-  const gathered = army.filter(u => Math.hypot(u.x - B.rally.x, u.y - B.rally.y) < 240);
-  const pushers = army.filter(u => u.inPush);
-  if (B.phase === 'gather') {
-    if ((gathered.length >= Math.max(8, army.length * 0.7) && army.length >= 6) || (B.t > 16 && gathered.length >= 4)) {
-      B.phase = 'push'; B.t = 0;
-      for (const u of gathered) u.inPush = true;
-      castMessage('Red attacks together!', TEAM_COLOR.red);
-    }
-  } else if (pushers.length < 3 || B.t > 45) {
-    B.phase = 'gather'; B.t = 0;
-    for (const u of army) u.inPush = false;
+  const opts = [];
+  for (const o of blue) {
+    if (!o.structure || shielded(o)) continue;
+    let v = 0;
+    if (o.kind === 'sigil') v = 65;                                                          // 50 and a bonus build
+    else if (o.kind === 'turret') v = TURRET_PTS + landSwing(o) / FIELD_AREA * GROUND_BONUS * (landClose ? 2 : 0.7);
+    else if (o.kind === 'nexus') v = P.red + BASE_BONUS > P.blue ? 120 : -50;                // only end a match you'd win
+    if (mood === 'chase' && (o.kind === 'sigil' || o.kind === 'nexus')) v *= 1.5;
+    if (v > 0) opts.push({ o, score: v / (cost(o) / 100 + 1) });
   }
-  // 3. defence: enemies closing on a red building
+  opts.sort((a, b) => b.score - a.score);
+  // weaker commanders often go for something else
+  const pick = opts.length ? (Math.random() < sk ? opts[0] : opts[Math.floor(Math.random() * opts.length)]) : null;
+  B.target = pick ? pick.o : nexusOf('blue');
+  if (B.target) B.rally = { x: FRONT_X * (mood === 'protect' ? 0.8 : 0.5), y: clamp(B.target.y * 0.6, -ARENA_H * 0.45, ARENA_H * 0.45) };
+
+  // 2. mass, then push together (the weakest just stream forward)
+  if (sk < 0.35) { B.phase = 'push'; for (const u of army) u.inPush = true; }
+  else {
+    const gathered = army.filter(u => Math.hypot(u.x - B.rally.x, u.y - B.rally.y) < 240);
+    const pushers = army.filter(u => u.inPush);
+    const need = Math.max(4, army.length * (0.3 + 0.4 * sk) * (mood === 'protect' ? 1.2 : mood === 'chase' ? 0.7 : 1));
+    if (B.phase === 'gather') {
+      if ((gathered.length >= need && army.length >= 5) || (B.t > 12 + 8 * sk && gathered.length >= 4)) {
+        B.phase = 'push'; B.t = 0;
+        for (const u of gathered) u.inPush = true;
+        if (sk >= 0.75) castMessage('Red attacks together!', TEAM_COLOR.red);
+      }
+    } else if (pushers.length < 3 || B.t > 45) {
+      B.phase = 'gather'; B.t = 0;
+      for (const u of army) u.inPush = false;
+    }
+  }
+
+  // 3. defend: enemies closing on a red building (better commanders react sooner, with more)
   let worst = null, wn = 0;
   for (const st of foes) {
     if (st.dead || !st.structure || st.proxyOf) continue;
     const near = fighters.filter(f => Math.hypot(f.x - st.x, f.y - st.y) < 420);
-    const weight = near.length + (near.includes(player) ? 3 : 0) + (st.kind === 'sigil' || st.kind === 'nexus' ? 1 : 0);
+    const worth = st.kind === 'sigil' || st.kind === 'nexus' ? 2 : 0;
+    const weight = near.length + (near.includes(player) ? 3 : 0) + worth;
     if (weight > wn) { wn = weight; worst = st; }
   }
-  B.defend = wn >= 3 ? worst : null;
+  const alarm = mood === 'protect' ? 2 : sk >= 0.5 ? 3 : 6;
+  B.defend = wn >= alarm ? worst : null;
   for (const u of army) u.defend = false;
   if (B.defend) {
-    // the nearest units not already committed to a push go to help, more for bigger threats
     const free = army.filter(u => !u.inPush).sort((a, b) => Math.hypot(a.x - B.defend.x, a.y - B.defend.y) - Math.hypot(b.x - B.defend.x, b.y - B.defend.y));
-    for (const u of free.slice(0, Math.min(free.length, 2 + wn * 2))) u.defend = true;
+    const n = Math.round((2 + wn * 2) * (0.4 + 0.6 * sk) * (mood === 'protect' ? 1.5 : 1));
+    for (const u of free.slice(0, Math.min(free.length, n))) u.defend = true;
   }
 }
+// where a smart red unit heads when nothing is in reach
+function smartObjective(u) {
+  const B = teams.brain;
+  if (!B) return null;
+  if (u.defend && B.defend) return { x: B.defend.x - 60 + Math.cos(u.slot) * 50, y: B.defend.y + Math.sin(u.slot) * 50 };
+  if (B.phase === 'push' && u.inPush && B.target) return B.target;
+  return { x: B.rally.x + Math.cos(u.slot) * 70, y: B.rally.y + Math.sin(u.slot) * 70 };
+}
+// target choice that chases points: wizards and heroes fill the tally fastest,
+// titans next; finish the wounded, hit what you beat, gang up (all scaled by skill)
+function smartScore(u, o, d) {
+  const sk = aiSkill();
+  let sc = -d * 0.012;
+  if (o === hostP || o === player) sc += (u.kind === 'wizard' ? 2.5 : 1.2) * sk;
+  else if (o.unit) {
+    sc += (1 - o.hp / (o.maxHp || 1)) * 2 * sk;
+    sc += (matchup(u.elem, o) - 1) * 2 * sk;
+    if (o.kind === 'wizard') sc += 1.5 * sk;
+    else if (o.kind === 'titan') sc += 0.8 * sk;
+    if (o.structure && o !== (teams.brain && teams.brain.target)) sc -= 1.5;
+  }
+  if (teams.brain && o === teams.brain.target) sc += 1.5 * sk;
+  sc += Math.min(4, teams.focus.get(o) || 0) * 0.6 * sk;
+  return sc;
+}
+
 // ── Very Hard: red's wizards cast the whole spell book ──
 // Each red wizard has an invisible caster that runs real spells through the
 // same engine as yours (and a duel friend's). Every few seconds it reads the
@@ -3177,29 +3261,6 @@ function mageGuard(u, dmg) {
   return m.skin > 0 ? dmg * 0.5 : dmg;
 }
 
-// where a smart red unit heads when nothing is in reach
-function smartObjective(u) {
-  const B = teams.brain;
-  if (!B) return null;
-  if (u.defend && B.defend) return { x: B.defend.x - 60 + Math.cos(u.slot) * 50, y: B.defend.y + Math.sin(u.slot) * 50 };
-  if (B.phase === 'push' && u.inPush && B.target) return B.target;
-  return { x: B.rally.x + Math.cos(u.slot) * 70, y: B.rally.y + Math.sin(u.slot) * 70 };
-}
-// smart target choice: finish the wounded, hit what you beat, gang up, go for the wizard
-function smartScore(u, o, d) {
-  let sc = -d * 0.012;
-  if (o === hostP || o === player) sc += u.kind === 'wizard' ? 2.5 : 1;
-  else if (o.unit) {
-    sc += (1 - o.hp / (o.maxHp || 1)) * 2;
-    sc += (matchup(u.elem, o) - 1) * 2;
-    if (o.kind === 'wizard') sc += 1;
-    if (o.structure && o !== (teams.brain && teams.brain.target)) sc -= 1.5;
-  }
-  if (teams.brain && o === teams.brain.target) sc += 1.5;
-  sc += Math.min(4, teams.focus.get(o) || 0) * 0.6;
-  return sc;
-}
-
 function segDist(px, py, a, b) {
   const dx = b.x - a.x, dy = b.y - a.y, l2 = dx * dx + dy * dy || 1;
   const t = clamp(((px - a.x) * dx + (py - a.y) * dy) / l2, 0, 1);
@@ -3212,7 +3273,7 @@ function updateBattle(dt) {
   T.time -= dt;
   if (T.time <= 0) { T.time = 0; battleOver(null); return; }
 
-  if (difficulty === 'vhard' && !versus) { redBrain(dt); updateMages(dt); }
+  if (!versus) { redBrain(dt); if (difficulty === 'vhard') updateMages(dt); }
   // space: recount the ground now and then; the bigger side scores every 15s
   T.terrRecalc -= dt;
   if (T.terrRecalc <= 0) { T.terrRecalc = 0.5; computeTerritory(); }
@@ -3267,7 +3328,7 @@ function updateBattle(dt) {
     const S = T[team], sd = teamSide(team);
     S.wave -= dt;
     if (S.wave <= 0) {
-      S.wave = team === 'red' && (difficulty === 'hard' || difficulty === 'vhard') ? 12.5 : 14; // Hard's waves come a little quicker
+      S.wave = 14;
       if (team === 'red' && !versus) S.mix = redMix();
       for (const kind of waveKinds(S.mix, S.minions)) {
         const u = addUnit(team, kind, sd * (BASE_X - 90) + rnd(-20, 20), rnd(-120, 120));
@@ -3470,8 +3531,7 @@ function rivalDown() {
   rivalProxy.dead = true;
   rivalP.charging = null; rivalP.loaded = null;
   burst(rivalP.x, rivalP.y, TEAM_COLOR.red, 30, 260);
-  teamScore('blue', 10, rivalP.x, rivalP.y - 30, 'Hero kills');
-  statKill('blue', 10);
+  scoreKill('blue', 'hero', rivalP.x, rivalP.y - 30);
   showBanner('You defeated your friend’s wizard! +10', '', 2.5);
   netEvents.push(['you-fell']);
 }
@@ -3569,7 +3629,7 @@ function makeSnapshot() {
     t: 'snap', sk: mySkin,
     st: state, res: T.result, bd: state === 'won' || state === 'lost' ? T.breakdown || null : null,
     ss: state === 'won' || state === 'lost' ? T.stats || null : null, eb: T.endedBy || null, bf: T.baseFell || null, gt: T.groundTo || null,
-    sc: [T.blue.score, T.red.score], time: r1(T.time),
+    sc: [T.blue.score, T.red.score], time: r1(T.time), tl: T.tally ? [T.tally.blue, T.tally.red] : [0, 0],
     bt: [T.build.team, r1(T.build.t)], pr: T.pendingRed ? r1(T.pendingRed.t) : null,
     me: packHero(rivalP, redSide.discovered.size), host: packHero(hostP, discovered.size),
     u: friends.concat(foes).filter(u => !u.dead && !u.proxyOf).map(u => [
@@ -3650,6 +3710,7 @@ function guestReceive(m) {
   otherHero.x = X(m.host.x); otherHero.y = m.host.y; otherHero.face = { x: -m.host.fx, y: m.host.fy };
   // scores and turns (flipped: you are "blue")
   teams.blue.score = m.sc[1]; teams.red.score = m.sc[0]; teams.time = m.time;
+  if (m.tl) teams.tally = { blue: m.tl[1], red: m.tl[0] };
   teams.build = { team: flipTeam(m.bt[0]), t: m.bt[1] };
   if (m.pr === null) teams.pending = null; else if (!teams.pending || teams.pending.t > m.pr + 0.5) teams.pending = { t: m.pr };
   // units: keep the same objects so they glide between pictures
@@ -6419,7 +6480,8 @@ function drawBattleStatus(x, y) {
   ctx.font = '10px "Big Caslon", "Libre Caslon Text", Georgia, serif';
   ctx.textAlign = 'left';
   ctx.fillStyle = '#ccc';
-  ctx.fillText(`Ground ${Math.round(b * 100)}% / ${Math.round(r * 100)}%`, x, y + 12);
+  const tl = (teams.tally && teams.tally.blue) || 0;
+  ctx.fillText(`Ground ${Math.round(b * 100)}% / ${Math.round(r * 100)}%   ·   tally ${tl % 5}/5`, x, y + 12);
   const bt = teams.pending ? `Your build: choose! ${Math.ceil(teams.pending.t)}s` : `Build: ${teams.build.team === 'blue' ? 'you' : 'red'} in ${Math.ceil(teams.build.t)}s`;
   ctx.fillStyle = teams.pending ? '#ffd24a' : '#aaa';
   ctx.fillText(bt, x, y + 26);
@@ -6891,6 +6953,7 @@ const HOWTO = [
   ['p', 'Defeat the five guardians. Each can only be hurt by certain elements, so find its weakness.'],
   ['h', 'Battle'],
   ['p', 'Your base is on the left, red’s is on the right. Most points after 5 minutes wins.'],
+  ['p', 'Kills fill a tally (shown under the ground bar). If your hero falls, it adds 10 to red’s tally.'],
   ['points'],
   ['p', 'Every 10 seconds someone gets a build turn. Pick an element, then build a turret where you stand (it claims ground) or send a titan.'],
   ['p', 'Breaking the enemy sigil also gives you a bonus build.'],
@@ -6965,7 +7028,7 @@ function drawHowTo(y, bx, bw) {
       yy += 160;
     } else if (kind === 'points') {
       // a little table of what scores
-      const rows = [['Anything you kill (minion, wizard, titan, turret)', '1'], ['Your hero falls (red scores)', '1'], ['A friend’s wizard in a duel', '10'], ['Enemy sigil (+ a bonus build)', '50'], ['Enemy base (ends the match)', '60'], ['Most ground at the end', '140']];
+      const rows = [['Every 5 on your kill tally', '1'], ['   a minion adds 1, a titan 5, a wizard 10', ''], ['Enemy turret', '5'], ['A friend’s wizard in a duel', '10'], ['Enemy sigil (+ a bonus build)', '50'], ['Enemy base (ends the match)', '60'], ['Most ground at the end', '140']];
       ctx.font = `14px ${SERIF}`;
       for (const [what, pts] of rows) {
         ctx.textAlign = 'left'; ctx.fillStyle = '#efe9f8'; ctx.fillText(what, L + 18, yy + 14);
@@ -7280,7 +7343,13 @@ function drawBattleEnd(win) {
   y = endHeading('Sigils and kills', L + 6, bw - 12, y + 8);
   ctx.textAlign = 'right'; ctx.font = `bold 12px ${SERIF}`; ctx.fillStyle = TEAM_COLOR.blue; ctx.fillText('You', L + bw - 62, y + 10); ctx.fillStyle = TEAM_COLOR.red; ctx.fillText('Red', L + bw - 6, y + 10); y += 14;
   y = endPair('Sigils broken', B.sigils, R.sigils, L + 6, bw - 12, y);
-  y = endPair('Kills', B.kills, R.kills, L + 6, bw - 12, y);
+  const K = (S, k) => (S.killed && S.killed[k]) || 0;
+  y = endPair('Minions killed (1 each on the tally)', K(B, 'minion'), K(R, 'minion'), L + 6, bw - 12, y);
+  y = endPair('Titans killed (5 each)', K(B, 'titan'), K(R, 'titan'), L + 6, bw - 12, y);
+  y = endPair('Wizards and heroes killed (10 each)', K(B, 'wizard') + K(B, 'hero'), K(R, 'wizard') + K(R, 'hero'), L + 6, bw - 12, y);
+  y = endPair('Kill tally (every 5 = 1 point)', B.tally || 0, R.tally || 0, L + 6, bw - 12, y);
+  y = endPair('Turrets destroyed (5 points each)', K(B, 'turret'), K(R, 'turret'), L + 6, bw - 12, y);
+  ctx.font = `bold 14px ${SERIF}`;
   y = endPair('Points from kills', B.killPts, R.killPts, L + 6, bw - 12, y);
   // spells
   y = endHeading('Spells cast', L + 6, bw - 12, y + 8);
