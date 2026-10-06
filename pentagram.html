@@ -4024,7 +4024,16 @@ function startTilt() {
     if (tilt.pending) return;
     tilt.pending = true;
     D.requestPermission()
-      .then(r => { tilt.pending = false; if (r === 'granted') listen(); else tilt.denied = true; })
+      .then(r => {
+        tilt.pending = false;
+        if (r === 'granted') { listen(); return; }
+        // Blocked: often because a phone call (or anything else on screen) hid the
+        // "Allow motion" question. iPhones then keep saying no until the page is reopened.
+        tilt.denied = true;
+        tilt.denials = (tilt.denials || 0) + 1;
+        if (tilt.denials === 1) showBanner('Tilt was blocked', 'Tap “Tilt blocked” (top right) to be asked again · or drag to walk', 5);
+        else showBanner('Your phone is still blocking tilt', 'Close this page completely, open it again, and tap Allow when asked', 6);
+      })
       .catch(() => { tilt.pending = false; tilt.asked = false; });
   } else {
     listen();
@@ -6936,6 +6945,7 @@ const HOWTO = [
   ['h', 'Move'],
   ['p', 'Tilt your phone to walk.'],
   ['p', 'No tilt? Hold your finger on the field and drag the way you want to go.'],
+  ['p', 'Says “Tilt blocked”? Tap it to be asked again, and tap Allow. If it stays blocked (a phone call can do this), close the page completely, open it again, and tap Allow.'],
   ['p', 'Walk into the boat to sail across the lake.'],
   ['h', 'Shoot'],
   ['p', 'Tap the field to fire an arrow at that spot. Hold to keep firing.'],
