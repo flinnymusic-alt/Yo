@@ -2313,11 +2313,11 @@ const FRONT_X = WORLD * 0.32; // the line (±) behind which each side holds 30% 
 const TEAM_COLOR = { blue: '#4aa8ff', red: '#ff4a5a' };
 const UNITS = {
   // five kinds of minion, one per element; weak alone but plentiful
-  wisp:   { name: 'Wisp',   elem: 'spirit', pts: 1, hp: 3,   spd: 72, r: 9,  range: 140, dmg: 0.5, cd: 1.0, aggro: 220, ranged: true, flying: true },
-  archer: { name: 'Archer', elem: 'water',  pts: 1, hp: 3,   spd: 64, r: 9,  range: 170, dmg: 0.6, cd: 1.2, aggro: 230, ranged: true },
+  wisp:   { name: 'Wisp',   elem: 'spirit', pts: 1, hp: 3.5, spd: 72, r: 9,  range: 140, dmg: 0.55, cd: 1.0, aggro: 220, ranged: true, flying: true },
+  archer: { name: 'Archer', elem: 'water',  pts: 1, hp: 3,   spd: 64, r: 9,  range: 170, dmg: 0.55, cd: 1.2, aggro: 230, ranged: true },
   imp:    { name: 'Imp',    elem: 'fire',   pts: 1, hp: 3.5, spd: 84, r: 10, range: 24,  dmg: 0.9, cd: 0.9, aggro: 220 },
   brute:  { name: 'Brute',  elem: 'earth',  pts: 1, hp: 6,   spd: 56, r: 12, range: 24,  dmg: 0.8, cd: 1.1, aggro: 200 },
-  flyer:  { name: 'Flyer',  elem: 'air',    pts: 1, hp: 3,   spd: 96, r: 9,  range: 22,  dmg: 0.6, cd: 0.8, aggro: 220, flying: true },
+  flyer:  { name: 'Flyer',  elem: 'air',    pts: 1, hp: 3.6, spd: 96, r: 9,  range: 22,  dmg: 0.65, cd: 0.8, aggro: 220, flying: true },
   wizard: { name: 'Wizard', pts: 1, hp: 26,  spd: 86, r: 15, range: 250, dmg: 2.5, cd: 1.4, aggro: 330, ranged: true },
   titan:  { name: 'Titan',  pts: 1, hp: 55,  spd: 32, r: 30, range: 48,  dmg: 3,   cd: 2.2, aggro: 240, splash: 45 },
   // turrets sting but don't dominate; a few focused hits bring one down
@@ -2355,7 +2355,7 @@ function matchup(attElem, defUnit) { return elemMult(attElem, defUnit && defUnit
 // returns, so a mix pays more than piling everything into one element (and a
 // one-element army is easy to counter). The strengths are tuned so that no
 // element is a must-pick or a trap.
-const RES_MAX = { fire: 0.40, earth: 0.26, water: 0.20, air: 0.25, spirit: 0.15 };
+const RES_MAX = { fire: 0.40, earth: 0.24, water: 0.22, air: 0.29, spirit: 0.18 };
 const RES_CURVE = 0.9;   // share^0.9: a gentle lean toward mixing
 const RES_WEIGHT = { turret: 3, titan: 4 };
 const noRes = () => ({ fire: 0, earth: 0, water: 0, air: 0, spirit: 0 });
