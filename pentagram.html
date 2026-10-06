@@ -2355,7 +2355,7 @@ function matchup(attElem, defUnit) { return elemMult(attElem, defUnit && defUnit
 // returns, so a mix pays more than piling everything into one element (and a
 // one-element army is easy to counter). The strengths are tuned so that no
 // element is a must-pick or a trap.
-const RES_MAX = { fire: 0.30, earth: 0.23, water: 0.22, air: 0.26, spirit: 0.13 };
+const RES_MAX = { fire: 0.40, earth: 0.26, water: 0.17, air: 0.25, spirit: 0.15 };
 const RES_CURVE = 0.9;   // share^0.9: a gentle lean toward mixing
 const RES_WEIGHT = { turret: 3, titan: 4 };
 const noRes = () => ({ fire: 0, earth: 0, water: 0, air: 0, spirit: 0 });
