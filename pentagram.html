@@ -36,7 +36,7 @@ const sfx = { ctx: null, out: null, noise: null, on: true, last: {} };
 try { sfx.on = localStorage.getItem('pentagram-sound') !== 'off'; } catch (_) {}
 
 function audioInit() {
-  if (sfx.ctx) { if (sfx.ctx.state === 'suspended') sfx.ctx.resume(); return; }
+  if (sfx.ctx) { if (sfx.ctx.state !== 'running') sfx.ctx.resume().catch(() => {}); return; }
   const AC = window.AudioContext || window.webkitAudioContext;
   if (!AC) return;
   try {
@@ -3994,9 +3994,19 @@ function onOrient(e) {
   else if (a === 270) { x = -b; y = g; }
   else if (a === 180) { x = -g; y = -b; }
   else                { x = g;  y = b; }
+  const now = performance.now();
+  // after a gap (a phone call, the screen locking, switching apps) the phone
+  // may be held differently: take wherever it is now as level again
+  if (tilt.lastT && now - tilt.lastT > 2000) tilt.base = null;
+  tilt.lastT = now;
   tilt.raw = { x, y };
   if (!tilt.base) tilt.base = { x, y };
 }
+// The sensor can go quiet (during a call the phone may pause it). Never keep
+// walking on an old reading: if nothing has arrived for a moment, stand still.
+const tiltStale = () => !tilt.lastT || performance.now() - tilt.lastT > 700;
+document.addEventListener('visibilitychange', () => { if (!document.hidden) { tilt.base = null; audioInit(); } });
+window.addEventListener('pageshow', () => { tilt.base = null; });
 
 function startTilt() {
   const D = window.DeviceOrientationEvent;
@@ -4035,7 +4045,7 @@ document.addEventListener('click', askTiltFromTap);
 
 function levelTilt() { tilt.base = tilt.raw ? { ...tilt.raw } : null; }
 
-function tiltActive() { return !!(tilt.raw && tilt.base); }
+function tiltActive() { return !!(tilt.raw && tilt.base) && !tiltStale(); }
 
 // Pressing the pentagram or FIRE with a thumb tips the phone. Don't read new
 // tilt then (or briefly after letting go); see holdTilt below.
@@ -6385,7 +6395,8 @@ function drawHUD() {
     ctx.fillStyle = ok ? '#bfffa0' : '#aaa';
     ctx.font = '11px "Big Caslon", "Libre Caslon Text", Georgia, serif';
     ctx.textAlign = 'center';
-    ctx.fillText(ok ? 'Tilt on · level' : tilt.denied ? 'Tilt blocked' : waiting ? 'Tilt…' : 'Tilt off · retry', r.x + r.w / 2, r.y + 16);
+    const quiet = tilt.raw && tiltStale();
+    ctx.fillText(quiet ? 'Tilt paused · drag' : ok ? 'Tilt on · level' : tilt.denied ? 'Tilt blocked' : waiting ? 'Tilt…' : 'Tilt off · retry', r.x + r.w / 2, r.y + 16);
     if (tilt.listening && !ok && !waiting && !tilt.warned) {
       tilt.warned = true;
       showBanner('Tilt isn’t available here', 'Drag on the field to walk instead', 3.5);
