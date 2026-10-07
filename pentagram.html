@@ -120,8 +120,8 @@ const SFX = {
   awaken()      { if (sfxReady('awaken', 1)) { tone(55, 1.1, 'sawtooth', 0.14, 45); tone(58, 1.1, 'sawtooth', 0.1, 40); } },
   bossDown()    { if (!sfxReady('bossDown')) return; boom(1.2); [392, 523, 659, 784].forEach((f, i) => tone(f, 0.45, 'triangle', 0.12, null, 0.3 + i * 0.12)); },
   scroll()      { if (sfxReady('scroll')) [523, 659, 784, 1047, 1319].forEach((f, i) => tone(f, 0.5, 'sine', 0.1, null, i * 0.08)); },
-  skyRise()     { if (sfxReady('sky')) [523, 659, 784, 1047].forEach((f, i) => tone(f, 0.7, 'sine', 0.07, null, i * 0.12)); },
-  skyCalm()     { if (sfxReady('sky')) [784, 523].forEach((f, i) => tone(f, 0.6, 'sine', 0.05, null, i * 0.16)); },
+  eclipse()     { if (sfxReady('eclipse')) [392, 330, 262, 196].forEach((f, i) => tone(f, 0.8, 'sine', 0.08, null, i * 0.14)); },
+  unveil()      { if (sfxReady('eclipse')) [523, 784].forEach((f, i) => tone(f, 0.6, 'sine', 0.05, null, i * 0.16)); },
   discover()    { if (sfxReady('discover')) [784, 1175].forEach((f, i) => tone(f, 0.35, 'triangle', 0.1, null, i * 0.1)); },
   splash()      { if (sfxReady('splash')) { hiss(0.5, 0.2, 'lowpass', 2000, 300); tone(300, 0.2, 'sine', 0.06, 150); } },
   death()       { if (sfxReady('death')) [392, 330, 262, 196].forEach((f, i) => tone(f, 0.4, 'triangle', 0.12, null, i * 0.18)); },
@@ -154,21 +154,22 @@ const KEY_TO_EL = { Digit1: 'F', Digit2: 'W', Digit3: 'E', Digit4: 'A', Digit5: 
 // ── the five elements ──
 // Every attack belongs to one of the pentagram's five elements. Lightning is Air,
 // poison is Earth, holy light is Spirit. Each element beats the next around the
-// cycle Water → Fire → Air → Earth → Spirit → Water: double damage to the one it
-// beats, half to the two it's weak against (the one that beats it, and the one
-// after its prey), normal against itself and the remaining one.
+// cycle Water → Fire → Air → Earth → Spirit → Water: 2.5× damage to the one it
+// beats, and the other way round 0.4× (hitting the one that beats it); normal
+// against everything else.
 const ELEM_OF = { fire: 'fire', water: 'water', earth: 'earth', air: 'air', spirit: 'spirit', lightning: 'air', poison: 'earth', holy: 'spirit' };
 const ELEM_CYCLE = ['water', 'fire', 'air', 'earth', 'spirit'];
 const ELEM_GLYPH = { spirit: 'S', water: 'W', fire: 'F', earth: 'E', air: 'A' };
 const ELEM_NAME = { spirit: 'Spirit', water: 'Water', fire: 'Fire', earth: 'Earth', air: 'Air' };
+const ELEM_STRONG = 2.5, ELEM_WEAK = 0.4;
 function elemMult(a, d) {
   const i = ELEM_CYCLE.indexOf(a), j = ELEM_CYCLE.indexOf(d);
   if (i < 0 || j < 0) return 1;
   const k = (j - i + 5) % 5;
-  return k === 1 ? 2 : k === 2 || k === 4 ? 0.5 : 1;
+  return k === 1 ? ELEM_STRONG : k === 4 ? ELEM_WEAK : 1;
 }
 function elemBeats(e) { return ELEM_CYCLE[(ELEM_CYCLE.indexOf(e) + 1) % 5]; }
-function elemWeakTo(e) { const i = ELEM_CYCLE.indexOf(e); return [ELEM_CYCLE[(i + 4) % 5], ELEM_CYCLE[(i + 2) % 5]]; }
+function elemWeakTo(e) { const i = ELEM_CYCLE.indexOf(e); return [ELEM_CYCLE[(i + 4) % 5]]; }
 
 const TYPE_COLOR = {
   // keep these 6-digit: the boss aura appends a 2-digit alpha
@@ -797,70 +798,64 @@ function aimFrom(src, range) {
 
 const CHARGE_TYPES = ['spirit', 'water', 'fire', 'earth', 'air']; // pentagram order
 
-// ── the sky: sun, moon and star ──
-// Every 45 seconds of a battle: 30 seconds of calm, then 15 under a sky body.
-// The body rises over one point of the casting star. The elements that can
-// bear its light are that point and the ones after it, clockwise; the
-// brighter the body, the fewer: a Star 4, a Half Moon 3, a Full Moon 2, the
-// Sun just 1. The rest are in shadow: under a clear sky they don't work at
-// all, under clouds they are half as strong. Each rising is one point further
-// round the star than the last, and the next body shows 10 seconds early.
-const SKY_CALM = 30, SKY_EVENT = 15, SKY_CYCLE = SKY_CALM + SKY_EVENT, SKY_OMEN = 10, SKY_CLOUD = 0.35;
-const SKY_BODY = {
-  star: { name: 'Star',      lit: 4, w: 45, col: '#fff1a8', tint: '120,90,210' },
-  half: { name: 'Half Moon', lit: 3, w: 25, col: '#dfe6ff', tint: '80,110,210' },
-  full: { name: 'Full Moon', lit: 2, w: 18, col: '#eef2ff', tint: '60,80,190' },
-  sun:  { name: 'Sun',       lit: 1, w: 12, col: '#ffcf5a', tint: '255,190,80' },
-};
-let skySeen = null; // the last sky state announced
-function planSky() {
-  const n = Math.ceil((MATCH_TIME - SKY_CALM) / SKY_CYCLE), at0 = Math.floor(Math.random() * 5);
-  return Array.from({ length: n }, (_, i) => ({ body: pickW(Object.entries(SKY_BODY).map(([k, b]) => [k, b.w])), at: (at0 + i) % 5, cloud: Math.random() < SKY_CLOUD }));
+// ── the eclipse clock ──
+// Five rings, one per element, each turning at its own steady pace. When an
+// element's mark reaches 12 o'clock that element is eclipsed: for 30 seconds
+// it doesn't work at all (spells made of it can't be cast; minions, turrets,
+// titans and wizards of that element stop fighting). Rings can line up, so
+// eclipses can overlap. Most matches see one or two; some see more, and now
+// and then a whole match is an eclipse season.
+const ECLIPSE_LEN = 30, ECLIPSE_WARN = 8;
+let eclipseSeen = {}; // what's been announced, per ring
+function planEclipses() {
+  const season = Math.random() < 0.07;
+  const want = season ? 7 + Math.floor(Math.random() * 3) : pickW([[1, 40], [2, 35], [3, 15], [4, 10]]);
+  const lo = 20, hi = MATCH_TIME - 20;
+  let best = null, bestErr = 1e9;
+  for (let n = 0; n < 5000; n++) {
+    const rings = CHARGE_TYPES.map(() => { const per = season ? rnd(90, 200) : rnd(160, 1000); return { per: Math.round(per * 10) / 10, off: Math.round(rnd(0, per) * 10) / 10 }; });
+    let total = 0, ok = true;
+    for (const r of rings) for (let t = r.off; t <= MATCH_TIME; t += r.per) { if (t < lo || t > hi) ok = false; total++; }
+    const err = Math.abs(total - want) + (ok ? 0 : 100);
+    if (err < bestErr) { best = rings; bestErr = err; }
+    if (!err) break;
+  }
+  return best;
 }
-// where the sky is now: calm (seeing the next body once it's close) or a body overhead
-function skyNow() {
-  if (mode !== 'battle' || !teams || !teams.sky) return null;
-  const t = MATCH_TIME - teams.time, i = Math.floor(t / SKY_CYCLE), into = t - i * SKY_CYCLE;
-  const ev = teams.sky[i];
-  if (!ev) return { phase: 'calm', left: teams.time, next: null, into };
-  if (into < SKY_CALM) return { phase: 'calm', left: SKY_CALM - into, next: ev, idx: i, seen: SKY_CALM - into <= SKY_OMEN, into };
-  return { phase: 'sky', left: SKY_CYCLE - into, ev, idx: i, next: teams.sky[i + 1] || null, into };
+const eclipseT = () => MATCH_TIME - teams.time;
+// how far round its ring an element's mark is (0 = 12 o'clock)
+function ringAngle(i, t) { const r = teams.eclipse[i]; return (((t - r.off) / r.per) % 1 + 1) % 1 * TAU; }
+// seconds left in an element's eclipse (0 if it isn't eclipsed)
+function eclipseLeft(i, t) {
+  const r = teams.eclipse[i];
+  if (t < r.off) return 0;
+  const since = (t - r.off) % r.per;
+  return since < ECLIPSE_LEN ? ECLIPSE_LEN - since : 0;
 }
-// can this element bear the body's light?
-function skyLit(ev, elem) { return (CHARGE_TYPES.indexOf(elem) - ev.at + 5) % 5 < SKY_BODY[ev.body].lit; }
-// an element's strength under the sky right now: 1, ½ in shadow under clouds, 0 in clear shadow
-function skyMult(elem) {
-  if (mode !== 'battle' || !teams || !teams.sky || !CHARGE_TYPES.includes(elem)) return 1;
-  const s = skyNow();
-  if (!s || s.phase !== 'sky' || skyLit(s.ev, elem)) return 1;
-  return s.ev.cloud ? 0.5 : 0;
+// seconds until an element's mark next reaches 12 o'clock
+function eclipseIn(i, t) { const r = teams.eclipse[i]; return t < r.off ? r.off - t : r.per - (t - r.off) % r.per; }
+// 0 while an element is eclipsed, otherwise 1
+function eclipseMult(elem) {
+  if (mode !== 'battle' || !teams || !teams.eclipse) return 1;
+  const i = CHARGE_TYPES.indexOf(elem);
+  return i < 0 || !eclipseLeft(i, eclipseT()) ? 1 : 0;
 }
-function skyWords(ev) {
-  const lit = CHARGE_TYPES.filter(e => skyLit(ev, e)).map(e => ELEM_NAME[e]);
-  const dark = CHARGE_TYPES.filter(e => !skyLit(ev, e)).map(e => ELEM_NAME[e]);
-  const list = a => a.length < 2 ? a[0] : a.slice(0, -1).join(', ') + ' and ' + a[a.length - 1];
-  if (ev.cloud) return `Clouds: ${list(dark)} ${dark.length > 1 ? 'are' : 'is'} half as strong`;
-  return dark.length === 1 ? `${dark[0]} doesn't work` : `Only ${list(lit)} work${lit.length > 1 ? '' : 's'}`;
-}
-// a spell made of an element in clear shadow can't be cast
-function skyBlocked(key) {
+// a spell made of an eclipsed element can't be cast
+function eclipseBlocked(key) {
   const el = RUNE_ELEM[key[0]];
-  if (skyMult(el) > 0) return false;
-  const s = skyNow();
-  castMessage(`The ${SKY_BODY[s.ev.body].name} shadows ${ELEM_NAME[el]} · ${Math.ceil(s.left)}s`, '#9aa0c0');
+  if (eclipseMult(el) > 0) return false;
+  castMessage(`${ELEM_NAME[el]} is eclipsed · ${Math.ceil(eclipseLeft(CHARGE_TYPES.indexOf(el), eclipseT()))}s`, '#9aa0c0');
   SFX.fizzle();
   return true;
 }
 
 function damageFoe(f, dmg, rawType, fromHelper) {
   if (f.dead) return;
-  // the sky: elements in shadow hit softer, or not at all
-  const sm = skyMult(ELEM_OF[rawType] || rawType);
-  if (sm === 0) {
-    if ((f.txtCd || 0) <= 0) { floatText(f.x, f.y - (f.r || 14) - 10, 'in shadow', '#8a8aa0', 12); f.txtCd = 0.6; }
+  // an eclipsed element does nothing
+  if (!eclipseMult(ELEM_OF[rawType] || rawType)) {
+    if ((f.txtCd || 0) <= 0) { floatText(f.x, f.y - (f.r || 14) - 10, 'eclipsed', '#8a8aa0', 12); f.txtCd = 0.6; }
     return 0;
   }
-  dmg *= sm;
   dmg *= potency;
   if (f.proxyOf) { const d = dmg * (player.empower > 0 && !fromHelper ? 2 : 1); hurtPlayer(d, heroOf(f)); return d; }
   if (f.helper) { f.helper.hp -= dmg; burst(f.x, f.y, '#ccc', 4, 100); if (f.helper.hp <= 0) f.helper.life = 0; return dmg; }
@@ -1613,7 +1608,7 @@ function castSequence() {
   if (!seq.length) return;
   const key = seq.join('');
   if (net.role === 'guest') {
-    if (SPELLS[key] && skyBlocked(key)) { seq = []; return; }
+    if (SPELLS[key] && eclipseBlocked(key)) { seq = []; return; }
     // the host runs the spell; remember it here for your spell book
     seq = [];
     net.send({ t: 'cast', k: key });
@@ -1629,7 +1624,7 @@ function castSequence() {
     burst(player.x, player.y, '#777', 10, 120);
     return;
   }
-  if (skyBlocked(key)) return;
+  if (eclipseBlocked(key)) return;
   if (player.mana < sp.cost) { castMessage('Not enough mana', '#6af'); return; }
   player.mana -= sp.cost;
   castSigil(key, player.x, player.y);
@@ -1664,7 +1659,7 @@ function castSequence() {
 function fireLoaded() {
   const L = player.loaded;
   if (!L || player.charging || state !== 'play') return;
-  if (skyBlocked(L.key)) return;
+  if (eclipseBlocked(L.key)) return;
   if (net.role === 'guest') { net.send({ t: 'fire' }); return; }
   const tier = L.key.length;
   L.left--;
@@ -2668,9 +2663,9 @@ function startBattle(diff) {
     time: MATCH_TIME, terrRecalc: 0,
     build: { team: 'blue', t: BUILD_EVERY }, pending: null, result: null,
     breakdown: { blue: {}, red: {} }, stats: newStats(), brain: null, focus: new Map(), redUsed: new Set(), ultCd: 30,
-    sky: planSky(),
+    eclipse: planEclipses(),
   };
-  skySeen = null;
+  eclipseSeen = {};
   // Very Hard: red's wizards get their own spell lists, and can hit you through a stand-in
   leadMage = null;
   Object.assign(redSide, { shots: [], allies: [], traps: [], zones: [], waves: [], meteors: [], storms: [], discovered: new Set(), seq: [] });
@@ -2767,10 +2762,9 @@ function objectiveFor(u) {
 
 function unitAttack(u, tgt) {
   if (u.cd > 0 || u.hex > 0 || u.def.passive) return;
-  const sm = skyMult(u.elem);
-  if (sm === 0) { u.cd = 0.3; return; } // in clear shadow it can't fight
+  if (!eclipseMult(u.elem)) { u.cd = 0.3; return; } // eclipsed: it can't fight
   u.cd = u.def.cd;
-  const atk = tiredAtk(u) * (u.power || 1) * resDmgOut(u.team) * sm;
+  const atk = tiredAtk(u) * (u.power || 1) * resDmgOut(u.team);
   if (isMinion(u)) u.tired = Math.min(1, (u.tired || 0) + TIRE_PER_SWING);
   if (u.def.ranged) {
     const dx = tgt.x - u.x, dy = tgt.y - u.y, d = Math.hypot(dx, dy) || 1;
@@ -2795,7 +2789,7 @@ function unitAttack(u, tgt) {
 
 function titanSlam(u) {
   const { x, y, tgt } = u.slamAt;
-  const pw = (u.power || 1) * resDmgOut(u.team) * skyMult(u.elem);
+  const pw = (u.power || 1) * resDmgOut(u.team) * eclipseMult(u.elem);
   if (!pw) { u.slamAt = null; return; }
   if (tgt && !tgt.dead) hitUnit(tgt, u.def.dmg * pw * matchup(u.elem, tgt));
   // everything of the other side nearby gets hit too
@@ -3191,10 +3185,9 @@ function redBrain(dt) {
     }
   }
 
-  // 2b. the sky: strike while blue's army is in shadow, hold back while red's is
-  const sky = skyNow();
-  if (sky && sky.phase === 'sky' && sk >= 0.5) {
-    const work = us => us.length ? us.reduce((a, u) => a + skyMult(u.elem), 0) / us.length : 1;
+  // 2b. eclipses: strike while blue's army is eclipsed, hold back while red's is
+  if (CHARGE_TYPES.some(e => !eclipseMult(e)) && sk >= 0.5) {
+    const work = us => us.length ? us.reduce((a, u) => a + eclipseMult(u.elem), 0) / us.length : 1;
     const edge = work(army) - work(blue.filter(o => !o.structure));
     if (edge > 0.2 && B.phase === 'gather') { B.phase = 'push'; B.t = 0; for (const u of army) u.inPush = true; }
     else if (edge < -0.2 && B.phase === 'push' && sk >= 0.75) { B.phase = 'gather'; B.t = 0; for (const u of army) u.inPush = false; }
@@ -3279,13 +3272,13 @@ function chooseSpell(u, m) {
   else want = pickW([['summon', 3], ['buff', 3], ['defence', 1], ['heal', hurt < 0.9 ? 2 : 0]]);
   if (want === 'summon' && helpers >= MAX_HELPERS) want = 'buff';
   T.ultCd = Math.max(0, T.ultCd || 0);
-  const ok = k => SPELLS[k].cost <= m.mana && (k.length < 6 || T.ultCd <= 0) && skyMult(RUNE_ELEM[k[0]]) > 0;
+  const ok = k => SPELLS[k].cost <= m.mana && (k.length < 6 || T.ultCd <= 0) && eclipseMult(RUNE_ELEM[k[0]]) > 0;
   const all = (AI_BOOK[want] || []).filter(ok);
   if (!all.length) return null;
   T.redUsed = T.redUsed || new Set();
   const fresh = all.filter(k => !T.redUsed.has(k));
   const pool = fresh.length ? fresh : all;
-  return pickW(pool.map(k => [k, k.length * k.length * skyMult(RUNE_ELEM[k[0]])])); // stronger spells more often, and what the sky favours
+  return pickW(pool.map(k => [k, k.length * k.length])); // stronger spells more often when affordable
 }
 function aiCast(u, m, key) {
   const sp = SPELLS[key], T = teams;
@@ -3324,7 +3317,7 @@ function updateMages(dt) {
       continue;
     }
     if (m.loaded) {
-      if (skyMult(RUNE_ELEM[m.loaded.key[0]]) > 0 && withSide('red', () => nearestFoe(m.x, m.y, 600), m)) u.castT = Math.max(0.3, SPELLS[m.loaded.key].windup ?? TIER_WINDUP[m.loaded.key.length]);
+      if (eclipseMult(RUNE_ELEM[m.loaded.key[0]]) > 0 && withSide('red', () => nearestFoe(m.x, m.y, 600), m)) u.castT = Math.max(0.3, SPELLS[m.loaded.key].windup ?? TIER_WINDUP[m.loaded.key.length]);
       continue;
     }
     u.think = (u.think ?? rnd(1, 3)) - dt;
@@ -3729,7 +3722,7 @@ function makeSnapshot() {
     t: 'snap', sk: mySkin,
     st: state, res: T.result, bd: state === 'won' || state === 'lost' ? T.breakdown || null : null,
     ss: state === 'won' || state === 'lost' ? T.stats || null : null, eb: T.endedBy || null, bf: T.baseFell || null, gt: T.groundTo || null,
-    sc: [T.blue.score, T.red.score], time: r1(T.time), tl: T.tally ? [T.tally.blue, T.tally.red] : [0, 0], rs: T.res || null, sy: T.sky || null,
+    sc: [T.blue.score, T.red.score], time: r1(T.time), tl: T.tally ? [T.tally.blue, T.tally.red] : [0, 0], rs: T.res || null, ec: T.eclipse || null,
     bt: [T.build.team, r1(T.build.t)], pr: T.pendingRed ? r1(T.pendingRed.t) : null,
     me: packHero(rivalP, redSide.discovered.size), host: packHero(hostP, discovered.size),
     u: friends.concat(foes).filter(u => !u.dead && !u.proxyOf).map(u => [
@@ -3776,7 +3769,7 @@ function startVersusGuest(send) {
     time: MATCH_TIME, terrRecalc: 0, build: { team: 'blue', t: BUILD_EVERY }, pending: null, result: null,
     order: 'spread', orders: { minion: 'attackTurrets', titan: 'attackTurrets' }, buildElem: 'water',
   };
-  guestUnits = new Map(); otherHero = null; skySeen = null;
+  guestUnits = new Map(); otherHero = null; eclipseSeen = {};
   net.send({ t: 'skin', v: mySkin });
   state = 'play';
   showBanner('Duel! Universes collide', 'Your universe is blue, on the left', 4);
@@ -3811,7 +3804,7 @@ function guestReceive(m) {
   teams.blue.score = m.sc[1]; teams.red.score = m.sc[0]; teams.time = m.time;
   if (m.tl) teams.tally = { blue: m.tl[1], red: m.tl[0] };
   if (m.rs) teams.res = { blue: m.rs.red, red: m.rs.blue };
-  if (m.sy) teams.sky = m.sy;
+  if (m.ec) teams.eclipse = m.ec;
   teams.build = { team: flipTeam(m.bt[0]), t: m.bt[1] };
   if (m.pr === null) teams.pending = null; else if (!teams.pending || teams.pending.t > m.pr + 0.5) teams.pending = { t: m.pr };
   // units: keep the same objects so they glide between pictures
@@ -4193,10 +4186,10 @@ function fireButtonHit(x, y) {
   return Math.hypot(x - b.x, y - b.y) < b.r + 8;
 }
 
-// battle's top-right column: map, clocks, sky clock, then the sound and tilt labels
+// battle's top-right column: map, clocks, eclipse clock, then the sound and tilt labels
 function rightStack() {
   const mapH = Math.min(160, W * 0.38) * ARENA_H / WORLD, clockY = 12 + mapH + 8, skyY = clockY + 40;
-  return { mapH, clockY, skyY, btnY: skyY + 68 };
+  return { mapH, clockY, skyY, btnY: skyY + 82 };
 }
 function soundRect() {
   const s = Math.min(110, W * 0.26);
@@ -5416,8 +5409,7 @@ function drawUnit(u) {
   const c = TEAM_COLOR[u.team], t = elapsed, r = u.r;
   ctx.save();
   ctx.translate(u.x, u.y);
-  const shade = skyMult(u.elem);
-  if (shade < 1) ctx.globalAlpha = shade ? 0.75 : 0.4; // in the sky's shadow
+  if (!eclipseMult(u.elem)) ctx.globalAlpha = 0.4; // eclipsed
   if (!u.structure) {
     // a springy step while marching, a slow breath while standing
     const sq = Math.sin((u.walk || 0) * 0.5) * 0.06 + Math.sin(t * 2.4 + u.wob) * 0.02;
@@ -6501,7 +6493,7 @@ function drawHUD() {
 
   drawMinimap();
   drawBuildButtons();
-  drawSkyClock();
+  drawEclipseClock();
   drawResonance();
   {
     const r = soundRect();
@@ -6698,93 +6690,80 @@ function drawResonance() {
     });
   });
 }
-// a sun, a moon (full or half) or a star
-function drawSkyBody(kind, x, y, r, a = 1) {
-  const b = SKY_BODY[kind];
-  ctx.save(); ctx.globalAlpha *= a; ctx.translate(x, y);
-  ctx.shadowColor = b.col; ctx.shadowBlur = r * 0.9;
-  if (kind === 'sun') {
-    ctx.strokeStyle = b.col; ctx.lineWidth = Math.max(1.5, r * 0.16); ctx.lineCap = 'round';
-    for (let i = 0; i < 8; i++) {
-      const an = elapsed * 0.4 + i * TAU / 8;
-      ctx.beginPath(); ctx.moveTo(Math.cos(an) * r * 0.82, Math.sin(an) * r * 0.82); ctx.lineTo(Math.cos(an) * r * 1.25, Math.sin(an) * r * 1.25); ctx.stroke();
-    }
-    circle(0, 0, r * 0.62, b.col);
-  } else if (kind === 'star') {
-    ctx.fillStyle = b.col; ctx.beginPath();
-    for (let i = 0; i < 10; i++) {
-      const an = -Math.PI / 2 + i * Math.PI / 5, rr = i % 2 ? r * 0.45 : r * 1.1;
-      i ? ctx.lineTo(Math.cos(an) * rr, Math.sin(an) * rr) : ctx.moveTo(Math.cos(an) * rr, Math.sin(an) * rr);
-    }
-    ctx.closePath(); ctx.fill();
-  } else {
-    circle(0, 0, r * 0.9, kind === 'full' ? b.col : 'rgba(40,46,80,0.95)');
-    if (kind === 'half') { ctx.fillStyle = b.col; ctx.beginPath(); ctx.arc(0, 0, r * 0.9, -Math.PI / 2, Math.PI / 2); ctx.closePath(); ctx.fill(); }
-    ctx.shadowBlur = 0;
-    circle(r * 0.35, -r * 0.25, r * 0.17, 'rgba(120,130,170,0.5)');
-    circle(r * 0.2, r * 0.38, r * 0.12, 'rgba(120,130,170,0.5)');
-  }
-  ctx.restore();
+// the field darkens while anything is eclipsed
+function drawEclipseTint() {
+  if (mode !== 'battle' || !teams || !teams.eclipse) return;
+  const t = eclipseT();
+  let a = 0;
+  CHARGE_TYPES.forEach((e, i) => { const left = eclipseLeft(i, t); if (left) a += 0.09 * clamp(Math.min(ECLIPSE_LEN - left, left) / 1.2, 0, 1); });
+  if (a > 0) { ctx.fillStyle = `rgba(14,8,34,${Math.min(0.22, a)})`; ctx.fillRect(0, 0, W, H); }
 }
-// the field takes the colour of the body overhead (and goes hazy under clouds)
-function drawSkyTint() {
-  const s = skyNow();
-  if (!s || s.phase !== 'sky') return;
-  const b = SKY_BODY[s.ev.body], fade = clamp(Math.min(s.into - SKY_CALM, s.left) / 1.2, 0, 1);
-  ctx.fillStyle = `rgba(${b.tint},${0.11 * fade})`; ctx.fillRect(0, 0, W, H);
-  if (s.ev.cloud) { ctx.fillStyle = `rgba(190,195,210,${0.09 * fade})`; ctx.fillRect(0, 0, W, H); }
-}
-// announce each change of sky once
-function skyWatch(s) {
-  const key = s.phase === 'sky' ? 'sky' + s.idx : s.seen ? 'omen' + s.idx : 'calm' + (s.idx ?? 'end');
-  if (key === skySeen) return;
-  const was = skySeen; skySeen = key;
-  if (!was) return;
-  if (s.phase === 'sky') {
-    const b = SKY_BODY[s.ev.body];
-    showBanner(`${s.ev.body === 'sun' ? 'THE SUN' : 'A ' + b.name.toUpperCase()} RISES`, `${skyWords(s.ev)} · ${SKY_EVENT}s`, 3.5);
-    SFX.skyRise();
-  } else if (s.seen) castMessage(`${SKY_BODY[s.next.body].name} rising over ${ELEM_NAME[CHARGE_TYPES[s.next.at]]} in ${SKY_OMEN}s`, SKY_BODY[s.next.body].col);
-  else if (was.startsWith('sky')) { castMessage('The sky is calm again', '#cfd6e6'); SFX.skyCalm(); }
-}
-// the sky clock: a dial round one 45s cycle (calm, then the body), the body
-// overhead or on its way, and which elements work under it
-function drawSkyClock() {
-  const s = skyNow();
-  if (!s) return;
-  skyWatch(s);
-  const bw = 150, bh = 62, x = W - 12 - bw, y = rightStack().skyY;
-  roundRect(x, y, bw, bh, 8); ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fill();
-  const now = s.phase === 'sky', ev = now ? s.ev : s.next, show = now || s.seen;
-  const bcol = ev && show ? SKY_BODY[ev.body].col : '#c9b98a';
-  const cx = x + 30, cy = y + 31, r = 22, a0 = -Math.PI / 2, aC = a0 + TAU * SKY_CALM / SKY_CYCLE;
-  ctx.lineWidth = 4; ctx.lineCap = 'butt';
-  ctx.strokeStyle = 'rgba(255,255,255,0.2)'; ctx.beginPath(); ctx.arc(cx, cy, r, a0, aC); ctx.stroke();
-  if (ev) { ctx.globalAlpha = now ? 1 : 0.5; ctx.strokeStyle = bcol; ctx.beginPath(); ctx.arc(cx, cy, r, aC, a0 + TAU); ctx.stroke(); ctx.globalAlpha = 1; }
-  const ah = a0 + TAU * s.into / SKY_CYCLE;
-  ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.lineCap = 'round';
-  ctx.beginPath(); ctx.moveTo(cx + Math.cos(ah) * (r - 6), cy + Math.sin(ah) * (r - 6)); ctx.lineTo(cx + Math.cos(ah) * (r + 4), cy + Math.sin(ah) * (r + 4)); ctx.stroke();
-  if (ev && show) drawSkyBody(ev.body, cx, cy, 10, now ? 1 : 0.55 + 0.3 * Math.sin(elapsed * 4));
-  else { ctx.fillStyle = '#9aa0b8'; ctx.font = `bold 13px ${SERIF}`; ctx.textAlign = 'center'; ctx.fillText(ev ? '?' : '–', cx, cy + 5); }
-  let label, sub;
-  if (now) { label = SKY_BODY[ev.body].name.toUpperCase(); sub = `${Math.ceil(s.left)}s · ${ev.cloud ? 'clouds' : 'clear sky'}`; }
-  else if (!ev) { label = 'CALM SKY'; sub = 'until the end'; }
-  else if (show) { label = SKY_BODY[ev.body].name.toUpperCase(); sub = `rises in ${Math.ceil(s.left)}s${ev.cloud ? ' · clouds' : ''}`; }
-  else { label = 'CALM SKY'; sub = `next rising in ${Math.ceil(s.left)}s`; }
-  const tx = x + 60;
-  ctx.textAlign = 'left';
-  ctx.fillStyle = now ? bcol : '#e8e4f4'; ctx.font = `bold 11px ${SERIF}`; ctx.fillText(label, tx, y + 16);
-  ctx.fillStyle = '#bbb'; ctx.font = `italic 10px ${SERIF}`; ctx.fillText(sub, tx, y + 29);
-  // the five elements: lit, half strength (½) or dark (struck through)
+// announce each eclipse once: a warning, the eclipse, and its end
+function eclipseWatch(t) {
   CHARGE_TYPES.forEach((e, i) => {
-    const gx = tx + 6 + i * 17, gy = y + 46;
-    const m = ev && show ? (skyLit(ev, e) ? 1 : ev.cloud ? 0.5 : 0) : 1;
-    ctx.globalAlpha = (now ? 1 : 0.65) * (m === 1 ? 1 : m ? 0.8 : 0.3);
-    drawGlyph(ELEM_GLYPH[e], gx, gy, 11, TYPE_COLOR[e]);
-    ctx.globalAlpha = 1;
-    if (m === 0) { ctx.strokeStyle = '#ff6a6a'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(gx - 6, gy + 6); ctx.lineTo(gx + 6, gy - 6); ctx.stroke(); }
-    else if (m === 0.5) { ctx.fillStyle = '#fff'; ctx.font = `bold 8px ${SERIF}`; ctx.textAlign = 'center'; ctx.fillText('½', gx + 6, gy + 9); ctx.textAlign = 'left'; }
+    const left = eclipseLeft(i, t), inn = eclipseIn(i, t);
+    const st = left ? 'on' : inn <= ECLIPSE_WARN && t + inn <= MATCH_TIME ? 'warn' : 'off';
+    const was = eclipseSeen[i];
+    if (st === was) return;
+    eclipseSeen[i] = st;
+    if (was === undefined) return; // first look this match: no fanfare
+    if (st === 'on') { showBanner(`${ELEM_NAME[e].toUpperCase()} ECLIPSED`, `${ELEM_NAME[e]} doesn’t work for ${ECLIPSE_LEN} seconds`, 3.5); SFX.eclipse(); }
+    else if (st === 'warn') castMessage(`${ELEM_NAME[e]} will be eclipsed in ${Math.ceil(inn)}s`, TYPE_COLOR[e]);
+    else if (was === 'on') { castMessage(`${ELEM_NAME[e]} is back`, TYPE_COLOR[e]); SFX.unveil(); }
   });
+}
+// the eclipse clock: five rings, one per element, each with its mark turning.
+// A mark at 12 o'clock eclipses its element for 30 seconds. The clock stays
+// faint until an eclipse is near or on.
+function drawEclipseClock() {
+  if (mode !== 'battle' || !teams || !teams.eclipse) return;
+  const t = eclipseT();
+  eclipseWatch(t);
+  const st = rightStack(), bw = 160, bh = 76, x = W - 12 - bw, y = st.skyY, cx = x + 38, cy = y + 40, R0 = 6, dR = 6;
+  const left = CHARGE_TYPES.map((e, i) => eclipseLeft(i, t));
+  const soon = CHARGE_TYPES.map((e, i) => { const n = eclipseIn(i, t); return !left[i] && n <= ECLIPSE_WARN && t + n <= MATCH_TIME ? n : 0; });
+  const on = left.some(v => v), near = soon.filter(v => v), warnA = near.length ? 1 - Math.min(...near) / ECLIPSE_WARN : 0;
+  const vis = on ? 1 : near.length ? 0.5 + 0.5 * warnA : 0.3;
+  ctx.save(); ctx.globalAlpha = vis;
+  roundRect(x, y, bw, bh, 8); ctx.fillStyle = on ? 'rgba(8,4,20,0.75)' : 'rgba(0,0,0,0.45)'; ctx.fill();
+  if (on) { ctx.strokeStyle = 'rgba(199,125,255,0.6)'; ctx.lineWidth = 1.5; ctx.stroke(); }
+  // 12 o'clock: the eclipse line and its dark sun
+  const top = cy - R0 - 4 * dR - 6;
+  ctx.strokeStyle = 'rgba(255,240,200,0.35)'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx, top); ctx.stroke();
+  ctx.shadowColor = '#ffe9b0'; ctx.shadowBlur = 6; circle(cx, top - 1, 3.5, '#0a0614', '#ffe9b0', 1.2); ctx.shadowBlur = 0;
+  CHARGE_TYPES.forEach((e, i) => {
+    const r = R0 + i * dR, col = TYPE_COLOR[e], a = ringAngle(i, t);
+    if (left[i]) {
+      // eclipsed: a dark band, with the time left running down in colour
+      ctx.strokeStyle = 'rgba(0,0,0,0.7)'; ctx.lineWidth = 4;
+      ctx.beginPath(); ctx.arc(cx, cy, r, 0, TAU); ctx.stroke();
+      ctx.strokeStyle = col; ctx.lineWidth = 2.5;
+      ctx.beginPath(); ctx.arc(cx, cy, r, -Math.PI / 2, -Math.PI / 2 + TAU * left[i] / ECLIPSE_LEN); ctx.stroke();
+    } else {
+      ctx.strokeStyle = soon[i] ? col : 'rgba(255,255,255,0.16)'; ctx.lineWidth = soon[i] ? 1.5 : 1;
+      ctx.beginPath(); ctx.arc(cx, cy, r, 0, TAU); ctx.stroke();
+    }
+    const mx = cx + Math.sin(a) * r, my = cy - Math.cos(a) * r;
+    if (left[i]) circle(mx, my, 3.2, '#0a0614', col, 1.5);
+    else { if (soon[i]) { ctx.shadowColor = col; ctx.shadowBlur = 8; } circle(mx, my, 3.2, col, 'rgba(0,0,0,0.6)', 1); ctx.shadowBlur = 0; }
+  });
+  // words
+  const tx = x + 78;
+  ctx.textAlign = 'left';
+  ctx.fillStyle = on ? '#e9d7ff' : '#cfc8e0'; ctx.font = `bold 10px ${SERIF}`;
+  ctx.fillText('ECLIPSE CLOCK', tx, y + 15);
+  const rows = [];
+  CHARGE_TYPES.forEach((e, i) => { if (left[i]) rows.push([e, `${Math.ceil(left[i])}s`]); });
+  CHARGE_TYPES.forEach((e, i) => { if (soon[i]) rows.push([e, `in ${Math.ceil(soon[i])}s`]); });
+  if (!rows.length) { ctx.fillStyle = '#999'; ctx.font = `italic 10px ${SERIF}`; ctx.fillText('all elements clear', tx, y + 31); }
+  rows.slice(0, 3).forEach(([e, txt], k) => {
+    const ry = y + 31 + k * 16;
+    drawGlyph(ELEM_GLYPH[e], tx + 5, ry - 4, 10, TYPE_COLOR[e]);
+    ctx.textAlign = 'left'; ctx.fillStyle = TYPE_COLOR[e]; ctx.font = `bold 11px ${SERIF}`; ctx.fillText(ELEM_NAME[e], tx + 14, ry);
+    ctx.fillStyle = '#ddd'; ctx.font = `10px ${SERIF}`; ctx.textAlign = 'right'; ctx.fillText(txt, x + bw - 6, ry);
+  });
+  ctx.restore();
 }
 function drawMixTri() {
   if (mode !== 'battle' || !teams || !ordersOpen) return;
@@ -7049,8 +7028,7 @@ function drawPentagram(ghost) {
   }
 
   const showKeys = window.matchMedia && window.matchMedia('(pointer: fine)').matches;
-  const s0 = !ghost && skyNow();
-  const sky = s0 && (s0.phase === 'sky' || (s0.seen && s0.next)) ? { ev: s0.phase === 'sky' ? s0.ev : s0.next, now: s0.phase === 'sky' } : null;
+  const ecl = !ghost && mode === 'battle' && teams && teams.eclipse ? eclipseT() : null;
   for (let i = 0; i < 5; i++) {
     const el = NODE_ORDER[i], e = ELEMENTS[el], p = nodePos(i);
     const count = list.filter(v => v === el).length;
@@ -7079,23 +7057,16 @@ function drawPentagram(ghost) {
       ctx.textAlign = 'center';
       ctx.fillText(`${e.name} [${e.key}]`, p.x, p.y + s / 2 + 12);
     }
-    if (sky) {
-      const elm = RUNE_ELEM[el], m = skyLit(sky.ev, elm) ? 1 : sky.ev.cloud ? 0.5 : 0;
-      if (sky.now && m === 0) {
+    if (ecl !== null) {
+      const ei = CHARGE_TYPES.indexOf(RUNE_ELEM[el]), left = eclipseLeft(ei, ecl), n = eclipseIn(ei, ecl);
+      if (left) {
         roundRect(p.x - s / 2, p.y - s / 2, s, s, 8); ctx.fillStyle = 'rgba(6,6,14,0.66)'; ctx.fill();
         ctx.strokeStyle = 'rgba(255,106,106,0.8)'; ctx.lineWidth = 2.5;
         ctx.beginPath(); ctx.moveTo(p.x - s * 0.35, p.y + s * 0.35); ctx.lineTo(p.x + s * 0.35, p.y - s * 0.35); ctx.stroke();
-      } else if (sky.now && m === 0.5) {
-        roundRect(p.x - s / 2, p.y - s / 2, s, s, 8); ctx.fillStyle = 'rgba(6,6,14,0.35)'; ctx.fill();
-        circle(p.x - s / 2, p.y + s / 2, 10, 'rgba(20,20,32,0.95)', '#aab', 1);
-        ctx.fillStyle = '#fff'; ctx.font = `bold 12px ${SERIF}`; ctx.textAlign = 'center'; ctx.fillText('½', p.x - s / 2, p.y + s / 2 + 4);
-      } else if (sky.now) {
-        ctx.strokeStyle = SKY_BODY[sky.ev.body].col; ctx.globalAlpha = 0.45 + 0.25 * Math.sin(elapsed * 3); ctx.lineWidth = 2;
+        ctx.fillStyle = '#ddd'; ctx.font = `bold 11px ${SERIF}`; ctx.textAlign = 'center'; ctx.fillText(`${Math.ceil(left)}s`, p.x, p.y + s / 2 - 4);
+      } else if (n <= ECLIPSE_WARN && ecl + n <= MATCH_TIME) {
+        ctx.strokeStyle = 'rgba(10,6,20,0.9)'; ctx.globalAlpha = 0.5 + 0.4 * Math.sin(elapsed * 6); ctx.lineWidth = 3;
         roundRect(p.x - s / 2 - 5, p.y - s / 2 - 5, s + 10, s + 10, 11); ctx.stroke(); ctx.globalAlpha = 1;
-      }
-      if (CHARGE_TYPES[sky.ev.at] === elm) {
-        const dx = p.x - cx, dy = p.y - cy, dl = Math.hypot(dx, dy) || 1;
-        drawSkyBody(sky.ev.body, p.x + dx / dl * s * 0.85, p.y + dy / dl * s * 0.85, 9, sky.now ? 1 : 0.5 + 0.3 * Math.sin(elapsed * 4));
       }
     }
   }
@@ -7214,8 +7185,8 @@ const HOWTO = [
   ['p', 'Your base is on the left, red’s is on the right. Most points after 5 minutes wins.'],
   ['points'],
   ['p', 'Every 10 seconds someone gets a build turn. Pick an element, then build a turret where you stand (it claims ground) or send a titan. A dial beside the clock counts down to the next turn. No building in the last 15 seconds.'],
-  ['p', 'Top right: the map (with each side’s share of the ground written on it), the match clock, the build clock and the sky clock.'],
-  ['p', 'Watch the sky clock. Every 45 seconds a Sun, Moon or Star rises for 15 seconds, and some elements stop working or get weaker. See “The sky” below.'],
+  ['p', 'Top right: the map (with each side’s share of the ground written on it), the match clock, the build clock and the eclipse clock.'],
+  ['p', 'The eclipse clock has a ring for each element. When an element’s mark reaches 12 o’clock it is eclipsed and doesn’t work for 30 seconds. See “Eclipses” below.'],
   ['p', 'ARMY (bottom right) opens your army commands: Follow me or Spread out, what your minions and titans attack or protect when spread out, and the minion mix (drag the dot to choose which minions you send). In battle the FIRE button is bottom left.'],
   ['h', 'Tips'],
   ['p', 'Try every pair of elements first. Two-rune spells are quick and cheap.'],
@@ -7225,18 +7196,18 @@ const HOWTO = [
   ['H', 'Extra information'],
   ['h', 'The element circle'],
   ['cycle'],
-  ['p', 'Each element does double damage to the next one around the circle, and half damage to the two it is weak to: Water beats Fire, Fire beats Air, Air beats Earth, Earth beats Spirit, Spirit beats Water.'],
+  ['p', 'Each element is super effective against the next one around the circle: 2.5× damage. It works the other way too: hitting the element that beats you does only 0.4×. Everything else is normal damage. Water beats Fire, Fire beats Air, Air beats Earth, Earth beats Spirit, Spirit beats Water.'],
   ['p', 'This counts for your spells, your minions, turrets and titans, and the guardians in Adventure.'],
   ['h', 'Resonance (team powers)'],
   ['p', 'What your army is made of gives the whole team a power. It is read live from your units on the field: a minion counts 1, a turret 3, a titan 4.'],
   ['res'],
   ['p', 'Each power grows with that element’s share of your army, with diminishing returns: the first part of a mix gives the most. A one-element army also gets countered easily. Mixing pays, and leaning into a favourite is fine too.'],
   ['p', 'The box under your score shows both sides’ powers (blue row is you, red row is them).'],
-  ['h', 'The sky: Sun, Moon and Star'],
-  ['p', 'Every 45 seconds: 30 seconds of calm sky, then 15 seconds under a Sun, a Moon or a Star. The sky clock shows where you are in the cycle, and the next body appears 10 seconds before it rises.'],
-  ['p', 'The body rises over one point of the casting star. The elements that can bear its light are that point and the next ones clockwise. The brighter the body, the fewer: a Star 4 (most common), a Half Moon 3, a Full Moon 2, the Sun just 1 (rarest).'],
-  ['p', 'The other elements are in shadow. Under a clear sky they don’t work at all: spells made of them can’t be cast, and minions, turrets, titans and wizards of that element stop fighting. Under clouds they still work, at half strength.'],
-  ['p', 'Each rising is one point further clockwise than the last, so you can plan ahead. On the casting star, shadowed points are crossed out (or marked ½ under clouds). Arrows always work.'],
+  ['h', 'Eclipses'],
+  ['p', 'The eclipse clock (top right) has five rings, one for each element, each with a mark turning at its own steady pace. The clock stays faint until an eclipse is close.'],
+  ['p', 'When a mark reaches 12 o’clock, that element is eclipsed for 30 seconds: spells made of it can’t be cast, and minions, turrets, titans and wizards of that element stop fighting. It counts for both sides.'],
+  ['p', 'Marks can reach the top close together, so two eclipses can overlap. Most matches have one or two; some have more, and once in a while a whole match is an eclipse season with them spread all the way through.'],
+  ['p', 'You get 8 seconds’ warning: the element’s ring lights up and its point on the casting star pulses. While eclipsed it is crossed out with the seconds left. Arrows always work.'],
   ['h', 'Minions'],
   ['minions'],
   ['p', 'A hit rattles a minion: its attacks slow for a moment, so ganging up works.'],
@@ -7796,7 +7767,7 @@ function render() {
   }
   drawWorld();
   drawAtmosphere();
-  drawSkyTint();
+  drawEclipseTint();
   if (flash > 0) { ctx.fillStyle = `rgba(255,246,176,${flash * 0.7})`; ctx.fillRect(0, 0, W, H); }
   if (state === 'play' && timeStop > 0) { ctx.fillStyle = 'rgba(200,200,220,0.28)'; ctx.fillRect(0, 0, W, H); }
   else if (state === 'play' && timeWarp > 0) { ctx.fillStyle = 'rgba(60,120,255,0.13)'; ctx.fillRect(0, 0, W, H); }
