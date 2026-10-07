@@ -2300,8 +2300,8 @@ function movePlayer(dx, dy, step) {
 //    every 5 on the tally is a point. A turret is worth 5 points outright,
 //    and a duel friend's wizard 10.
 //  · Sigils: each side has one sigil in its own ground. Destroying the
-//    other side's scores 50 and earns a bonus build; it reappears elsewhere
-//    behind a 15s wall. Destroying a base scores 60 and ends the match.
+//    other side's scores 75 and earns a bonus build; it reappears elsewhere
+//    behind a 15s wall. Destroying a base scores 100 and ends the match.
 // Build turns alternate: on yours, build a turret (claims open ground) or a titan.
 let difficulty = 'easy';
 let friends = [];   // blue units and structures (your side)
@@ -2309,7 +2309,7 @@ let bshots = [];    // shots from units and towers
 let teams = null;
 let links = [];     // laser walls between friendly towers
 const BUILD_CLOSE = 15; // no building in the last 15 seconds
-const MATCH_TIME = 300, BUILD_EVERY = 10, SIGIL_WALL = 15, GROUND_BONUS = 140, BASE_BONUS = 60;
+const MATCH_TIME = 300, BUILD_EVERY = 10, SIGIL_WALL = 15, GROUND_BONUS = 140, BASE_BONUS = 100;
 const FRONT_X = WORLD * 0.32; // the line (±) behind which each side holds 30% of the oval at the start
 const TEAM_COLOR = { blue: '#4aa8ff', red: '#ff4a5a' };
 const UNITS = {
@@ -2324,7 +2324,7 @@ const UNITS = {
   // turrets sting but don't dominate; a few focused hits bring one down
   turret: { name: 'Turret', pts: 1, hp: 45,  spd: 0,  r: 24, range: 260, dmg: 2.2, cd: 1.4, aggro: 260, ranged: true, structure: true },
   nexus:  { name: 'Base',   pts: 0, hp: 250, spd: 0,  r: 55, range: 300, dmg: 2.5, cd: 1.6, aggro: 300, ranged: true, structure: true },
-  sigil:  { name: 'Sigil',  pts: 50, hp: 40, spd: 0,  r: 20, range: 0,   dmg: 0,   cd: 99,  aggro: 0,   structure: true, passive: true },
+  sigil:  { name: 'Sigil',  pts: 75, hp: 40, spd: 0,  r: 20, range: 0,   dmg: 0,   cd: 99,  aggro: 0,   structure: true, passive: true },
 };
 for (const k in UNITS) { UNITS[k].mult = {}; UNITS[k].color = '#ccc'; }
 const MINION_KINDS = ['wisp', 'archer', 'imp', 'brute', 'flyer']; // pentagram order: S W F E A
@@ -3069,8 +3069,8 @@ function redMix() {
 // off to defend it. Each unit focuses fire with its neighbours, ranged units
 // back away from melee, and tired minions go home to rest.
 // ── red's commander: every level plays to win ──
-// Red always chases points: it weighs what each target is worth (a sigil 50
-// and a bonus build, a turret 5 plus the ground it holds, the base 60 and the
+// Red always chases points: it weighs what each target is worth (a sigil 75
+// and a bonus build, a turret 5 plus the ground it holds, the base 100 and the
 // match), watches the scoreboard and the land race, and pushes, defends or
 // gambles to come out ahead. The level sets how WELL it does that: how often
 // it rethinks, how sound its choices are, how tightly the army masses and
@@ -3121,7 +3121,7 @@ function redBrain(dt) {
   for (const o of blue) {
     if (!o.structure || shielded(o)) continue;
     let v = 0;
-    if (o.kind === 'sigil') v = 65;                                                          // 50 and a bonus build
+    if (o.kind === 'sigil') v = 90;                                                          // 75 and a bonus build
     else if (o.kind === 'turret') v = TURRET_PTS + landSwing(o) / FIELD_AREA * GROUND_BONUS * (landClose ? 2 : 0.7);
     else if (o.kind === 'nexus') v = P.red + BASE_BONUS > P.blue ? 120 : -50;                // only end a match you'd win
     if (mood === 'chase' && (o.kind === 'sigil' || o.kind === 'nexus')) v *= 1.5;
@@ -7096,10 +7096,10 @@ const HOWTO = [
   ['p', 'Wizards: two per side, shooting from range. They retreat to heal when hurt and come back 12 seconds after falling.'],
   ['p', 'Titans: big, slow walkers whose slam hits everything near the target. They march on enemy turrets.'],
   ['p', 'Turrets: shoot anything that comes close and claim ground. The lines between your towers mark your land.'],
-  ['p', 'Sigils: each side has one, walled in for 15 seconds after it appears. Breaking the enemy’s is worth 50 and a bonus build.'],
+  ['p', 'Sigils: each side has one, walled in for 15 seconds after it appears. Breaking the enemy’s is worth 75 and a bonus build.'],
   ['h', 'Scoring in detail'],
   ['p', 'Kills fill a tally (shown under the ground bar): a minion adds 1, a titan 5, a wizard 10. Every 5 on the tally is a point. If your hero falls, it adds 10 to red’s tally.'],
-  ['p', 'A turret is worth 5 points. A friend’s wizard in a duel is worth 10. The enemy base is worth 60 and ends the match. Most ground at the end is worth 140.'],
+  ['p', 'A turret is worth 5 points. A friend’s wizard in a duel is worth 10. The enemy base is worth 100 and ends the match. Most ground at the end is worth 140.'],
   ['h', 'Magic in battle'],
   ['p', 'Each element has an energy circle (the five small circles). Using one drains it, and below 40% that element hits softer, down to 40% damage when empty. Mix your elements up.'],
   ['p', 'Your mana refills slowly in enemy ground and fastest at your fountain.'],
@@ -7214,7 +7214,7 @@ function drawHowTo(y, bx, bw) {
       yy += 4;
     } else if (kind === 'points') {
       // a little table of what scores
-      const rows = [['Every 5 on your kill tally', '1'], ['   a minion adds 1, a titan 5, a wizard 10', ''], ['Enemy turret', '5'], ['A friend’s wizard in a duel', '10'], ['Enemy sigil (+ a bonus build)', '50'], ['Enemy base (ends the match)', '60'], ['Most ground at the end', '140']];
+      const rows = [['Every 5 on your kill tally', '1'], ['   a minion adds 1, a titan 5, a wizard 10', ''], ['Enemy turret', '5'], ['A friend’s wizard in a duel', '10'], ['Enemy sigil (+ a bonus build)', '75'], ['Enemy base (ends the match)', '100'], ['Most ground at the end', '140']];
       ctx.font = `14px ${SERIF}`;
       for (const [what, pts] of rows) {
         ctx.textAlign = 'left'; ctx.fillStyle = '#efe9f8'; ctx.fillText(what, L + 18, yy + 14);
