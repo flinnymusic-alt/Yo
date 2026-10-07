@@ -685,7 +685,6 @@ function resetPlayer() {
     omni: 0, omniIdx: 0, mirror: 0, regen: 0, sanct: 0, phoenix: 0,
     onBoat: false, boardCd: 0, arrowCd: 0, charging: null, loaded: null,
   });
-  resetCharge();
 }
 
 function makeBoss(def) {
@@ -796,27 +795,7 @@ function aimFrom(src, range) {
   return { x: player.face.x, y: player.face.y, t: null };
 }
 
-// ── magic energy (battle) ──
-// Every kind of magic has a little energy circle. Each use drains it a bit; it
-// refills slowly. Below 40% that kind loses power (down to 40% damage when empty).
 const CHARGE_TYPES = ['spirit', 'water', 'fire', 'earth', 'air']; // pentagram order
-// a drained element refills slowly, and only once you've let it rest for a moment
-const CHARGE_LOW = 0.4, CHARGE_REGEN = 0.02, CHARGE_COST = 0.14, CHARGE_REST = 3;
-function resetCharge() {
-  player.charge = Object.fromEntries(CHARGE_TYPES.map(t => [t, 1]));
-  player.chargeT = {};
-}
-function chargeMult(type) {
-  const c = player.charge ? player.charge[type] : 1;
-  return c >= CHARGE_LOW ? 1 : 0.4 + 0.6 * c / CHARGE_LOW;
-}
-// one drain per kind per moment, so a blast that hits a crowd costs about the same as a single hit
-function drainCharge(type) {
-  if (!player.charge) resetCharge();
-  if (elapsed - (player.chargeT[type] ?? -9) < 0.35) return;
-  player.chargeT[type] = elapsed;
-  player.charge[type] = Math.max(0, player.charge[type] - CHARGE_COST);
-}
 
 // ── the sky: sun, moon and star ──
 // Every 45 seconds of a battle: 30 seconds of calm, then 15 under a sky body.
@@ -904,16 +883,6 @@ function damageFoe(f, dmg, rawType, fromHelper) {
   }
   if (f.hex > 0 || f.stone > 0) mult *= 1.5;
   if (f.unit && f.elem) mult *= elemMult(type, f.elem);
-  // Battle: each kind of magic has its own energy; drained kinds hit softer
-  if (mode === 'battle' && CHARGE_TYPES.includes(type) && !fromHelper) {
-    const cm = chargeMult(type);
-    mult *= cm;
-    drainCharge(type);
-    if (cm < 0.8 && (player.chargeTxtCd || 0) <= 0) {
-      floatText(player.x, player.y - 44, `${type} is drained · mix it up!`, TYPE_COLOR[type], 12);
-      player.chargeTxtCd = 1.5;
-    }
-  }
   if (player.empower > 0 && !fromHelper) mult *= 2;
   const d = f.unit ? minionHit(f, mageGuard(f, dmg * mult)) * resDmgIn(f.team) : dmg * mult;
   f.hp -= d;
@@ -2319,11 +2288,6 @@ function heroTimers(dt) {
   }
 
   for (const k of ['omni', 'mirror', 'sanct', 'phoenix', 'regen']) player[k] = Math.max(0, player[k] - dt);
-  if (player.charge) for (const t of CHARGE_TYPES) {
-    if (elapsed - ((player.chargeT && player.chargeT[t]) ?? -9) < CHARGE_REST) continue;
-    player.charge[t] = Math.min(1, player.charge[t] + CHARGE_REGEN * dt);
-  }
-  if (player.chargeTxtCd > 0) player.chargeTxtCd -= dt;
   if (player.regen > 0) player.hp = Math.min(player.maxHp, player.hp + 1.2 * dt);
 }
 
@@ -3756,7 +3720,6 @@ function packHero(p, disc) {
     b: ['skin', 'haste', 'empower', 'ward', 'mirror', 'sanct', 'regen', 'phoenix', 'omni'].map(k => r1(p[k])),
     ch: p.charging ? [p.charging.key, r1(p.charging.t), p.charging.max] : null,
     ld: p.loaded ? [p.loaded.key, p.loaded.left] : null,
-    cg: p.charge ? CHARGE_TYPES.map(t => r1(p.charge[t])) : null,
     dead: !!p.dead, rt: r1(p.respawnT), tp: p.tp || 0, disc,
   };
 }
@@ -3827,7 +3790,6 @@ function unpackHero(h, into) {
     dead: h.dead,
   });
   ['skin', 'haste', 'empower', 'ward', 'mirror', 'sanct', 'regen', 'phoenix', 'omni'].forEach((k, i) => into[k] = h.b[i]);
-  if (h.cg) into.charge = Object.fromEntries(CHARGE_TYPES.map((t, i) => [t, h.cg[i]]));
   return into;
 }
 
@@ -4223,7 +4185,7 @@ function liveTilt() {
 
 function fireButton() {
   const r = Math.max(28, Math.min(36, W * 0.085));
-  return { x: W - 16 - r, y: H - 16 - r, r };
+  return { x: mode === 'battle' ? 16 + r : W - 16 - r, y: H - 16 - r, r };
 }
 function fireButtonHit(x, y) {
   if (!player.loaded) return false;
@@ -4231,9 +4193,15 @@ function fireButtonHit(x, y) {
   return Math.hypot(x - b.x, y - b.y) < b.r + 8;
 }
 
+// battle's top-right column: map, clocks, sky clock, then the sound and tilt labels
+function rightStack() {
+  const mapH = Math.min(160, W * 0.38) * ARENA_H / WORLD, clockY = 12 + mapH + 8, skyY = clockY + 40;
+  return { mapH, clockY, skyY, btnY: skyY + 68 };
+}
 function soundRect() {
   const s = Math.min(110, W * 0.26);
-  return { x: W - s - 12, y: 12 + s + 4 + (isTouch ? 28 : 0), w: s, h: 24 };
+  const y = mode === 'battle' && teams ? rightStack().btnY : 12 + s + 4;
+  return { x: W - s - 12, y: y + (isTouch ? 28 : 0), w: s, h: 24 };
 }
 // battle orders panel, opened from a button under the sound label
 let ordersOpen = false;
@@ -4241,25 +4209,25 @@ const ORDER_OPTS = [
   ['attackTurrets', 'Attack turrets'], ['attackBase', 'Attack base'],
   ['protectTurrets', 'Protect turrets'], ['protectBase', 'Protect base'],
 ];
-function ordersBtnRect() { const r = soundRect(); return { x: r.x, y: r.y + r.h + 6, w: r.w, h: 24 }; }
 function ordersPanel() {
-  const w = Math.min(340, W - 32), h = 262, x = W / 2 - w / 2, y = Math.max(60, panelTop / 2 - h / 2);
-  const rows = ['minion', 'titan'].map((grp, gi) => ORDER_OPTS.map(([key, label], i) => ({
-    grp, key, label, x: x + 14 + (i % 2) * ((w - 38) / 2 + 10), y: y + 66 + gi * 94 + Math.floor(i / 2) * 38, w: (w - 38) / 2, h: 32,
-  })));
-  return { x, y, w, h, opts: rows.flat(), close: { x: x + w - 34, y: y + 8, w: 26, h: 26 } };
+  const w = Math.min(360, W - 24), h = 510, x = W / 2 - w / 2, y = clamp((H - h) / 2, 10, 60);
+  const bw = (w - 38) / 2, at = (i, y0) => ({ x: x + 14 + (i % 2) * (bw + 10), y: y0 + Math.floor(i / 2) * 38, w: bw, h: 32 });
+  const move = [['follow', 'Follow me'], ['spread', 'Spread out']].map(([key, label], i) => ({ grp: 'move', key, label, ...at(i, y + 66) }));
+  const rows = ['minion', 'titan'].map((grp, gi) => ORDER_OPTS.map(([key, label], i) => ({ grp, key, label, ...at(i, y + 150 + gi * 94) })));
+  return { x, y, w, h, opts: move.concat(rows.flat()), close: { x: x + w - 34, y: y + 8, w: 26, h: 26 }, mixY: y + 340 };
 }
 function ordersHit(x, y) {
   if (mode !== 'battle' || !teams) return false;
   const inR = (r) => x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
   if (!ordersOpen) {
-    if (inR(ordersBtnRect())) { ordersOpen = true; return true; }
+    if (orderHit(x, y)) { ordersOpen = true; SFX.buff(); return true; }
     return false;
   }
   const P = ordersPanel();
-  if (inR(P.close) || !inR(P)) { ordersOpen = false; return true; }
+  if (inR(P.close) || !inR(P) || orderHit(x, y)) { ordersOpen = false; return true; }
   const o = P.opts.find(inR);
-  if (o) {
+  if (o && o.grp === 'move') { if (teams.order !== o.key) toggleOrder(); }
+  else if (o) {
     teams.orders[o.grp] = o.key;
     if (net.role === 'guest') net.send({ t: 'orders', grp: o.grp, v: o.key });
     castMessage(`${o.grp === 'minion' ? 'Minions' : 'Titans'}: ${o.label.toLowerCase()}`, TEAM_COLOR.blue);
@@ -4268,36 +4236,50 @@ function ordersHit(x, y) {
   return true; // the panel takes every tap while it's open
 }
 function drawOrders() {
-  if (mode !== 'battle' || !teams) return;
-  const b = ordersBtnRect();
-  roundRect(b.x, b.y, b.w, b.h, 6);
-  ctx.fillStyle = ordersOpen ? 'rgba(74,168,255,0.85)' : 'rgba(0,0,0,0.55)'; ctx.fill();
-  ctx.strokeStyle = 'rgba(74,168,255,0.6)'; ctx.lineWidth = 1; ctx.stroke();
-  ctx.fillStyle = ordersOpen ? '#08111e' : '#cfe6ff'; ctx.font = '11px "Big Caslon", "Libre Caslon Text", Georgia, serif'; ctx.textAlign = 'center';
-  ctx.fillText('⚙ Army orders', b.x + b.w / 2, b.y + 16);
-  if (!ordersOpen) return;
-  const P = ordersPanel();
+  if (mode !== 'battle' || !teams || !ordersOpen) return;
+  const P = ordersPanel(), follow = teams.order === 'follow';
   ctx.fillStyle = 'rgba(5,3,10,0.5)'; ctx.fillRect(0, 0, W, H);
   roundRect(P.x, P.y, P.w, P.h, 14); ctx.fillStyle = 'rgba(16,20,36,0.97)'; ctx.fill();
   ctx.strokeStyle = TEAM_COLOR.blue; ctx.lineWidth = 2; ctx.stroke();
-  ctx.fillStyle = '#fff'; ctx.font = 'bold 16px "Big Caslon", "Libre Caslon Text", Georgia, serif'; ctx.textAlign = 'left';
-  ctx.fillText('Army orders', P.x + 14, P.y + 26);
-  ctx.font = '11px "Big Caslon", "Libre Caslon Text", Georgia, serif'; ctx.fillStyle = '#aaa';
-  ctx.fillText('Used when your army is spread out (not following you).', P.x + 14, P.y + 42);
-  ctx.textAlign = 'center'; ctx.font = 'bold 15px "Big Caslon", "Libre Caslon Text", Georgia, serif'; ctx.fillStyle = '#ddd';
+  ctx.fillStyle = '#fff'; ctx.font = `bold 17px ${SERIF}`; ctx.textAlign = 'left';
+  ctx.fillText('Army commands', P.x + 14, P.y + 27);
+  ctx.textAlign = 'center'; ctx.font = `bold 15px ${SERIF}`; ctx.fillStyle = '#ddd';
   ctx.fillText('✕', P.close.x + 13, P.close.y + 18);
-  for (const [gi, grp] of ['minion', 'titan'].entries()) {
-    ctx.textAlign = 'left'; ctx.font = 'bold 12px "Big Caslon", "Libre Caslon Text", Georgia, serif'; ctx.fillStyle = TEAM_COLOR.blue;
-    ctx.fillText(grp === 'minion' ? 'Minions' : 'Titans', P.x + 14, P.y + 60 + gi * 94);
-  }
+  const head = (t, y, sub) => {
+    ctx.textAlign = 'left'; ctx.font = `bold 12px ${SERIF}`; ctx.fillStyle = TEAM_COLOR.blue; ctx.fillText(t, P.x + 14, y);
+    if (sub) { const tw = ctx.measureText(t).width; ctx.font = `italic 10px ${SERIF}`; ctx.fillStyle = '#999'; ctx.fillText(sub, P.x + 20 + tw, y); }
+  };
+  head('Movement', P.y + 58, follow ? 'your army sticks with you' : 'your army pushes on its own');
+  head('Minions', P.y + 142, 'when spread out');
+  head('Titans', P.y + 236, 'when spread out');
   for (const o of P.opts) {
-    const on = teams.orders[o.grp] === o.key, protect = o.key.startsWith('protect');
+    const on = o.grp === 'move' ? teams.order === o.key : teams.orders[o.grp] === o.key;
+    const protect = o.key.startsWith('protect') || o.key === 'follow';
     roundRect(o.x, o.y, o.w, o.h, 8);
-    ctx.fillStyle = on ? (protect ? 'rgba(125,255,74,0.25)' : 'rgba(255,90,90,0.25)') : 'rgba(255,255,255,0.05)'; ctx.fill();
-    ctx.strokeStyle = on ? (protect ? '#7dff4a' : '#ff6a6a') : 'rgba(255,255,255,0.2)'; ctx.lineWidth = on ? 2 : 1; ctx.stroke();
-    ctx.fillStyle = on ? '#fff' : '#bbb'; ctx.font = (on ? 'bold ' : '') + '12px "Big Caslon", "Libre Caslon Text", Georgia, serif'; ctx.textAlign = 'center';
-    ctx.fillText((protect ? '🛡 ' : '⚔ ') + o.label, o.x + o.w / 2, o.y + 20);
+    ctx.fillStyle = on ? (o.grp === 'move' ? 'rgba(74,168,255,0.3)' : protect ? 'rgba(125,255,74,0.25)' : 'rgba(255,90,90,0.25)') : 'rgba(255,255,255,0.05)'; ctx.fill();
+    ctx.strokeStyle = on ? (o.grp === 'move' ? TEAM_COLOR.blue : protect ? '#7dff4a' : '#ff6a6a') : 'rgba(255,255,255,0.2)'; ctx.lineWidth = on ? 2 : 1; ctx.stroke();
+    ctx.fillStyle = on ? '#fff' : '#bbb'; ctx.font = (on ? 'bold ' : '') + `12px ${SERIF}`; ctx.textAlign = 'center';
+    const icon = o.grp === 'move' ? (o.key === 'follow' ? '⟲ ' : '⇶ ') : protect ? '🛡 ' : '⚔ ';
+    ctx.fillText(icon + o.label, o.x + o.w / 2, o.y + 20);
   }
+  head('Minion mix', P.mixY, 'drag the dot toward the kinds you want');
+  drawMixTri();
+  // the spread of your minions: the next wave and what's on the field now
+  const T = mixTri(), lx = T.cx + T.R + 46, counts = waveKinds(teams.blue.mix, teams.blue.minions).reduce((m, k) => (m[k] = (m[k] || 0) + 1, m), {});
+  let ly = P.mixY + 26;
+  ctx.font = `italic 10px ${SERIF}`; ctx.fillStyle = '#999'; ctx.textAlign = 'right';
+  ctx.fillText('next wave', lx + 100, ly); ctx.fillText('field', lx + 138, ly);
+  for (const k of MINION_KINDS) {
+    ly += 22;
+    const e = UNITS[k].elem, onField = friends.filter(u => u.kind === k && !u.dead).length;
+    drawGlyph(ELEM_GLYPH[e], lx + 6, ly - 4, 11, TYPE_COLOR[e]);
+    ctx.textAlign = 'left'; ctx.font = `12px ${SERIF}`; ctx.fillStyle = TYPE_COLOR[e]; ctx.fillText(UNITS[k].name, lx + 18, ly);
+    ctx.textAlign = 'right'; ctx.fillStyle = '#eee';
+    ctx.fillText(`${counts[k] || 0} · ${Math.round(teams.blue.mix[k] * 100)}%`, lx + 100, ly);
+    ctx.fillText(String(onField), lx + 138, ly);
+  }
+  ctx.textAlign = 'left'; ctx.font = `italic 10px ${SERIF}`; ctx.fillStyle = '#999';
+  ctx.fillText(`${teams.blue.minions} minions a wave`, lx, ly + 22);
 }
 
 function soundHit(x, y) {
@@ -4308,7 +4290,7 @@ function soundHit(x, y) {
 const isTouch = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
 function tiltLabelRect() {
   const s = Math.min(110, W * 0.26);
-  return { x: W - s - 12, y: 12 + s + 4, w: s, h: 24 };
+  return { x: W - s - 12, y: mode === 'battle' && teams ? rightStack().btnY : 12 + s + 4, w: s, h: 24 };
 }
 function tiltLabelHit(x, y) {
   if (!isTouch) return false;
@@ -4365,7 +4347,8 @@ canvas.addEventListener('pointerdown', e => {
     return;
   }
   if (tapOverlay(x, y)) return;
-  if (ordersOpen && ordersHit(x, y)) return; // the open orders panel comes first
+  if (ordersOpen && mixHit(x, y)) { mixPtr = e.pointerId; setMixAt(x, y); try { canvas.setPointerCapture(e.pointerId); } catch (_) {} return; }
+  if (ordersOpen && ordersHit(x, y)) return; // the open army panel comes first
   if (soundHit(x, y)) { toggleSound(); return; }
   if (tiltLabelHit(x, y)) {
     if (tilt.raw) { levelTilt(); castMessage('Tilt levelled', '#ccc'); }
@@ -4373,9 +4356,6 @@ canvas.addEventListener('pointerdown', e => {
     return;
   }
   if (ordersHit(x, y)) return;
-  if (orderHit(x, y)) { toggleOrder(); return; }
-  if (mixToggleHit(x, y)) { mixOpen = !mixOpen; return; }
-  if (mixHit(x, y)) { mixPtr = e.pointerId; setMixAt(x, y); try { canvas.setPointerCapture(e.pointerId); } catch (_) {} return; }
   const bb = buildButtonHit(x, y);
   if (bb) { if (bb.key === 'elem') teams.buildElem = bb.elem; else buildChoice(bb.key); return; }
   if (fireButtonHit(x, y)) { holdTilt(); fireLoaded(); tilt.pauseUntil = performance.now() + 400; return; }
@@ -6497,9 +6477,8 @@ function drawHUD() {
   }
   ctx.fillStyle = '#ccc';
   ctx.font = '12px "Big Caslon", "Libre Caslon Text", Georgia, serif';
-  if (mode === 'battle' && teams) drawMatchClock(14, 102);
-  else ctx.fillText(`Spells ${discovered.size}/${SPELL_COUNT}   Guardians ${bossesDown}/${BOSSES.length}`, 14, 90);
-  if (mode === 'battle') drawBattleStatus(14, 124); else drawHunt(14, 108);
+  if (mode === 'battle' && teams) { drawMatchClock(W - 216, rightStack().clockY + 25); drawTally(14, 90); }
+  else { ctx.fillText(`Spells ${discovered.size}/${SPELL_COUNT}   Guardians ${bossesDown}/${BOSSES.length}`, 14, 90); drawHunt(14, 108); }
 
   const buffs = [];
   if (player.ward > 0)    buffs.push([`Ward ×${player.ward}`, TYPE_COLOR.spirit]);
@@ -6516,15 +6495,14 @@ function drawHUD() {
   let bx = 14;
   for (const [t, c] of buffs) {
     ctx.fillStyle = c;
-    ctx.fillText(t, bx, 140);
+    ctx.fillText(t, bx, mode === 'battle' ? 162 : 140);
     bx += ctx.measureText(t).width + 12;
   }
 
   drawMinimap();
   drawBuildButtons();
-  drawCharges();
   drawSkyClock();
-  drawMixTri();
+  drawResonance();
   {
     const r = soundRect();
     roundRect(r.x, r.y, r.w, r.h, 6);
@@ -6597,8 +6575,9 @@ function drawFireButton() {
   ctx.fillText(L ? `×${L.left}` : '', b.x, b.y + 14);
   ctx.fillStyle = col;
   ctx.font = '11px "Big Caslon", "Libre Caslon Text", Georgia, serif';
-  ctx.textAlign = 'right';
-  ctx.fillText(SPELLS[key].name, W - 10, b.y - b.r - 12);
+  const left = b.x < W / 2;
+  ctx.textAlign = left ? 'left' : 'right';
+  ctx.fillText(SPELLS[key].name, left ? 10 : W - 10, b.y - b.r - 12);
 }
 
 // how much ground each side holds, and whose build turn is next
@@ -6663,43 +6642,27 @@ function drawMatchClock(x, y) {
     ctx.globalAlpha = 1;
   }
 }
-function drawBattleStatus(x, y) {
-  if (!teams) return;
-  const total = FIELD_CELLS, w = Math.min(170, W * 0.42);
-  const b = teams.blue.cells / total, r = teams.red.cells / total;
-  ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(x, y - 9, w, 9);
-  ctx.fillStyle = TEAM_COLOR.blue; ctx.fillRect(x, y - 9, w * b, 9);
-  ctx.fillStyle = TEAM_COLOR.red; ctx.fillRect(x + w * (1 - r), y - 9, w * r, 9);
-  ctx.font = '10px "Big Caslon", "Libre Caslon Text", Georgia, serif';
-  ctx.textAlign = 'left';
-  ctx.fillStyle = '#ccc';
+// the kill tally, under the score
+function drawTally(x, y) {
   const tl = (teams.tally && teams.tally.blue) || 0;
-  ctx.fillText(`Ground ${Math.round(b * 100)}% / ${Math.round(r * 100)}%   ·   tally ${tl % 5}/5`, x, y + 12);
-  ctx.fillStyle = '#aaa';
-  ctx.fillText(`most ground at the end: +${GROUND_BONUS}`, x, y + 26);
+  ctx.font = `11px ${SERIF}`; ctx.textAlign = 'left'; ctx.fillStyle = '#ccc';
+  ctx.fillText(`Kill tally ${tl % 5}/5 · every 5 is a point`, x, y);
 }
 
 // The minion mix: a pentagon with one corner per element (laid out like the
 // casting pentagram). Drag the dot toward the kinds you want more of.
 function mixTri() {
-  const R = Math.min(46, W * 0.11), cx = 44 + R, cy = 214 + R, pts = {};
+  const P = ordersPanel(), R = Math.min(56, W * 0.14), cx = P.x + 26 + R, cy = P.mixY + 36 + R, pts = {};
   MINION_KINDS.forEach((k, i) => { const a = -Math.PI / 2 + i * TAU / 5; pts[k] = { x: cx + Math.cos(a) * R, y: cy + Math.sin(a) * R }; });
   return { R, cx, cy, pts };
 }
 function mixPoint() {
   const T = mixTri(), m = teams.blue.mix;
-  if (teams.blue.dot) return teams.blue.dot;
+  if (teams.blue.dot) return { x: T.cx + teams.blue.dot.x, y: T.cy + teams.blue.dot.y };
   return { x: MINION_KINDS.reduce((a, k) => a + T.pts[k].x * m[k], 0), y: MINION_KINDS.reduce((a, k) => a + T.pts[k].y * m[k], 0) };
 }
-let mixOpen = false;
-function mixToggleRect() { return { x: 14, y: 176, w: 74, h: 22 }; }
-function mixToggleHit(x, y) {
-  if (mode !== 'battle' || !teams) return false;
-  const r = mixToggleRect();
-  return x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
-}
 function mixHit(x, y) {
-  if (mode !== 'battle' || !teams || !mixOpen) return false;
+  if (mode !== 'battle' || !teams || !ordersOpen) return false;
   const T = mixTri();
   return Math.hypot(x - T.cx, y - T.cy) < T.R + 22;
 }
@@ -6713,14 +6676,14 @@ function setMixAt(x, y) {
   const w = MINION_KINDS.map(k => 1 / (Math.hypot(px - T.pts[k].x, py - T.pts[k].y) ** 2 + T.R * T.R * 0.08));
   const tot = w.reduce((a, b) => a + b, 0);
   teams.blue.mix = Object.fromEntries(MINION_KINDS.map((k, i) => [k, w[i] / tot]));
-  teams.blue.dot = { x: px, y: py };
+  teams.blue.dot = { x: dx, y: dy }; // kept relative to the pentagon
   if (net.role === 'guest') { const now = performance.now(); if (now - (net.mixT || 0) > 150) { net.mixT = now; net.send({ t: 'mix', mix: teams.blue.mix }); } }
 }
 // each side's resonance: the five powers and how strong they are right now
 function drawResonance() {
   if (mode !== 'battle' || !teams || !teams.res) return;
-  const o = ordersBtnRect(), x0 = o.x, w = o.w, cw = w / 5;
-  let y = o.y + o.h + 6;
+  const x0 = 14, w = Math.min(112, W * 0.3), cw = w / 5;
+  let y = 98;
   roundRect(x0, y, w, 46, 6); ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fill();
   ['blue', 'red'].forEach((team, row) => {
     const r = resOf(team), yy = y + 4 + row * 21;
@@ -6790,7 +6753,7 @@ function drawSkyClock() {
   const s = skyNow();
   if (!s) return;
   skyWatch(s);
-  const o = ordersBtnRect(), bw = 150, bh = 62, x = o.x + o.w - bw, y = o.y + o.h + 58;
+  const bw = 150, bh = 62, x = W - 12 - bw, y = rightStack().skyY;
   roundRect(x, y, bw, bh, 8); ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fill();
   const now = s.phase === 'sky', ev = now ? s.ev : s.next, show = now || s.seen;
   const bcol = ev && show ? SKY_BODY[ev.body].col : '#c9b98a';
@@ -6823,38 +6786,8 @@ function drawSkyClock() {
     else if (m === 0.5) { ctx.fillStyle = '#fff'; ctx.font = `bold 8px ${SERIF}`; ctx.textAlign = 'center'; ctx.fillText('½', gx + 6, gy + 9); ctx.textAlign = 'left'; }
   });
 }
-function drawCharges() {
-  if (mode !== 'battle' || !player.charge) return;
-  const r = 7.5, gap = 4, y = 160;
-  let x = 14 + r;
-  for (const t of CHARGE_TYPES) {
-    const c = player.charge[t], low = c < CHARGE_LOW, col = TYPE_COLOR[t];
-    circle(x, y, r, 'rgba(0,0,0,0.6)', low ? 'rgba(255,90,90,0.9)' : 'rgba(255,255,255,0.25)', low ? 1.5 : 1);
-    if (c > 0.01) {
-      ctx.globalAlpha = low ? 0.45 : 1;
-      ctx.fillStyle = col;
-      ctx.beginPath(); ctx.moveTo(x, y); ctx.arc(x, y, r - 1.5, -Math.PI / 2, -Math.PI / 2 + TAU * c); ctx.closePath(); ctx.fill();
-      ctx.globalAlpha = 1;
-    }
-    x += r * 2 + gap;
-  }
-}
-
-function drawMixToggle() {
-  if (mode !== 'battle' || !teams) return;
-  const r = mixToggleRect();
-  roundRect(r.x, r.y, r.w, r.h, 11);
-  ctx.fillStyle = mixOpen ? 'rgba(74,168,255,0.85)' : 'rgba(10,14,28,0.75)'; ctx.fill();
-  ctx.strokeStyle = TEAM_COLOR.blue; ctx.lineWidth = 1.5; ctx.stroke();
-  ctx.fillStyle = mixOpen ? '#08111e' : '#cfe6ff';
-  ctx.font = 'bold 11px "Big Caslon", "Libre Caslon Text", Georgia, serif'; ctx.textAlign = 'center';
-  ctx.fillText(mixOpen ? '▲ Mix · hide' : '▲ Minion mix', r.x + r.w / 2, r.y + 15);
-}
-
 function drawMixTri() {
-  drawMixToggle();
-  drawResonance();
-  if (mode !== 'battle' || !teams || !mixOpen) return;
+  if (mode !== 'battle' || !teams || !ordersOpen) return;
   const T = mixTri(), P = T.pts;
   ctx.beginPath();
   MINION_KINDS.forEach((k, i) => i ? ctx.lineTo(P[k].x, P[k].y) : ctx.moveTo(P[k].x, P[k].y));
@@ -6877,7 +6810,7 @@ function drawMixTri() {
     circle(q.x, q.y, 8, 'rgba(10,14,28,0.95)', TYPE_COLOR[e], 2);
     drawGlyph(ELEM_GLYPH[e], q.x, q.y, 11, TYPE_COLOR[e]);
     ctx.fillStyle = '#ddd'; ctx.font = 'bold 10px "Big Caslon", "Libre Caslon Text", Georgia, serif'; ctx.textAlign = 'center';
-    ctx.fillText(`${UNITS[k].name} ${counts[k] || 0}`, q.x + ox / ol * 22, q.y + oy / ol * 20 + 3);
+    ctx.fillText(UNITS[k].name, q.x + ox / ol * 24, q.y + oy / ol * 20 + 3);
   }
   const m = mixPoint();
   circle(m.x, m.y, 6, TEAM_COLOR.blue, '#fff', 2);
@@ -6885,7 +6818,7 @@ function drawMixTri() {
 
 function orderButton() {
   const r = Math.max(26, Math.min(32, W * 0.075));
-  return { x: 16 + r, y: H - 16 - r, r };
+  return { x: W - 16 - r, y: H - 16 - r, r };
 }
 function orderHit(x, y) {
   if (mode !== 'battle' || !teams) return false;
@@ -6901,13 +6834,13 @@ function toggleOrder() {
 function drawOrderButton() {
   if (mode !== 'battle' || !teams) return;
   const b = orderButton(), follow = teams.order === 'follow';
-  circle(b.x, b.y, b.r, follow ? 'rgba(74,168,255,0.85)' : 'rgba(16,22,40,0.9)', TEAM_COLOR.blue, 2.5);
+  circle(b.x, b.y, b.r, ordersOpen ? 'rgba(74,168,255,0.85)' : 'rgba(16,22,40,0.9)', TEAM_COLOR.blue, 2.5);
   ctx.textAlign = 'center';
-  ctx.fillStyle = follow ? '#08111e' : '#cfe6ff';
-  ctx.font = 'bold 10px "Big Caslon", "Libre Caslon Text", Georgia, serif';
-  ctx.fillText(follow ? 'FOLLOW' : 'SPREAD', b.x, b.y - 1);
-  ctx.font = '9px "Big Caslon", "Libre Caslon Text", Georgia, serif';
-  ctx.fillText(follow ? 'tap: spread' : 'tap: follow', b.x, b.y + 11);
+  ctx.fillStyle = ordersOpen ? '#08111e' : '#cfe6ff';
+  ctx.font = `bold 11px ${SERIF}`;
+  ctx.fillText('ARMY', b.x, b.y - 1);
+  ctx.font = `9px ${SERIF}`;
+  ctx.fillText(follow ? 'following' : 'spread out', b.x, b.y + 11);
 }
 
 function drawBuildButtons() {
@@ -6997,6 +6930,17 @@ function drawBattleMap() {
   const rival = net.role === 'host' ? rivalP : otherHero;
   if (versus && rival && !rival.dead) circle(mx(rival.x), my(rival.y), 3, '#ffb3b3', TEAM_COLOR.red, 1.5);
   circle(mx(player.x), my(player.y), 2.5, '#fff');
+  if (teams) {
+    const g = groundLeader();
+    ctx.font = `bold 15px ${SERIF}`; ctx.textAlign = 'center'; ctx.lineWidth = 3.5; ctx.strokeStyle = 'rgba(0,0,0,0.85)';
+    [['blue', 0.24], ['red', 0.76]].forEach(([team, f]) => {
+      const t = `${Math.round(teams[team].cells / FIELD_CELLS * 100)}%`, tx = x + w * f, ty = y + h / 2 + 5;
+      const tw = ctx.measureText(t).width;
+      roundRect(tx - tw / 2 - 4, ty - 14, tw + 8, 18, 5); ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fill();
+      ctx.strokeText(t, tx, ty); ctx.fillStyle = team === 'blue' ? '#8cc8ff' : '#ff8a96'; ctx.fillText(t, tx, ty);
+      if (g === team) { ctx.font = `bold 9px ${SERIF}`; ctx.strokeText(`+${GROUND_BONUS}`, tx, ty + 12); ctx.fillStyle = '#ffd24a'; ctx.fillText(`+${GROUND_BONUS}`, tx, ty + 12); ctx.font = `bold 15px ${SERIF}`; }
+    });
+  }
   return h;
 }
 
@@ -7270,8 +7214,9 @@ const HOWTO = [
   ['p', 'Your base is on the left, red’s is on the right. Most points after 5 minutes wins.'],
   ['points'],
   ['p', 'Every 10 seconds someone gets a build turn. Pick an element, then build a turret where you stand (it claims ground) or send a titan. A dial beside the clock counts down to the next turn. No building in the last 15 seconds.'],
-  ['p', 'Watch the sky clock under Army orders. Every 45 seconds a Sun, Moon or Star rises for 15 seconds, and some elements stop working or get weaker. See “The sky” below.'],
-  ['p', 'Minion mix: drag the dot to choose which minions you send. FOLLOW keeps your army with you, SPREAD lets it push. Army orders: attack or protect.'],
+  ['p', 'Top right: the map (with each side’s share of the ground written on it), the match clock, the build clock and the sky clock.'],
+  ['p', 'Watch the sky clock. Every 45 seconds a Sun, Moon or Star rises for 15 seconds, and some elements stop working or get weaker. See “The sky” below.'],
+  ['p', 'ARMY (bottom right) opens your army commands: Follow me or Spread out, what your minions and titans attack or protect when spread out, and the minion mix (drag the dot to choose which minions you send). In battle the FIRE button is bottom left.'],
   ['h', 'Tips'],
   ['p', 'Try every pair of elements first. Two-rune spells are quick and cheap.'],
   ['p', 'A whisper: “Fire, then fire again…”'],
@@ -7286,7 +7231,7 @@ const HOWTO = [
   ['p', 'What your army is made of gives the whole team a power. It is read live from your units on the field: a minion counts 1, a turret 3, a titan 4.'],
   ['res'],
   ['p', 'Each power grows with that element’s share of your army, with diminishing returns: the first part of a mix gives the most. A one-element army also gets countered easily. Mixing pays, and leaning into a favourite is fine too.'],
-  ['p', 'The box under Army orders shows both sides’ powers (blue row is you, red row is them).'],
+  ['p', 'The box under your score shows both sides’ powers (blue row is you, red row is them).'],
   ['h', 'The sky: Sun, Moon and Star'],
   ['p', 'Every 45 seconds: 30 seconds of calm sky, then 15 seconds under a Sun, a Moon or a Star. The sky clock shows where you are in the cycle, and the next body appears 10 seconds before it rises.'],
   ['p', 'The body rises over one point of the casting star. The elements that can bear its light are that point and the next ones clockwise. The brighter the body, the fewer: a Star 4 (most common), a Half Moon 3, a Full Moon 2, the Sun just 1 (rarest).'],
@@ -7302,10 +7247,9 @@ const HOWTO = [
   ['p', 'Turrets: shoot anything that comes close and claim ground. The lines between your towers mark your land.'],
   ['p', 'Sigils: each side has one, walled in for 15 seconds after it appears. Breaking the enemy’s is worth 65 and a bonus build.'],
   ['h', 'Scoring in detail'],
-  ['p', 'Kills fill a tally (shown under the ground bar): a minion adds 1, a titan 5, a wizard 10. Every 5 on the tally is a point. If your hero falls, it adds 10 to red’s tally.'],
+  ['p', 'Kills fill a tally (shown under your score): a minion adds 1, a titan 5, a wizard 10. Every 5 on the tally is a point. If your hero falls, it adds 10 to red’s tally.'],
   ['p', 'A turret is worth 5 points. A friend’s wizard in a duel is worth 10. The enemy base is worth 100 and ends the match. Most ground at the end is worth 140.'],
   ['h', 'Magic in battle'],
-  ['p', 'Each element has an energy circle (the five small circles). Using one drains it, and below 40% that element hits softer, down to 40% damage when empty. It only starts refilling 3 seconds after you last used it, and refills slowly (about 50 seconds from empty to full). Mix your elements up.'],
   ['p', 'Your mana refills slowly in enemy ground and fastest at your fountain.'],
   ['h', 'Spell power'],
   ['p', 'Length sets the tier: 2 Minor, 3 Adept, 4 Greater, 5 Monstrous, 6 Omni King, 7 Doomsday.'],
