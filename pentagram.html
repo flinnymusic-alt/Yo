@@ -443,6 +443,7 @@ function playerScreenY() { return panelTop * 0.5; }
 
 // ── world state ──────────────────────────────────────────────────────────────
 let mode = 'adventure';   // 'adventure' | 'battle'
+let paused = false;       // the game waits while you're away (see pauseGame)
 let state = 'title'; // 'title' | 'play' | 'reveal' | 'dead' | 'won'
 let player = {};   // whoever is acting right now (you, or in a duel sometimes your friend)
 let hostP = player; // you
@@ -1452,7 +1453,7 @@ function castWoven(sp) {
     if (sp.finish === 'F') {
       // Echoing: a second pulse a moment later, on the caster's side
       const x = player.x, y = player.y, side = curSide, caster = player;
-      setTimeout(() => { if (state === 'play' || state === 'dead') withSide(side, () => wovenBurstAt(x, y, rad * 0.8, 1.2 * sp.power, sp), caster); }, 450);
+      afterPlay(450, () => { if (state === 'play' || state === 'dead') withSide(side, () => wovenBurstAt(x, y, rad * 0.8, 1.2 * sp.power, sp), caster); });
     }
     else if (sp.finish === 'W') zones.push({ type: 'woven', x: player.x, y: player.y, r: rad * 0.75, life: 2.5, max: 2.5, tick: 0, spec: sp, charged: 0, ringZone: true });
     else if (sp.finish === 'E') { for (const f of foes) if (!f.dead && !f.structure && Math.hypot(f.x - player.x, f.y - player.y) < rad + f.r) knock(f, player.x, player.y, 380); fx.push({ kind: 'cracks', ...crackLines(player.x, player.y, rad * 0.8, 7), life: 1.2, max: 1.2 }); }
@@ -1583,6 +1584,8 @@ const FLAIR = {
   FSFSFS: p => { puff(p.x, p.y, '#ffb04a', 4, 34, 50); fx.push({ kind: 'rays', x: p.x, y: p.y, r: 110, color: '#ff8a3a', life: 0.8, max: 0.8, rot: 0 }); },
   SFWEASS: p => { fx.push({ kind: 'cracks', ...crackLines(p.x, p.y, 600, 14), life: 2, max: 2 }); fx.push({ kind: 'pillars', x: p.x, y: p.y, r: 140, life: 1.6, max: 1.6 }); },
 };
+// run fn after ms of play: a pause holds it back until the game carries on
+function afterPlay(ms, fn) { setTimeout(() => (paused ? afterPlay(100, fn) : fn()), ms); }
 function castWithPotency(key, fn) {
   const pot = potencyOf(key);
   const lists = () => [shots, zones, storms, traps, allies, meteors, waves, tempSolids];
@@ -4100,6 +4103,28 @@ function onOrient(e) {
 // walking on an old reading: if nothing has arrived for a moment, stand still.
 const tiltStale = () => !tilt.lastT || performance.now() - tilt.lastT > 700;
 document.addEventListener('visibilitychange', () => { if (!document.hidden) { tilt.base = null; audioInit(); } });
+
+// Leaving the page (another app, tab or screen, or the phone locking) pauses an
+// adventure or a battle against red. A duel with a friend never pauses: the
+// other side is still playing. On a computer, clicking away from the game
+// pauses it too (on phones that's left to the page being hidden, so the
+// motion-sensor prompt can't pause it). A tap or a key carries on.
+const canPause = () => !versus && !net.role && (state === 'play' || state === 'reveal' || (state === 'dead' && mode === 'battle'));
+function pauseGame() {
+  if (paused || !canPause()) return;
+  paused = true;
+  // let go of everything that was held: fingers on the field or the star, keys
+  for (const k in keys) keys[k] = false;
+  castPtr = movePtr = mixPtr = null; movePos = moveStart = finger = curNode = null; seq = [];
+}
+function resumeGame() {
+  paused = false;
+  tilt.base = null; // hold the phone however is comfortable now
+  last = performance.now();
+}
+document.addEventListener('visibilitychange', () => { if (document.hidden) pauseGame(); });
+window.addEventListener('pagehide', pauseGame);
+window.addEventListener('blur', () => { if (!isTouch) pauseGame(); });
 window.addEventListener('pageshow', () => { tilt.base = null; });
 
 function startTilt() {
@@ -4327,6 +4352,7 @@ function localPos(e) {
 canvas.addEventListener('pointerdown', e => {
   e.preventDefault();
   audioInit();
+  if (paused) { resumeGame(); return; } // this tap only wakes the game
   const { x, y } = localPos(e);
   if (mode === 'battle' && (state === 'won' || state === 'lost')) {
     const b = endButton;
@@ -4414,6 +4440,7 @@ canvas.addEventListener('wheel', e => {
 window.addEventListener('keydown', e => {
   if (e.target && e.target.closest && e.target.closest('#lobby')) return; // typing a room code
   audioInit();
+  if (paused) { e.preventDefault(); resumeGame(); return; }
   if (e.code === 'KeyM') toggleSound();
   if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Backspace'].includes(e.code)) e.preventDefault();
   keys[e.code] = true;
@@ -7188,6 +7215,8 @@ const HOWTO = [
   ['p', 'Top right: the map (with each side’s share of the ground written on it), the match clock, the build clock and the eclipse clock.'],
   ['p', 'The eclipse clock has a ring for each element. When an element’s mark reaches 12 o’clock it is eclipsed and doesn’t work for 30 seconds. See “Eclipses” below.'],
   ['p', 'ARMY (bottom right) opens your army commands: Follow me or Spread out, what your minions and titans attack or protect when spread out, and the minion mix (drag the dot to choose which minions you send). In battle the FIRE button is bottom left.'],
+  ['h', 'Pausing'],
+  ['p', 'Leave the game (another app, tab or screen) and it pauses: an adventure or a battle against red waits for you. Tap to carry on. A duel with a friend never pauses.'],
   ['h', 'Tips'],
   ['p', 'Try every pair of elements first. Two-rune spells are quick and cheap.'],
   ['p', 'A whisper: “Fire, then fire again…”'],
@@ -7729,8 +7758,39 @@ function drawWon() {
   }
 }
 
+// the pause screen, over the frozen game
+function drawPaused() {
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  ctx.globalAlpha = 1; ctx.shadowBlur = 0;
+  dim(0.62);
+  const t = performance.now() / 1000, cy = H * 0.4;
+  ctx.textAlign = 'center';
+  ctx.shadowColor = '#c77dff'; ctx.shadowBlur = 22;
+  ctx.fillStyle = '#efe9f8'; ctx.font = `${Math.round(Math.min(54, W / 6.5))}px ${SERIF_BIG}`;
+  ctx.fillText('PAUSED', W / 2, cy);
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = '#cfc8e0'; ctx.font = `italic 15px ${SERIF}`;
+  ctx.fillText(mode === 'battle' ? 'The battle waits while you’re away' : 'Your adventure waits while you’re away', W / 2, cy + 34);
+  let y = cy + 34;
+  if (mode === 'battle' && teams) {
+    // where things stand: the score and the time left
+    y += 32;
+    ctx.font = `bold 15px ${SERIF}`;
+    const parts = [[`You ${teams.blue.score}`, TEAM_COLOR.blue], ['  ·  ', '#888'], [`Red ${teams.red.score}`, TEAM_COLOR.red], ['  ·  ', '#888'], [`${clockText(Math.ceil(teams.time))} left`, '#fff']];
+    let x = W / 2 - parts.reduce((a, [p]) => a + ctx.measureText(p).width, 0) / 2;
+    ctx.textAlign = 'left';
+    for (const [p, c] of parts) { ctx.fillStyle = c; ctx.fillText(p, x, y); x += ctx.measureText(p).width; }
+    ctx.textAlign = 'center';
+  }
+  ctx.globalAlpha = 0.6 + 0.4 * Math.sin(t * 3);
+  ctx.fillStyle = '#ffd24a'; ctx.font = `bold 17px ${SERIF}`;
+  ctx.fillText(isTouch ? 'TAP TO CARRY ON' : 'CLICK OR PRESS A KEY TO CARRY ON', W / 2, y + 44);
+  ctx.globalAlpha = 1;
+}
+
 // ── loop ─────────────────────────────────────────────────────────────────────
 function tick(dt) {
+  if (paused) return; // everything waits: clocks, foes, spells, messages
   overlayT += dt;
   for (let i = 0; i < 5; i++) nodePulse[i] = Math.max(0, nodePulse[i] - dt * 4);
   if (shake > 0) shake = Math.max(0, shake - dt * 40);
@@ -7794,6 +7854,7 @@ function loop(now) {
   try {
     tick(dt);
     render();
+    if (paused) drawPaused();
   } catch (err) {
     console.error(err);
   }
