@@ -798,7 +798,8 @@ function aimFrom(src, range) {
 // Every kind of magic has a little energy circle. Each use drains it a bit; it
 // refills slowly. Below 40% that kind loses power (down to 40% damage when empty).
 const CHARGE_TYPES = ['spirit', 'water', 'fire', 'earth', 'air']; // pentagram order
-const CHARGE_LOW = 0.4, CHARGE_REGEN = 0.05, CHARGE_COST = 0.14;
+// a drained element refills slowly, and only once you've let it rest for a moment
+const CHARGE_LOW = 0.4, CHARGE_REGEN = 0.02, CHARGE_COST = 0.14, CHARGE_REST = 3;
 function resetCharge() {
   player.charge = Object.fromEntries(CHARGE_TYPES.map(t => [t, 1]));
   player.chargeT = {};
@@ -2251,7 +2252,10 @@ function heroTimers(dt) {
   }
 
   for (const k of ['omni', 'mirror', 'sanct', 'phoenix', 'regen']) player[k] = Math.max(0, player[k] - dt);
-  if (player.charge) for (const t of CHARGE_TYPES) player.charge[t] = Math.min(1, player.charge[t] + CHARGE_REGEN * dt);
+  if (player.charge) for (const t of CHARGE_TYPES) {
+    if (elapsed - ((player.chargeT && player.chargeT[t]) ?? -9) < CHARGE_REST) continue;
+    player.charge[t] = Math.min(1, player.charge[t] + CHARGE_REGEN * dt);
+  }
   if (player.chargeTxtCd > 0) player.chargeTxtCd -= dt;
   if (player.regen > 0) player.hp = Math.min(player.maxHp, player.hp + 1.2 * dt);
 }
@@ -7101,7 +7105,7 @@ const HOWTO = [
   ['p', 'Kills fill a tally (shown under the ground bar): a minion adds 1, a titan 5, a wizard 10. Every 5 on the tally is a point. If your hero falls, it adds 10 to red’s tally.'],
   ['p', 'A turret is worth 5 points. A friend’s wizard in a duel is worth 10. The enemy base is worth 100 and ends the match. Most ground at the end is worth 140.'],
   ['h', 'Magic in battle'],
-  ['p', 'Each element has an energy circle (the five small circles). Using one drains it, and below 40% that element hits softer, down to 40% damage when empty. Mix your elements up.'],
+  ['p', 'Each element has an energy circle (the five small circles). Using one drains it, and below 40% that element hits softer, down to 40% damage when empty. It only starts refilling 3 seconds after you last used it, and refills slowly (about 50 seconds from empty to full). Mix your elements up.'],
   ['p', 'Your mana refills slowly in enemy ground and fastest at your fountain.'],
   ['h', 'Spell power'],
   ['p', 'Length sets the tier: 2 Minor, 3 Adept, 4 Greater, 5 Monstrous, 6 Omni King, 7 Doomsday.'],
