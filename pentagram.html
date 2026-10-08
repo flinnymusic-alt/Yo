@@ -240,14 +240,14 @@ const SPELLS = {
   AWAW:    { name: 'Thunderstorm',    kind: 'attack',  cost: 11, cast() { storms.push({ left: 10, t: 0, struck: new Set() }); } },
   AEEA:    { name: 'Vortex',          kind: 'control', cost: 10, cast() { const p = targetPoint(500, 200); zones.push({ x: p.x, y: p.y, r: 260, life: 2.8, max: 2.8, tick: 0, type: 'vortex' }); } },
   SWSW:    { name: 'Confusion',       kind: 'control', cost: 9,  cast() { areaCC(player.x, player.y, 300, 'confuse', 5, '#ff8ad8'); } },
-  ASSA:    { name: 'Time Warp',       kind: 'time',    cost: 9,  cast() { if (versus) castMessage('Time magic is banned in duels', '#ccc'); else timeWarp = 6; } },
+  ASSA:    { name: 'Time Warp',       kind: 'time',    cost: 9,  cast() { if (humanFoes()) castMessage('Time magic is banned against friends', '#ccc'); else timeWarp = 6; } },
   WWSS:    { name: 'Healing Spring',  kind: 'heal',    cost: 9,  cast() { zones.push({ x: player.x, y: player.y, r: 95, life: 8, max: 8, tick: 0, type: 'spring' }); } },
   EESE:    { name: 'Stone Guardian',  kind: 'summon',  cost: 8,  cast() { summon('golem'); } },
   // ── 5 · Monstrous ──
   FEFEF:   { name: 'Meteor',          kind: 'attack',  cost: 13, cast() { meteor(); } },
   WAWAW:   { name: 'Blizzard',        kind: 'attack',  cost: 13, cast() { blizzard(); } },
   EESEE:   { name: 'Petrify',         kind: 'control', cost: 12, cast() { areaCC(player.x, player.y, 330, 'stone', 6, '#aaa'); } },
-  SASAS:   { name: 'Time Stop',       kind: 'time',    cost: 14, cast() { if (versus) castMessage('Time magic is banned in duels', '#ccc'); else timeStop = 6.5; } },
+  SASAS:   { name: 'Time Stop',       kind: 'time',    cost: 14, cast() { if (humanFoes()) castMessage('Time magic is banned against friends', '#ccc'); else timeStop = 6.5; } },
   SWWWS:   { name: 'Sanctuary',       kind: 'heal',    cost: 14, cast() { healPlayer(player.maxHp); player.sanct = 5; } },
   // ── 6 · Omni King ──
   SAFEWS:  { name: 'Crown of All',    kind: 'buff',    cost: 16, cast() { player.omni = 10; } },
@@ -601,19 +601,26 @@ function buildGrid(list) {
 }
 
 // ── battle arena terrain ──
-const ARENA_H = 780;   // the battle arena is an oval: WORLD wide, ARENA_H tall (half-axes)
+// Two teams fight on an oval with their bases at its two ends; three fight on
+// a round field, each base a third of the way round from the others.
+let ARENA_W = WORLD, ARENA_H = 780;   // the field's half-width and half-height
+let TEAMS = ['blue', 'red'];          // the teams in this match
+const TEAM_CODE = { blue: 1, red: 2, green: 3 }, CODE_TEAM = [null, 'blue', 'red', 'green'];
+const ROUND_R = 1500, BASE_R3 = 1270; // the round field's radius, and how far out its bases sit
+const TEAM_ANGLE3 = { blue: Math.PI, red: -Math.PI / 3, green: Math.PI / 3 };
+const three = () => TEAMS.length === 3;
 function inArena(x, y, m) {
-  const a = WORLD - (m || 0), b = ARENA_H - (m || 0);
+  const a = ARENA_W - (m || 0), b = ARENA_H - (m || 0);
   return (x / a) ** 2 + (y / b) ** 2 <= 1;
 }
-// pull a point back inside the oval (keeping a margin)
+// pull a point back inside the field (keeping a margin)
 function clampArena(p, m) {
-  const a = WORLD - (m || 0), b = ARENA_H - (m || 0), d = Math.hypot(p.x / a, p.y / b);
+  const a = ARENA_W - (m || 0), b = ARENA_H - (m || 0), d = Math.hypot(p.x / a, p.y / b);
   if (d > 1) { p.x /= d; p.y /= d; }
   return p;
 }
 function ovalPath(grow) {
-  ctx.beginPath(); ctx.ellipse(0, 0, WORLD + (grow || 0), ARENA_H + (grow || 0), 0, 0, TAU);
+  ctx.beginPath(); ctx.ellipse(0, 0, ARENA_W + (grow || 0), ARENA_H + (grow || 0), 0, 0, TAU);
 }
 const BASE_X = 1450;   // the two big towers sit at ±BASE_X
 const battleSolids = [];
@@ -629,14 +636,47 @@ const battleSolids = [];
   }
 })();
 const battleGrid = buildGrid(battleSolids);
+// the round field's trees and rocks: clear of the bases, their front turrets,
+// the roads into the middle and the middle itself
+const battleSolids3 = [];
+(function makeRound() {
+  const R = mulberry32(78), keep = [];
+  for (const a of Object.values(TEAM_ANGLE3)) {
+    keep.push({ x: Math.cos(a) * BASE_R3, y: Math.sin(a) * BASE_R3, r: 360 });
+    keep.push({ x: Math.cos(a) * 450, y: Math.sin(a) * 450, r: 110 });
+    for (const s of [-1, 1]) keep.push({ x: Math.cos(a + s * 0.75) * 760, y: Math.sin(a + s * 0.75) * 760, r: 110 });
+  }
+  const road = (x, y, a) => { const bx = Math.cos(a) * BASE_R3, by = Math.sin(a) * BASE_R3, t = clamp((x * bx + y * by) / (BASE_R3 * BASE_R3), 0, 1); return Math.hypot(x - bx * t, y - by * t); };
+  for (let tries = 0; battleSolids3.length < 64 && tries < 20000; tries++) {
+    const x = (R() * 2 - 1) * 1350, y = (R() * 2 - 1) * 1350, rr = Math.hypot(x, y);
+    if (rr > ROUND_R - 110 || rr < 230) continue;
+    if (keep.some(k => Math.hypot(k.x - x, k.y - y) < k.r)) continue;
+    if (Object.values(TEAM_ANGLE3).some(a => road(x, y, a) < 130)) continue;
+    if (battleSolids3.some(o => Math.hypot(o.x - x, o.y - y) < 80)) continue;
+    const tree = R() < 0.6, sc = 0.8 + R() * 0.5;
+    battleSolids3.push(tree ? { x, y, r: 13 * sc, kind: 'tree', s: sc, v: R() } : { x, y, r: 10 * sc, kind: 'rock' });
+  }
+})();
+const battleGrid3 = buildGrid(battleSolids3);
+let arenaSolids = battleSolids, arenaGrid = battleGrid; // the current field's
 
 let activeSolids = solids, activeGrid = solidGrid;
 function setMode(m) {
   mode = m;
-  activeSolids = m === 'battle' ? battleSolids : solids;
-  activeGrid = m === 'battle' ? battleGrid : solidGrid;
+  activeSolids = m === 'battle' ? arenaSolids : solids;
+  activeGrid = m === 'battle' ? arenaGrid : solidGrid;
 }
 function boundY() { return mode === 'battle' ? ARENA_H : WORLD; }
+// set the field up for a match between these teams
+function setArena(list) {
+  TEAMS = list;
+  ARENA_W = list.length === 3 ? ROUND_R : WORLD;
+  ARENA_H = list.length === 3 ? ROUND_R : 780;
+  arenaSolids = list.length === 3 ? battleSolids3 : battleSolids;
+  arenaGrid = list.length === 3 ? battleGrid3 : battleGrid;
+  if (mode === 'battle') { activeSolids = arenaSolids; activeGrid = arenaGrid; }
+  initGrid();
+}
 
 function solidsNear(x, y) {
   const gx = Math.floor(x / GRID), gy = Math.floor(y / GRID), out = [];
@@ -717,6 +757,7 @@ function clearCombat() {
 function startGame() {
   setMode('adventure');
   friends = []; bshots = []; teams = null;
+  units = { blue: [], red: [], green: [] }; unitsVer++; heroes = []; curSide = 'blue';
   resetPlayer();
   clearCombat();
   foes = BOSSES.map(makeBoss);
@@ -757,11 +798,13 @@ function respawn() {
 
 // ── feedback helpers ─────────────────────────────────────────────────────────
 function showBanner(text, sub, life) {
-  if (curSide === 'red') { if (versus) netEvents.push(['banner', text, sub, life]); return; }
+  if (player !== hostP) { if (player.heroId) tellHero(player.heroId, ['banner', text, sub, life]); return; }
   banner = { text, sub, life, max: life };
 }
+// news from the battle itself, for your screen whoever's spell caused it
+function hostBanner(text, sub, life) { banner = { text, sub, life, max: life }; }
 function castMessage(text, color) {
-  if (curSide === 'red') { if (versus) netEvents.push(['msg', text, color]); return; }
+  if (player !== hostP) { if (player.heroId) tellHero(player.heroId, ['msg', text, color]); return; }
   castMsg = { text, color, life: 1.6 };
 }
 function floatText(x, y, text, color, size) {
@@ -858,7 +901,8 @@ function damageFoe(f, dmg, rawType, fromHelper) {
     return 0;
   }
   dmg *= potency;
-  if (f.proxyOf) { const d = dmg * (player.empower > 0 && !fromHelper ? 2 : 1); hurtPlayer(d, heroOf(f)); return d; }
+  const by = dmgBy || curSide;
+  if (f.proxyOf) { const h = heroOf(f), d = dmg * (player.empower > 0 && !fromHelper ? 2 : 1); if (h) { h.lastHitBy = by; hurtPlayer(d, h); } return d; }
   if (f.helper) { f.helper.hp -= dmg; burst(f.x, f.y, '#ccc', 4, 100); if (f.helper.hp <= 0) f.helper.life = 0; return dmg; }
   const type = ELEM_OF[rawType] || rawType; // lightning → air, poison → earth, holy → spirit
   if (f.unit && shielded(f)) {
@@ -880,7 +924,8 @@ function damageFoe(f, dmg, rawType, fromHelper) {
   if (f.hex > 0 || f.stone > 0) mult *= 1.5;
   if (f.unit && f.elem) mult *= elemMult(type, f.elem);
   if (player.empower > 0 && !fromHelper) mult *= 2;
-  const d = f.unit ? minionHit(f, mageGuard(f, dmg * mult)) * resDmgIn(f.team) : dmg * mult;
+  if (f.unit) f.lastHitBy = by;
+  const d = f.unit ? minionHit(f, mageGuard(f, dmg * mult)) * resDmgIn(f.team, by) : dmg * mult;
   f.hp -= d;
   if (rawType !== 'poison') SFX.hit();
   f.flash = 0.12;
@@ -920,9 +965,9 @@ function huntBonus(f) {
 function killFoe(f) {
   if (f.unit) {
     // battle units: points for the kill, then the usual fallout (respawns, shields, victory)
-    if (curSide !== 'red') kills++;
+    if (player === hostP && !dmgBy) kills++;
     SFX.kill();
-    unitFell(f); // points go to blue
+    unitFell(f); // points go to whoever brought it down
     return;
   }
   f.dead = true;
@@ -959,6 +1004,7 @@ function aoe(x, y, rad, dmg, type, push) {
 }
 
 function hurtPlayer(d, p = player) {
+  if (p.isMage) return; // a computer wizard's caster: its wizard takes the hits
   if ((p === hostP ? state !== 'play' : p.dead) || p.invuln > 0 || p.omni > 0 || p.sanct > 0) return;
   if (p.ward > 0) {
     p.ward--;
@@ -987,12 +1033,12 @@ function hurtPlayer(d, p = player) {
     showBanner('The Phoenix rises!', '', 2.5);
     return;
   }
-  if (p.hp <= 0 && p.isRival) { rivalDown(); return; }
+  if (p.hp <= 0 && p !== hostP && p.heroId) { heroDown(p); return; }
   if (p.hp <= 0) {
     p.hp = 0;
     state = 'dead';
-    // your fall scores for red: 1 point (10 in a duel, where it's your friend's kill)
-    if (mode === 'battle' && teams) scoreKill('red', 'hero', p.x, p.y - 40);
+    // your fall scores for whoever brought you down (10 points when that's a friend's team)
+    if (mode === 'battle' && teams) { const by = killerOf(p, 'blue'); if (by) scoreKill(by, 'hero', p.x, p.y - 40); }
     SFX.death();
     overlayT = 0;
     seq = []; castPtr = null; finger = null;
@@ -1111,6 +1157,7 @@ function applyCC(f, kind, dur) {
   if (!(f[kind] > 0)) floatText(f.x, f.y - f.r - 18, CC_LABEL[kind], '#e0d0ff', 12);
   f[kind] = Math.max(f[kind] || 0, dur);
   if (kind === 'confuse') f.wander = rnd(0, TAU);
+  if (kind === 'fear') f.fearFrom = { x: player.x, y: player.y }; // it runs from whoever scared it
 }
 function areaCC(x, y, r, kind, dur, color) {
   for (const f of foes) if (!f.dead && Math.hypot(f.x - x, f.y - y) < r + f.r) applyCC(f, kind, dur);
@@ -1297,7 +1344,7 @@ function shotImpact(s, f) {
       // the poison splashes onto one more foe nearby
       shapeBits(s.x, s.y, 'drop', '#7dff4a', 7, 160, 30);
       const o = nearestFoe(s.x, s.y, 110, new Set([f]));
-      if (o) { o.poison = Math.max(o.poison || 0, 2); o.poisonDps = Math.max(o.poisonDps || 0, 0.5); fx.push({ kind: 'streak', x1: s.x, y1: s.y, x2: o.x, y2: o.y, color: '#7dff4a', life: 0.3, max: 0.3 }); }
+      if (o) { setPoison(o, 2, 0.5); fx.push({ kind: 'streak', x1: s.x, y1: s.y, x2: o.x, y2: o.y, color: '#7dff4a', life: 0.3, max: 0.3 }); }
       break;
     }
     case 'siphon':
@@ -1380,10 +1427,12 @@ function setBurn(f, secs, spread) {
   const dps = spread ? DOT_DPS * SPREAD : DOT_DPS;
   f.burnDps = f.burn > 0 ? Math.max(f.burnDps || DOT_DPS, dps) : dps;
   f.burn = Math.max(f.burn || 0, secs);
+  f.burnBy = dmgBy || curSide;
 }
 function setPoison(f, secs, dps) {
   f.poisonDps = f.poison > 0 ? Math.max(f.poisonDps || 0, dps) : dps;
   f.poison = Math.max(f.poison || 0, secs);
+  f.poisonBy = dmgBy || curSide;
 }
 function applyWovenFx(f, sp, dealt, src, inPool, spreadHit) {
   if (!f || f.dead) return;
@@ -1649,7 +1698,7 @@ function castSequence() {
   if (player.mana < sp.cost) { castMessage('Not enough mana', '#6af'); return; }
   player.mana -= sp.cost;
   castSigil(key, player.x, player.y);
-  if (mode === 'battle') { const S = stats(curSide === 'red' ? 'red' : 'blue'); if (S) { const el = RUNE_ELEM[key[0]]; S.spells[el] = (S.spells[el] || 0) + 1; } }
+  if (mode === 'battle') { const S = stats(curSide); if (S) { const el = RUNE_ELEM[key[0]]; S.spells[el] = (S.spells[el] || 0) + 1; } }
   const tier = key.length;
   const pot = potencyOf(key), potTxt = pot > 1 ? ` · power ×${pot.toFixed(2)}` : '';
   castMessage((tier >= 4 ? `${sp.name} · ${TIERS[tier]}` : sp.name) + potTxt, TIER_COLOR[tier]);
@@ -1670,7 +1719,7 @@ function castSequence() {
   }
   if (!discovered.has(key)) {
     discovered.add(key);
-    if (curSide !== 'red') SFX.discover();
+    if (player === hostP) SFX.discover();
     showBanner(tier >= 5 ? `${TIERS[tier].toUpperCase()} SPELL!` : 'New spell discovered!',
                `${sp.name} · tier ${tier} ${TIERS[tier]} · complexity ${complexityOf(key).toFixed(1)}`, tier >= 5 ? 4 : 3);
   }
@@ -1819,6 +1868,7 @@ function foeTarget(f) {
 }
 
 function updateFoes(realDt) {
+  if (mode === 'battle') return; // battle units are moved by updateBattle (stepUnit)
   const dt = realDt * timeScale();
   if (dt === 0) return; // time is stopped
   for (const f of foes) {
@@ -2122,8 +2172,8 @@ function updateEffects(dt) {
     if (b.life > 0) return true;
     if (b.spec && b.spec.finish === 'F') {
       // Exploding walls go off as they crumble (on their caster's side)
-      const caster = b.side === 'red' ? (versus ? rivalP : leadMage) : player;
-      if (b.side !== 'red' || caster) withSide(b.side || 'blue', () => wovenBurstAt(b.x, b.y, 55, 1.5 * b.spec.power, b.spec), caster);
+      const side = b.side || 'blue', caster = side === curSide ? player : casterFor(side);
+      if (caster) withSide(side, () => wovenBurstAt(b.x, b.y, 55, 1.5 * b.spec.power, b.spec), caster);
     }
     puff(b.x, b.y, '#c2a57a', 1, 12, 10);
     return false;
@@ -2276,7 +2326,18 @@ function update(dt) {
   updateStorms(dt);
   updateEffects(dt);
   potency = 1;
-  if (versus) updateRival(dt);
+  if (mode === 'battle' && teams) {
+    // the other sides' spells, helpers, pools and storms
+    for (const side of TEAMS) {
+      if (side === 'blue') continue;
+      const c = casterFor(side);
+      if (c) withSide(side, () => { updateShots(dt); updateAllies(dt); updateStorms(dt); updateEffects(dt); }, c);
+      potency = 1;
+    }
+    updateHeroes(dt);
+    // ship the battle to your friends
+    if (net.role === 'host') { net.sendT -= dt; if (net.sendT <= 0) { net.sendT = 0.1; net.send(makeSnapshot()); netEvents = []; } }
+  }
 
   for (const c of chests) {
     if (!c.opened && c.boss.dead && state === 'play' && dist(c, player) < 44) openChest(c);
@@ -2301,10 +2362,10 @@ function heroTimers(dt) {
   player.skin    = Math.max(0, player.skin - dt);
   player.haste   = Math.max(0, player.haste - dt);
   player.empower = Math.max(0, player.empower - dt);
-  const inEnemyGround = mode === 'battle' && cellOwner(player.x, player.y) === (curSide === 'red' ? 1 : 2);
+  const own = mode === 'battle' ? cellOwner(player.x, player.y) : 0, inEnemyGround = own > 0 && own !== TEAM_CODE[curSide];
   player.mana    = Math.min(player.maxMana, player.mana + (inEnemyGround ? 0.6 : 2.2) * dt);
   const fp = fountainPos(curSide);
-  if ((state === 'play' || curSide === 'red') && !player.dead && Math.hypot(player.x - fp.x, player.y - fp.y) < SHRINE_R) {
+  if ((player !== hostP || state === 'play') && !player.dead && Math.hypot(player.x - fp.x, player.y - fp.y) < SHRINE_R) {
     player.hp   = Math.min(player.maxHp, player.hp + 3 * dt);
     player.mana = Math.min(player.maxMana, player.mana + 3 * dt);
   }
@@ -2361,14 +2422,52 @@ function movePlayer(dx, dy, step) {
 //    behind a 15s wall. Destroying a base scores 100 and ends the match.
 // Build turns alternate: on yours, build a turret (claims open ground) or a titan.
 let difficulty = 'easy';
-let friends = [];   // blue units and structures (your side)
+let friends = [];   // (battle) the current side's units: yours, except while another side's spells run
+// every team's units and buildings, and the players' wizards' stand-ins
+let units = { blue: [], red: [], green: [] };
+let unitsVer = 0;   // goes up whenever a team's list changes
+const enemyCache = {}, tgtCache = {};
+// everything a team fights: the other teams' units, buildings and players' wizards
+function enemiesOf(team) {
+  const c = enemyCache[team];
+  if (c && c.v === unitsVer) return c.list;
+  const list = [];
+  for (const t of TEAMS) if (t !== team) for (const u of units[t] || []) list.push(u);
+  enemyCache[team] = { v: unitsVer, list };
+  return list;
+}
+// the other sides' helpers, which can be hit as well
+function helpersAgainst(team) {
+  const out = [];
+  for (const t of TEAMS) if (t !== team) for (const a of fxOf(t).allies) if (a.kind === 'critter' && a.life > 0) out.push(a);
+  return out;
+}
+// the current side's view: "friends" are its units, "foes" what its spells can hit
+function setViews(side) {
+  if (mode !== 'battle' || !teams || net.role === 'guest') return;
+  friends = units[side] || [];
+  foes = enemiesOf(side).concat(helpersAgainst(side).map(helperTarget));
+}
+// what a team's units and towers fight (worked out once a frame)
+function targetsFor(team) {
+  const c = tgtCache[team];
+  if (c && c.v === unitsVer && c.t === elapsed) return c.list;
+  const list = enemiesOf(team).concat(helpersAgainst(team));
+  tgtCache[team] = { v: unitsVer, t: elapsed, list };
+  return list;
+}
+// someone on another team is a friend playing against you
+const humanFoes = () => mode === 'battle' && !!teams && heroes.some(h => !h.gone && h.team !== (player.team || 'blue'));
 let bshots = [];    // shots from units and towers
 let teams = null;
 let links = [];     // laser walls between friendly towers
 const BUILD_CLOSE = 15; // no building in the last 15 seconds
 const MATCH_TIME = 300, BUILD_EVERY = 10, SIGIL_WALL = 15, GROUND_BONUS = 140, BASE_BONUS = 100;
 const FRONT_X = WORLD * 0.32; // the line (±) behind which each side holds 30% of the oval at the start
-const TEAM_COLOR = { blue: '#4aa8ff', red: '#ff4a5a' };
+const TEAM_COLOR = { blue: '#4aa8ff', red: '#ff4a5a', green: '#47d98b' };
+const TEAM_NAME = { blue: 'Blue', red: 'Red', green: 'Green' };
+const TERR_FILL = [null, 'rgba(74,168,255,0.11)', 'rgba(255,74,90,0.11)', 'rgba(71,217,139,0.11)'];
+const TERR_MAP = [null, 'rgba(74,168,255,0.45)', 'rgba(255,74,90,0.45)', 'rgba(71,217,139,0.45)'];
 const UNITS = {
   // five kinds of minion, one per element; weak alone but plentiful
   wisp:   { name: 'Wisp',   elem: 'spirit', pts: 1, hp: 3.5, spd: 72, r: 9,  range: 140, dmg: 0.55, cd: 1.0, aggro: 220, ranged: true, flying: true },
@@ -2421,7 +2520,7 @@ const RES_TEXT = { fire: 'your team hits harder', earth: 'your team takes less d
 function computeResonance() {
   if (!teams) return;
   const out = {};
-  for (const team of ['blue', 'red']) {
+  for (const team of TEAMS) {
     const w = noRes(); let total = 0;
     for (const u of teamList(team)) {
       if (u.dead || !u.elem || u.proxyOf) continue;
@@ -2436,23 +2535,52 @@ function computeResonance() {
     if (S) { S.resSum ??= noRes(); S.resN = (S.resN || 0) + 1; for (const e in r) S.resSum[e] += r[e]; }
   }
   teams.res = out;
+  // every rival's powers together (with two teams, simply the other one's)
+  teams.resFoe = {};
+  for (const team of TEAMS) {
+    const r = noRes();
+    for (const e in r) r[e] = 1 - TEAMS.filter(t => t !== team).reduce((a, t) => a * (1 - out[t][e]), 1);
+    teams.resFoe[team] = r;
+  }
 }
 const resOf = team => (teams && teams.res && teams.res[team]) || noRes();
-// what resonance does to a unit of this team
-const resDmgOut = team => (1 + resOf(team).fire) * (1 - resOf(otherTeam(team)).spirit);
-const resDmgIn  = team => (1 - resOf(team).earth) * (1 + resOf(otherTeam(team)).spirit);
-const resSpeed  = team => (1 + resOf(team).air) * (1 - resOf(otherTeam(team)).water);
-const resRate   = team => (1 + resOf(team).air) * (1 - resOf(otherTeam(team)).water);
+const resFoe = team => (teams && teams.resFoe && teams.resFoe[team]) || noRes();
+// the powers of the team on the other end of a hit (all rivals together when it's not a team)
+const resVs = (team, vs) => (vs && vs !== team && TEAMS.includes(vs) ? resOf(vs) : resFoe(team));
+// what resonance does to a unit of this team: every rival's Water slows it; the Spirit
+// that counts is the one of the team it hits, or that hits it
+const resDmgOut = (team, vs) => (1 + resOf(team).fire) * (1 - resVs(team, vs).spirit);
+const resDmgIn  = (team, from) => (1 - resOf(team).earth) * (1 + resVs(team, from).spirit);
+const resSpeed  = team => (1 + resOf(team).air) * (1 - resFoe(team).water);
+const resRate   = team => (1 + resOf(team).air) * (1 - resFoe(team).water);
 
-function teamSide(team) { return team === 'blue' ? -1 : 1; }
+// which way a team's base lies from the middle of the field
+function teamDir(team) {
+  if (three()) { const a = TEAM_ANGLE3[team]; return { x: Math.cos(a), y: Math.sin(a) }; }
+  return { x: team === 'blue' ? -1 : 1, y: 0 };
+}
+function baseDist() { return three() ? BASE_R3 : BASE_X; }
+// a point `back` px in front of a team's base (toward the middle) and `side` px across
+function homePt(team, back, side = 0) {
+  const d = teamDir(team), r = baseDist() - back;
+  return { x: d.x * r - d.y * side, y: d.y * r + d.x * side };
+}
+// how far from the middle each side's starting front line sits
+function frontDist() { return three() ? 450 : FRONT_X; }
+// a rally point `along` px from the middle toward a team's home, leaning toward its target
+function rallyPt(team, along, target) {
+  const d = teamDir(team), side = target ? clamp((-target.x * d.y + target.y * d.x) * 0.6, -ARENA_H * 0.45, ARENA_H * 0.45) : 0;
+  return { x: d.x * along - d.y * side, y: d.y * along + d.x * side };
+}
 function otherTeam(team) { return team === 'blue' ? 'red' : 'blue'; }
-function teamList(team) { return team === 'red' ? foes : friends; }
+function teamList(team) { return units[team] || []; }
+const allUnits = () => TEAMS.flatMap(t => units[t] || []);
 function nexusOf(team) { return teamList(team).find(u => u.kind === 'nexus' && !u.dead); }
 function towersOf(team) { return teamList(team).filter(u => !u.dead && (u.kind === 'turret' || u.kind === 'nexus')); }
 // a fresh sigil is walled in for a while
 function shielded(u) { return u.kind === 'sigil' && u.wall > 0; }
 function shieldText(u) { return `WALLED ${Math.ceil(u.wall)}s`; }
-function fountainPos(side) { return mode === 'battle' ? { x: (side === 'red' ? 1 : -1) * (BASE_X - 170), y: 0 } : { x: 0, y: 0 }; }
+function fountainPos(side = 'blue') { return mode === 'battle' ? homePt(side, 170) : { x: 0, y: 0 }; }
 
 // every point is booked under a heading, for the breakdown at the end
 const SCORE_CATS = ['Kills', 'Turrets', 'Hero kills', 'Sigils', 'Base', 'Most ground'];
@@ -2461,7 +2589,9 @@ const KILL_UNITS = { minion: 1, titan: 5, wizard: 10, hero: 10 };
 const TURRET_PTS = 5, DUEL_HERO_PTS = 10;
 function newStats() {
   const side = () => ({ spells: {}, turret: {}, titan: {}, minions: {}, sigils: 0, killed: { minion: 0, wizard: 0, titan: 0, turret: 0, hero: 0 }, tally: 0, killPts: 0 });
-  return { blue: side(), red: side(), land: [] };
+  const S = { land: [] };
+  for (const t of TEAMS) S[t] = side();
+  return S;
 }
 const stats = team => (teams && teams.stats ? teams.stats[team] : null);
 // a kill: count it, and score it (straight points, or onto the tally)
@@ -2471,10 +2601,10 @@ function scoreKill(team, what, x, y) {
   if (S) S.killed[what] = (S.killed[what] || 0) + 1;
   let pts = 0, cat = 'Kills';
   if (what === 'turret') { pts = TURRET_PTS; cat = 'Turrets'; }
-  else if (what === 'hero' && versus) { pts = DUEL_HERO_PTS; cat = 'Hero kills'; }
+  else if (what === 'hero' && humansOn(team).length) { pts = DUEL_HERO_PTS; cat = 'Hero kills'; } // a friend's team downing a wizard
   else {
-    const T = teams, before = Math.floor((T.tally ??= { blue: 0, red: 0 })[team] / 5);
-    T.tally[team] += KILL_UNITS[what] || 1;
+    const T = teams, before = Math.floor(((T.tally ??= {})[team] || 0) / 5);
+    T.tally[team] = (T.tally[team] || 0) + (KILL_UNITS[what] || 1);
     if (S) S.tally = T.tally[team];
     pts = Math.floor(T.tally[team] / 5) - before;
     if (!pts) { floatText(x, y, `+${KILL_UNITS[what] || 1}/5`, TEAM_COLOR[team], 11); return; }
@@ -2483,8 +2613,8 @@ function scoreKill(team, what, x, y) {
   teamScore(team, pts, x, y, cat);
 }
 function bookScore(team, cat, n) {
-  const B = teams.breakdown || (teams.breakdown = { blue: {}, red: {} });
-  const e = B[team][cat] || (B[team][cat] = { n: 0, pts: 0 });
+  const B = teams.breakdown || (teams.breakdown = {}), BT = B[team] || (B[team] = {});
+  const e = BT[cat] || (BT[cat] = { n: 0, pts: 0 });
   e.n++; e.pts += n;
 }
 function teamScore(team, n, x, y, cat) {
@@ -2503,13 +2633,14 @@ function addUnit(team, kind, x, y, elem) {
     kx: 0, ky: 0, slow: 0, poison: 0, poisonDps: 0, poisonTick: 0, flash: 0, hitCd: 0, txtCd: 0,
     wob: rnd(0, TAU), dead: false, boss: false, wall: 0, laserT: 0, slot: rnd(0, TAU), walk: 0, slamT: 0,
   };
-  // red's units: the same at every level, except Very Hard's tougher, harder-hitting army
-  if (team === 'red' && !versus && mode === 'battle' && !def.structure) {
+  // the computer's units: the same at every level, except Very Hard's tougher, harder-hitting army
+  if (isAI(team) && !def.structure) {
     u.power = vhEdge() ? VH_EDGE.power : 1;
     if (vhEdge()) u.hp = u.maxHp = def.hp * VH_EDGE.hp;
   }
   u.id = ++unitSeq;
-  teamList(team).push(u);
+  (units[team] || (units[team] = [])).push(u);
+  unitsVer++; setViews(curSide);
   if (isMinion(u)) { const S = stats(team); if (S) S.minions[kind] = (S.minions[kind] || 0) + 1; }
   return u;
 }
@@ -2518,18 +2649,22 @@ function addUnit(team, kind, x, y, elem) {
 // Each side's towers are joined by lines; the shape they make together with that
 // side's back edge of the map is its ground. Where two shapes overlap, the ground
 // goes to whoever's tower is nearer. Counted on a grid of small cells.
-const CELL = 50, COLS = Math.ceil(WORLD * 2 / CELL), ROWS = Math.ceil(ARENA_H * 2 / CELL);
-const terr = new Int8Array(COLS * ROWS); // 0 open ground, 1 blue, 2 red
-const inOval = new Uint8Array(COLS * ROWS); // cells that are part of the field
-let FIELD_CELLS = 0;
-for (let j = 0; j < ROWS; j++) for (let i = 0; i < COLS; i++) {
-  const c = { x: -WORLD + (i + 0.5) * CELL, y: -ARENA_H + (j + 0.5) * CELL };
-  if (inArena(c.x, c.y)) { inOval[j * COLS + i] = 1; FIELD_CELLS++; }
+const CELL = 50;
+// terr: 0 is open ground, otherwise the owner's TEAM_CODE; inOval: cells on the field
+let COLS = 0, ROWS = 0, terr = new Int8Array(0), inOval = new Uint8Array(0), FIELD_CELLS = 0;
+function initGrid() {
+  COLS = Math.ceil(ARENA_W * 2 / CELL); ROWS = Math.ceil(ARENA_H * 2 / CELL);
+  terr = new Int8Array(COLS * ROWS); inOval = new Uint8Array(COLS * ROWS); FIELD_CELLS = 0;
+  for (let j = 0; j < ROWS; j++) for (let i = 0; i < COLS; i++) {
+    const c = cellCenter(i, j);
+    if (inArena(c.x, c.y)) { inOval[j * COLS + i] = 1; FIELD_CELLS++; }
+  }
 }
-let hulls = { blue: [], red: [] };
-function cellCenter(i, j) { return { x: -WORLD + (i + 0.5) * CELL, y: -ARENA_H + (j + 0.5) * CELL }; }
+initGrid();
+let hulls = { blue: [], red: [], green: [] };
+function cellCenter(i, j) { return { x: -ARENA_W + (i + 0.5) * CELL, y: -ARENA_H + (j + 0.5) * CELL }; }
 function cellOwner(x, y) {
-  const i = Math.floor((x + WORLD) / CELL), j = Math.floor((y + ARENA_H) / CELL);
+  const i = Math.floor((x + ARENA_W) / CELL), j = Math.floor((y + ARENA_H) / CELL);
   if (i < 0 || j < 0 || i >= COLS || j >= ROWS) return -1;
   return terr[j * COLS + i];
 }
@@ -2557,33 +2692,41 @@ function inPoly(x, y, poly) {
   }
   return inside;
 }
-function teamShape(team, extra) {
-  const sx = teamSide(team) * WORLD;
-  const pts = towersOf(team).map(t => ({ x: t.x, y: t.y, t }));
+// the corners of the field behind a team's base: its shape always reaches back to them
+function backPts(team) {
+  if (three()) { const a = TEAM_ANGLE3[team], r = ROUND_R * 1.15; return [-1, 1].map(s => ({ x: Math.cos(a + s * Math.PI / 3) * r, y: Math.sin(a + s * Math.PI / 3) * r })); }
+  const sx = (team === 'blue' ? -1 : 1) * ARENA_W;
+  return [{ x: sx, y: -ARENA_H }, { x: sx, y: ARENA_H }];
+}
+function teamShape(team, extra, without) {
+  const pts = towersOf(team).filter(t => t !== without).map(t => ({ x: t.x, y: t.y, t }));
   if (extra) pts.push(extra);
-  pts.push({ x: sx, y: -ARENA_H }, { x: sx, y: ARENA_H });
+  pts.push(...backPts(team));
   return hull(pts);
 }
 
 function computeTerritory() {
-  hulls.blue = teamShape('blue');
-  hulls.red = teamShape('red');
-  const bt = towersOf('blue'), rt = towersOf('red');
-  const nearest = (list, x, y) => Math.min(...list.map(t => Math.hypot(t.x - x, t.y - y)));
-  let b = 0, r = 0;
+  const tw = {}, cnt = {};
+  for (const team of TEAMS) { hulls[team] = teamShape(team); tw[team] = towersOf(team); cnt[team] = 0; }
+  const nearest = (list, x, y) => { let m = Infinity; for (const t of list) { const d = Math.hypot(t.x - x, t.y - y); if (d < m) m = d; } return m; };
   for (let j = 0; j < ROWS; j++) for (let i = 0; i < COLS; i++) {
-    const c = cellCenter(i, j);
-    if (!inOval[j * COLS + i]) { terr[j * COLS + i] = 0; continue; }
-    const inB = inPoly(c.x, c.y, hulls.blue), inR = inPoly(c.x, c.y, hulls.red);
-    let v = inB ? 1 : 0;
-    if (inR && (!inB || nearest(rt, c.x, c.y) < nearest(bt, c.x, c.y))) v = 2;
-    terr[j * COLS + i] = v;
-    if (v === 1) b++; else if (v === 2) r++;
+    const k = j * COLS + i;
+    if (!inOval[k]) { terr[k] = 0; continue; }
+    const c = cellCenter(i, j), inside = [];
+    for (const team of TEAMS) if (inPoly(c.x, c.y, hulls[team])) inside.push(team);
+    let v = inside.length === 1 ? TEAM_CODE[inside[0]] : 0;
+    if (inside.length > 1) {
+      // where shapes overlap, the ground goes to whoever's tower is nearer
+      let best = Infinity;
+      for (const team of inside) { const d = nearest(tw[team], c.x, c.y); if (d < best) { best = d; v = TEAM_CODE[team]; } }
+    }
+    terr[k] = v;
+    if (v) cnt[CODE_TEAM[v]]++;
   }
-  teams.blue.cells = b; teams.red.cells = r;
+  for (const team of TEAMS) teams[team].cells = cnt[team];
   // the lines joining each side's towers (the edge of its shape) are laser walls
   links = [];
-  for (const team of ['blue', 'red']) {
+  for (const team of TEAMS) {
     const h = hulls[team];
     for (let i = 0; i < h.length; i++) {
       const a = h[i], c = h[(i + 1) % h.length];
@@ -2596,11 +2739,11 @@ function computeTerritory() {
 // and not on top of a tree, rock or another building.
 function canBuildAt(x, y, team = 'blue') {
   const own = cellOwner(x, y);
-  if (own === -1 || own === (team === 'blue' ? 2 : 1)) return false;
+  if (own === -1 || (own && own !== TEAM_CODE[team])) return false;
   if (!inArena(x, y, 26)) return false;
   if (solidsNear(x, y).some(o => Math.hypot(o.x - x, o.y - y) < o.r + 22)) return false;
   // (a duel's wizard stand-in isn't a building, so it never blocks its own turret)
-  return !friends.concat(foes).some(u => !u.dead && u.structure && !u.proxyOf && Math.hypot(u.x - x, u.y - y) < u.r + 30);
+  return !allUnits().some(u => !u.dead && u.structure && !u.proxyOf && Math.hypot(u.x - x, u.y - y) < u.r + 30);
 }
 
 function buildTurret(team, x, y, elem) {
@@ -2610,27 +2753,27 @@ function buildTurret(team, x, y, elem) {
   ring(x, y, 120, TEAM_COLOR[team], 0.8);
   burst(x, y, TEAM_COLOR[team], 30, 260);
   SFX.summon();
-  showBanner(`${team === 'blue' ? 'Your' : 'Red built a'} ${ELEM_NAME[elem]} turret${team === 'blue' ? ' is up!' : ''}`, `Strong vs ${ELEM_NAME[elemBeats(elem)]}`, 2.5);
+  hostBanner(`${team === 'blue' ? 'Your' : TEAM_NAME[team] + ' built a'} ${ELEM_NAME[elem]} turret${team === 'blue' ? ' is up!' : ''}`, `Strong vs ${ELEM_NAME[elemBeats(elem)]}`, 2.5);
 }
 function buildTitan(team, elem) {
   { const S = stats(team); if (S) S.titan[elem] = (S.titan[elem] || 0) + 1; }
-  const sd = teamSide(team);
-  addUnit(team, 'titan', sd * (BASE_X - 120), rnd(-60, 60), elem).laneY = rnd(-200, 200);
+  const p = homePt(team, 120, rnd(-60, 60)), u = addUnit(team, 'titan', p.x, p.y, elem);
+  u.laneY = rnd(-200, 200); u.lane = rnd(-1, 1);
   SFX.awaken();
-  showBanner(team === 'blue' ? `Your ${ELEM_NAME[elem]} titan marches out!` : `Red sends a ${ELEM_NAME[elem]} titan!`, `Strong vs ${ELEM_NAME[elemBeats(elem)]}`, 2.5);
+  hostBanner(team === 'blue' ? `Your ${ELEM_NAME[elem]} titan marches out!` : `${TEAM_NAME[team]} sends a ${ELEM_NAME[elem]} titan!`, `Strong vs ${ELEM_NAME[elemBeats(elem)]}`, 2.5);
 }
 
-// red's build turn: a turret on the open spot that adds the most ground, or a
-// titan when there's nowhere worth building
-function redBuild() {
+// A computer team's build turn: a turret on the open spot that adds the most
+// ground, or a titan when there's nowhere worth building.
+function aiBuild(team) {
   const T = teams, sk = aiSkill();
-  const base = polyArea(hulls.red), opts = [];
+  const base = polyArea(hulls[team]), opts = [];
   for (let k = 0, n = Math.round(20 + 60 * sk); k < n; k++) {
     const i = Math.floor(Math.random() * COLS), j = 1 + Math.floor(Math.random() * (ROWS - 2));
     if (terr[j * COLS + i] !== 0) continue;
     const c = cellCenter(i, j);
-    if (!canBuildAt(c.x, c.y, 'red')) continue;
-    opts.push({ c, g: polyArea(teamShape('red', c)) - base });
+    if (!canBuildAt(c.x, c.y, team)) continue;
+    opts.push({ c, g: polyArea(teamShape(team, c)) - base });
   }
   opts.sort((a, b) => b.g - a.g);
   // a sharp commander takes the best spot; a weaker one takes one of the better ones
@@ -2638,18 +2781,20 @@ function redBuild() {
   if (best && best.g < 12000) best = null;
   // ground is worth 140: build when the land race is close or lost; when it's
   // safely won, a sharp commander sends a titan to press for points instead
-  const safeLand = T.red.cells > T.blue.cells * 1.15;
+  const rivalCells = Math.max(...TEAMS.filter(t => t !== team).map(t => T[t].cells));
+  const safeLand = T[team].cells > rivalCells * 1.15;
   if (best && safeLand && Math.random() < sk * 0.7) best = null;
   // pick the element that counters what's out there (sharper = more often)
-  const army = friends.filter(u => !u.dead && u.elem && !u.structure), towers = friends.filter(u => !u.dead && u.kind === 'turret' && u.elem);
+  const enemy = enemiesOf(team).filter(u => !u.dead && u.elem && !u.proxyOf);
+  const army = enemy.filter(u => !u.structure), towers = enemy.filter(u => u.kind === 'turret');
   const elem = Math.random() < sk ? (counterTo(best ? army : towers) || ELEM_CYCLE[Math.floor(Math.random() * 5)]) : ELEM_CYCLE[Math.floor(Math.random() * 5)];
-  if (best) buildTurret('red', best.c.x, best.c.y, elem);
-  else buildTitan('red', elem);
+  if (best) buildTurret(team, best.c.x, best.c.y, elem);
+  else buildTitan(team, elem);
 }
 
 // put a team's sigil somewhere in its own ground, away from its base
 function placeSigil(team) {
-  const want = team === 'blue' ? 1 : 2, nx = nexusOf(team), cells = [];
+  const want = TEAM_CODE[team], nx = nexusOf(team), cells = [];
   for (let j = 1; j < ROWS - 1; j++) for (let i = 0; i < COLS; i++) {
     if (terr[j * COLS + i] !== want) continue;
     const c = cellCenter(i, j);
@@ -2657,72 +2802,84 @@ function placeSigil(team) {
     if (blockedForFoot(c.x, c.y, 24)) continue;
     cells.push(c);
   }
-  const c = cells.length ? cells[Math.floor(Math.random() * cells.length)] : { x: nx.x - teamSide(team) * 320, y: rnd(-200, 200) };
+  const c = cells.length ? cells[Math.floor(Math.random() * cells.length)] : homePt(team, 320, rnd(-200, 200));
   const s = addUnit(team, 'sigil', c.x + rnd(-25, 25), c.y + rnd(-25, 25));
   s.wall = SIGIL_WALL;
   ring(s.x, s.y, 60, TEAM_COLOR[team], 0.8);
-  if (team === 'blue') showBanner('Your sigil appeared', 'Its wall falls in 15s: defend it!', 3);
+  if (team === 'blue') hostBanner('Your sigil appeared', 'Its wall falls in 15s: defend it!', 3);
 }
 
 function evenMix() { return Object.fromEntries(MINION_KINDS.map(k => [k, 1 / MINION_KINDS.length])); }
 
-function startBattle(diff) {
+function startBattle(diff, list = ['blue', 'red'], guests = []) {
   setMode('battle');
+  setArena(list);
   difficulty = diff;
   resetPlayer();
   clearCombat();
+  curSide = 'blue';
+  sideFx = { blue: newFx(), red: newFx(), green: newFx() };
+  loadFx('blue');
   const fp = fountainPos();
   player.x = fp.x; player.y = fp.y; player.face = { x: 1, y: 0 };
-  foes = []; friends = []; bshots = []; links = [];
+  units = { blue: [], red: [], green: [] }; unitsVer++;
+  foes = []; friends = units.blue; bshots = []; links = [];
   chests = []; scrolls = []; boat.x = boat.y = 1e6;
   discovered = new Set();
   bossesDown = 0; kills = 0; score = 0; elapsed = 0; tally = {}; masterHunter = false;
   banner = null; castMsg = null; reveal = null; wonShown = false;
   seq = []; curNode = null;
-  const hard = diff === 'hard' || diff === 'vhard', vhard = diff === 'vhard', med = diff === 'medium';
-  // Every level starts with the same army; the commander is what changes (see redBrain).
-  // Very Hard alone gives red more: see VH_EDGE.
+  // Every level starts with the same army; the commander is what changes (see aiBrain).
+  // Very Hard alone gives the computer more: see VH_EDGE.
   teams = {
-    blue: { score: 0, cells: 0, wave: 4, minions: 10, wizards: 2, wizQ: [], sigilT: 0, mix: evenMix() },
-    red:  { score: 0, cells: 0, wave: 4, minions: 10, wizards: 2, wizQ: [], sigilT: 0, mix: evenMix() },
     buildElem: 'fire', // the element of your next turret or titan
     order: 'spread', // your army: 'spread' pushes on its own, 'follow' sticks with you
     orders: { minion: 'attackTurrets', titan: 'attackTurrets' }, // what each group does when spread out
     time: MATCH_TIME, terrRecalc: 0,
-    build: { team: 'blue', t: BUILD_EVERY }, pending: null, result: null,
-    breakdown: { blue: {}, red: {} }, stats: newStats(), brain: null, focus: new Map(), redUsed: new Set(), ultCd: 30,
+    build: { team: TEAMS[0], t: buildEvery() }, pending: null, pendingG: {}, result: null,
+    breakdown: {}, stats: newStats(), tally: {}, bonus: {}, skins: {},
     eclipse: planEclipses(),
   };
-  if (vhard && !versus) { teams.red.minions = Math.round(10 * VH_EDGE.minions); teams.red.wizards = VH_EDGE.wizards; }
-  eclipseSeen = {};
-  // Hard and Very Hard: red's wizards get their own spell lists, and can hit you through a stand-in
-  leadMage = null;
-  Object.assign(redSide, { shots: [], allies: [], traps: [], zones: [], waves: [], meteors: [], storms: [], discovered: new Set(), seq: [] });
-  if (hard) hostProxy = heroProxy('host', 'blue');
-  for (const team of ['blue', 'red']) {
-    const sd = teamSide(team);
-    addUnit(team, 'nexus', sd * BASE_X, 0);
-    // the middle turret sits a little forward so every one of the three holds ground
-    const els = ELEM_CYCLE.slice().sort(() => Math.random() - 0.5);
-    const edgeY = ARENA_H * Math.sqrt(1 - (FRONT_X / WORLD) ** 2) - 30; // just inside the oval's rim
-    addUnit(team, 'turret', sd * FRONT_X, -edgeY, els[0]);
-    addUnit(team, 'turret', sd * (FRONT_X - 70), 0, els[1]);
-    addUnit(team, 'turret', sd * FRONT_X, edgeY, els[2]);
-    const n = teams[team].wizards;
-    for (let i = 0; i < n; i++) addUnit(team, 'wizard', sd * (BASE_X - 130), (i - (n - 1) / 2) * 110, ELEM_CYCLE[(i * 2 + (team === 'red' ? 1 : 0)) % 5]);
+  for (const team of TEAMS) {
+    teams[team] = { score: 0, cells: 0, wave: 4, minions: 10, wizards: 2, wizQ: [], sigilT: 0, mix: evenMix(), turn: 0,
+                    brain: null, focus: new Map(), used: new Set(), ultCd: 30, leadMage: null, leader: null,
+                    order: 'spread', orders: { minion: 'attackTurrets', titan: 'attackTurrets' }, buildElem: 'fire' };
+    teams.breakdown[team] = {}; teams.tally[team] = 0; teams.bonus[team] = 0;
   }
+  // the players: you, and any friends who joined; a team nobody plays is the computer's
+  hostP.heroId = 'host'; hostP.team = 'blue';
+  heroes = [{ id: 'host', team: 'blue', p: hostP, proxy: heroProxy('host', 'blue') }];
+  for (const g of guests) addHero(g.id, g.team, g.skin);
+  for (const h of heroes) units[h.team].push(h.proxy);
+  if (diff === 'vhard') for (const team of TEAMS) if (isAI(team)) { teams[team].minions = Math.round(10 * VH_EDGE.minions); teams[team].wizards = VH_EDGE.wizards; }
+  eclipseSeen = {};
+  for (const team of TEAMS) {
+    const b = homePt(team, 0);
+    addUnit(team, 'nexus', b.x, b.y);
+    // three turrets on the front line: the middle one a little forward so every one holds ground
+    const els = ELEM_CYCLE.slice().sort(() => Math.random() - 0.5), d = teamDir(team);
+    let spots;
+    if (three()) {
+      const a = TEAM_ANGLE3[team], at = (ang, r) => ({ x: Math.cos(ang) * r, y: Math.sin(ang) * r });
+      spots = [at(a - 0.75, 760), at(a, 450), at(a + 0.75, 760)];
+    } else {
+      const edgeY = ARENA_H * Math.sqrt(1 - (FRONT_X / WORLD) ** 2) - 30; // just inside the oval's rim
+      spots = [{ x: d.x * FRONT_X, y: -edgeY }, { x: d.x * (FRONT_X - 70), y: 0 }, { x: d.x * FRONT_X, y: edgeY }];
+    }
+    spots.forEach((p, i) => addUnit(team, 'turret', p.x, p.y, els[i]));
+    const n = teams[team].wizards;
+    for (let i = 0; i < n; i++) { const p = homePt(team, 130, (i - (n - 1) / 2) * 110); addUnit(team, 'wizard', p.x, p.y, ELEM_CYCLE[(i * 2 + TEAMS.indexOf(team)) % 5]); }
+  }
+  unitsVer++; setViews('blue');
   computeTerritory();
-  placeSigil('blue');
-  placeSigil('red');
+  for (const team of TEAMS) placeSigil(team);
   state = 'play';
   showBanner(collisionLine(), `${{ easy: 'Easy', medium: 'Medium', hard: 'Hard', vhard: 'Very Hard' }[diff]} · most points in 5 minutes preserves your universe`, 4.5);
 }
 
 // Who a unit fights: the nearest opponent it can see (walled sigils and bases are ignored).
 function findTarget(u) {
-  const opp = u.team === 'blue'
-    ? foes.concat(rivalHelpers())
-    : (state === 'play' && !player.onBoat ? [player] : []).concat(friends, allies.filter(a => a.kind === 'critter'));
+  const opp = targetsFor(u.team);
   let best = null, bd = u.def.aggro;
   if (smartRed(u) && sharp(u)) {
     let bs = -Infinity;
@@ -2744,17 +2901,19 @@ function findTarget(u) {
   return best;
 }
 
-// Where a unit heads when nothing is in reach: the enemy sigil (unless walled),
-// otherwise the nearest enemy turret, otherwise the edge of the enemy base.
-// Your orders for a unit (red always attacks turrets, then the base).
-function rivalHelpers() { return (versus && net.role === 'host') || aiMagic() ? redSide.allies.filter(a => a.kind === 'critter' && a.life > 0) : []; }
-// a team's army stance and its leader (red only has one in a duel)
-function teamStance(team) { return team === 'blue' ? teams.order : (versus && teams.redOrder) || 'spread'; }
-function teamLeader(team) { return team === 'blue' ? (state === 'play' ? hostP : null) : (versus && rivalP && !rivalP.dead ? rivalP : null); }
+// A team's army stance, orders and leader are set by its players; the
+// computer's armies always spread out and attack.
+function teamStance(team) { return !teams || isAI(team) ? 'spread' : team === 'blue' ? teams.order : teams[team].order; }
+function teamOrders(team) { return !teams || isAI(team) ? null : team === 'blue' ? teams.orders : teams[team].orders; }
+// who a following army sticks with: whoever last called it, else the team's first player
+function teamLeader(team) {
+  const T = teams[team], h = (T && T.leader && heroById(T.leader)) || humansOn(team)[0];
+  if (!h || h.gone) return null;
+  return h.p === hostP ? (state === 'play' ? hostP : null) : (h.p.dead ? null : h.p);
+}
 
 function orderFor(u) {
-  if (!teams) return 'attackTurrets';
-  const ords = u.team === 'blue' ? teams.orders : versus ? teams.redOrders : null;
+  const ords = teamOrders(u.team);
   if (!ords) return 'attackTurrets';
   if (isMinion(u)) return ords.minion;
   if (u.kind === 'titan') return ords.titan;
@@ -2766,34 +2925,38 @@ function orderFor(u) {
 function guardPost(u, what) {
   const home = nexusOf(u.team);
   if (what === 'base' || !teamList(u.team).some(t => t.kind === 'turret' && !t.dead)) return home;
-  const enemies = teamList(otherTeam(u.team)).filter(o => !o.dead && !o.structure);
+  const enemies = enemiesOf(u.team).filter(o => !o.dead && !o.structure);
   let best = null, score = -Infinity;
+  const d = teamDir(u.team);
   for (const t of teamList(u.team)) {
     if (t.kind !== 'turret' || t.dead) continue;
     const near = enemies.filter(o => Math.hypot(o.x - t.x, o.y - t.y) < 450).length;
-    const sc = near * 1000 - Math.abs(t.x) * 0.5 - Math.hypot(t.x - u.x, t.y - u.y) * 0.1;
+    const sc = near * 1000 - (t.x * d.x + t.y * d.y) * 0.5 - Math.hypot(t.x - u.x, t.y - u.y) * 0.1;
     if (sc > score) { score = sc; best = t; }
   }
   return best || home;
 }
 
+// Where a unit heads when nothing is in reach: the nearest enemy sigil
+// (unless walled), otherwise the nearest enemy turret, otherwise a base.
 function objectiveFor(u) {
   if (smartRed(u)) { const o = smartObjective(u); if (o) return o; }
-  const enemy = teamList(otherTeam(u.team)).filter(o => !o.dead && o.structure && !shielded(o));
-  if (orderFor(u) === 'attackBase') { const nx = nexusOf(otherTeam(u.team)); if (nx) return nx; }
-  if (u.kind !== 'titan') { const sig = enemy.find(o => o.kind === 'sigil'); if (sig) return sig; }
-  let best = null, bd = Infinity;
-  for (const o of enemy) { if (o.kind !== 'turret') continue; const d = Math.hypot(o.x - u.x, o.y - u.y); if (d < bd) { bd = d; best = o; } }
-  if (best) return best;
-  const nx = nexusOf(otherTeam(u.team));
-  return nx || null; // no turrets left: go for the base
+  const enemy = enemiesOf(u.team).filter(o => !o.dead && o.structure && !o.proxyOf && !shielded(o));
+  const nearest = kind => {
+    let best = null, bd = Infinity;
+    for (const o of enemy) { if (o.kind !== kind) continue; const d = Math.hypot(o.x - u.x, o.y - u.y); if (d < bd) { bd = d; best = o; } }
+    return best;
+  };
+  if (orderFor(u) === 'attackBase') { const nx = nearest('nexus'); if (nx) return nx; }
+  if (u.kind !== 'titan') { const sig = nearest('sigil'); if (sig) return sig; }
+  return nearest('turret') || nearest('nexus'); // no turrets left: go for a base
 }
 
 function unitAttack(u, tgt) {
   if (u.cd > 0 || u.hex > 0 || u.def.passive) return;
   if (!eclipseMult(u.elem)) { u.cd = 0.3; return; } // eclipsed: it can't fight
   u.cd = u.def.cd;
-  const atk = tiredAtk(u) * (u.power || 1) * resDmgOut(u.team);
+  const atk = tiredAtk(u) * (u.power || 1) * resDmgOut(u.team, tgt.team);
   if (isMinion(u)) u.tired = Math.min(1, (u.tired || 0) + TIRE_PER_SWING);
   if (u.def.ranged) {
     const dx = tgt.x - u.x, dy = tgt.y - u.y, d = Math.hypot(dx, dy) || 1;
@@ -2813,17 +2976,17 @@ function unitAttack(u, tgt) {
     u.slamAt = { x: tgt.x, y: tgt.y, tgt };
     return;
   }
-  hitUnit(tgt, u.def.dmg * atk * matchup(u.elem, tgt));
+  hitUnit(tgt, u.def.dmg * atk * matchup(u.elem, tgt), u.team);
 }
 
 function titanSlam(u) {
   const { x, y, tgt } = u.slamAt;
-  const pw = (u.power || 1) * resDmgOut(u.team) * eclipseMult(u.elem);
+  const pw = (u.power || 1) * resDmgOut(u.team, tgt && tgt.team) * eclipseMult(u.elem);
   if (!pw) { u.slamAt = null; return; }
-  if (tgt && !tgt.dead) hitUnit(tgt, u.def.dmg * pw * matchup(u.elem, tgt));
-  // everything of the other side nearby gets hit too
-  const opp = u.team === 'blue' ? foes : friends.concat(state === 'play' ? [player] : []);
-  for (const o of opp) if (o !== tgt && !o.dead && Math.hypot(o.x - x, o.y - y) < u.def.splash) hitUnit(o, u.def.dmg * 0.5 * pw * matchup(u.elem, o));
+  if (tgt && !tgt.dead) hitUnit(tgt, u.def.dmg * pw * matchup(u.elem, tgt), u.team);
+  // everything of the other sides nearby gets hit too
+  const opp = targetsFor(u.team);
+  for (const o of opp) if (o !== tgt && !o.dead && Math.hypot(o.x - x, o.y - y) < u.def.splash) hitUnit(o, u.def.dmg * 0.5 * pw * matchup(u.elem, o), u.team);
   ring(x, y, u.def.splash, TYPE_COLOR[u.elem] || TEAM_COLOR[u.team], 0.35);
   ring(x, y, u.def.splash * 0.5, '#d8c8a0', 0.25);
   if (u.elem) elemHit(u.elem, x, y, 2.6);
@@ -2836,77 +2999,142 @@ function titanSlam(u) {
   u.slamAt = null;
 }
 
-// Damage from the AI and laser walls. Your own hits go through damageFoe.
-function hitUnit(t, dmg) {
-  if (t === player) { hurtPlayer(dmg); return; }
-  if (t.proxyOf) { if (!t.dead) hurtPlayer(dmg, heroOf(t)); return; }
+// Damage from units, towers and laser walls (`by` is the team it counts for).
+// Your own spells go through damageFoe.
+function hitUnit(t, dmg, by) {
+  if (t === player) { if (by) player.lastHitBy = by; hurtPlayer(dmg); return; }
+  if (t.proxyOf) { const h = heroOf(t); if (!t.dead && h) { if (by) h.lastHitBy = by; hurtPlayer(dmg, h); } return; }
   if (t.kind === 'critter') { t.hp -= dmg; burst(t.x, t.y, '#ccc', 4, 100); if (t.hp <= 0) t.life = 0; return; }
   if (t.dead) return;
+  if (by) t.lastHitBy = by;
   if (shielded(t)) {
     if (t.txtCd <= 0) { floatText(t.x, t.y - t.r - 10, shieldText(t), '#bde', 13); t.txtCd = 0.8; }
     return;
   }
-  t.hp -= minionHit(t, mageGuard(t, dmg)) * (t.unit ? resDmgIn(t.team) : 1);
+  t.hp -= minionHit(t, mageGuard(t, dmg)) * (t.unit ? resDmgIn(t.team, by) : 1);
   t.flash = 0.12;
   if (t.hp <= 0) unitFell(t);
 }
 
-// A unit is gone. Whoever's side it wasn't on scores for it.
+// which team brought something down (in a two-team match, simply the other one)
+function killerOf(o, team) {
+  const by = o.lastHitBy;
+  if (by && by !== team && TEAMS.includes(by)) return by;
+  return TEAMS.length === 2 ? otherTeam(team) : null;
+}
+
+// A unit is gone. The team that brought it down scores for it.
 function unitFell(u) {
   if (u.mage && u.mage.phoenix > 0) {
-    // a red wizard's Phoenix: back up once, in flames
+    // a computer wizard's Phoenix: back up once, in flames
     u.mage.phoenix = 0; u.hp = u.maxHp;
     burst(u.x, u.y, '#ffb04a', 50, 420);
     floatText(u.x, u.y - 50, 'PHOENIX!', '#ff8a3a', 18);
     return;
   }
   u.dead = true;
-  const by = otherTeam(u.team);
-  if (u.kind === 'sigil') { teamScore(by, u.def.pts, u.x, u.y - u.r - 20, 'Sigils'); const S = stats(by); if (S) S.sigils++; }
-  else if (u.kind !== 'nexus') scoreKill(by, isMinion(u) ? 'minion' : u.kind, u.x, u.y - u.r - 20);
+  const by = killerOf(u, u.team);
+  if (by) {
+    if (u.kind === 'sigil') { teamScore(by, u.def.pts, u.x, u.y - u.r - 20, 'Sigils'); const S = stats(by); if (S) S.sigils++; }
+    else if (u.kind !== 'nexus') scoreKill(by, isMinion(u) ? 'minion' : u.kind, u.x, u.y - u.r - 20);
+  }
   burst(u.x, u.y, TEAM_COLOR[u.team], u.structure ? 60 : 14, u.structure ? 420 : 240);
   if (u.kind === 'wizard') teams[u.team].wizQ.push({ t: 12 });
   if (u.kind === 'sigil') {
     teams[u.team].sigilT = 3;
     shake = Math.max(shake, 10);
     SFX.bossDown();
-    showBanner(by === 'blue' ? `You broke the red sigil! +${u.def.pts}` : `Red broke your sigil! +${u.def.pts} to red`, 'Bonus build turn for ' + (by === 'blue' ? 'you!' : 'red'), 3);
-    teams.bonus = teams.bonus || { blue: 0, red: 0 };
-    teams.bonus[by]++;
+    const lc = t => TEAM_NAME[t].toLowerCase();
+    hostBanner(by === 'blue' ? `You broke the ${lc(u.team)} sigil! +${u.def.pts}`
+             : u.team === 'blue' ? `${by ? TEAM_NAME[by] : 'Someone'} broke your sigil!${by ? ` +${u.def.pts} to ${lc(by)}` : ''}`
+             : `${by ? TEAM_NAME[by] : 'Someone'} broke the ${lc(u.team)} sigil`,
+               by ? 'Bonus build turn for ' + (by === 'blue' ? 'you!' : lc(by)) : '', 3);
+    if (by) teams.bonus[by] = (teams.bonus[by] || 0) + 1;
   }
-  if (u.kind === 'nexus') { battleOver(u.team); return; }
+  if (u.kind === 'nexus') { battleOver(u.team, by); return; }
   if (u.kind === 'turret') {
     shake = Math.max(shake, 12);
     SFX.explode(true);
     computeTerritory();
-    showBanner(u.team === 'red' ? 'Red turret destroyed!' : 'Your turret has fallen!', 'That ground is open again', 3);
+    hostBanner(u.team === 'blue' ? 'Your turret has fallen!' : `${TEAM_NAME[u.team]} turret destroyed!`, 'That ground is open again', 3);
   }
 }
 
-// who'd get the ground bonus right now (null if level)
+// who'd get the ground bonus right now (null if the top is shared)
 function groundLeader() {
-  if (!teams || teams.blue.cells === teams.red.cells) return null;
-  return teams.blue.cells > teams.red.cells ? 'blue' : 'red';
+  if (!teams) return null;
+  let best = null, bc = -1, tie = false;
+  for (const t of TEAMS) { const c = teams[t].cells; if (c > bc) { best = t; bc = c; tie = false; } else if (c === bc) tie = true; }
+  return tie ? null : best;
+}
+// how a team did: a win (the top score alone), a draw (sharing it), or a loss
+function resultFor(team) {
+  const top = Math.max(...TEAMS.map(t => teams[t].score)), mine = teams[team].score;
+  if (mine < top) return 'lose';
+  return TEAMS.filter(t => teams[t].score === top).length > 1 ? 'draw' : 'win';
 }
 
 // The match ends when the clock runs out or a base falls. Destroying a base
-// scores 60; the 140 for the most ground is paid now; then most points wins.
-function battleOver(baseFell) {
+// scores 100; the 140 for the most ground is paid now; then most points wins.
+function battleOver(baseFell, by) {
   if (state !== 'play' && state !== 'dead') return;
-  if (baseFell) { teams[otherTeam(baseFell)].score += BASE_BONUS; bookScore(otherTeam(baseFell), 'Base', BASE_BONUS); }
+  if (baseFell && by) { teams[by].score += BASE_BONUS; bookScore(by, 'Base', BASE_BONUS); }
   computeTerritory();
-  if (teams.stats) teams.stats.land.push([Math.round(MATCH_TIME - teams.time), teams.blue.cells, teams.red.cells]);
+  if (teams.stats) teams.stats.land.push([Math.round(MATCH_TIME - teams.time), ...TEAMS.map(t => teams[t].cells)]);
   const g = groundLeader();
   if (g) { teams[g].score += GROUND_BONUS; teams.groundTo = g; bookScore(g, 'Most ground', GROUND_BONUS); }
-  const b = teams.blue.score, r = teams.red.score;
   teams.endedBy = baseFell ? 'base' : 'time';
-  teams.baseFell = baseFell;
-  teams.result = b > r ? 'win' : b < r ? 'lose' : 'draw';
+  teams.baseFell = baseFell; teams.baseBy = by || null;
+  teams.result = resultFor('blue');
   state = teams.result === 'win' ? 'won' : 'lost';
   overlayT = 0; endScroll = 0;
   flash = 1;
   teams.result === 'win' ? SFX.bossDown() : SFX.death();
-  if (versus && net.role === 'host') { net.send(makeSnapshot()); netEvents = []; }
+  if (net.role === 'host') { net.send(makeSnapshot()); netEvents = []; }
+}
+
+// One frame for a battle unit of any team: its burns and poison, being
+// frozen, scared or confused, then its own moves, any knockback, and staying
+// on the field.
+function stepUnit(f, dt) {
+  f.flash = Math.max(0, f.flash - dt);
+  f.hitCd -= dt; f.slow -= dt; f.txtCd -= dt;
+  if (f.poison > 0) {
+    f.poison -= dt;
+    f.poisonTick -= dt;
+    if (f.poisonTick <= 0) { f.poisonTick = 0.5; dotHit(f, f.poisonDps * 0.5, 'poison', f.poisonBy); }
+    if (f.dead) return;
+  }
+  if (f.burn > 0) {
+    f.burn -= dt;
+    f.burnTick = (f.burnTick || 0) - dt;
+    if (f.burnTick <= 0) { f.burnTick = 0.5; dotHit(f, (f.burnDps || DOT_DPS) * 0.5, 'fire', f.burnBy); }
+    if (f.dead) return;
+  }
+  for (const k of ['hex', 'fear', 'confuse', 'root']) if (f[k] > 0) f[k] -= dt;
+  // frozen, stunned or turned to stone: no moving or fighting
+  if (f.freeze > 0 || f.stun > 0 || f.stone > 0) {
+    f.freeze = (f.freeze || 0) - dt; f.stun = (f.stun || 0) - dt; f.stone = (f.stone || 0) - dt;
+    return;
+  }
+  if (f.fear > 0) { const p = f.fearFrom || f; moveToward(f, f.x * 2 - p.x, f.y * 2 - p.y, f.spd, dt, 0); }
+  else if (f.confuse > 0) {
+    if (Math.random() < dt * 1.5) f.wander = rnd(0, TAU);
+    f.x += Math.cos(f.wander) * f.spd * dt; f.y += Math.sin(f.wander) * f.spd * dt;
+  } else updateUnit(f, dt);
+  if (!f.structure) {
+    f.x += f.kx * dt; f.y += f.ky * dt;
+    const dmp = Math.max(0, 1 - 7 * dt);
+    f.kx *= dmp; f.ky *= dmp;
+    clampArena(f, f.r);
+    if (!f.def.flying) pushOut(f, f.r);
+  }
+}
+// a tick of a burn or poison, counted for whoever started it
+function dotHit(f, dmg, type, by) {
+  const pb = dmgBy, pp = potency;
+  dmgBy = by || null; potency = 1;
+  try { damageFoe(f, dmg, type, true); } finally { dmgBy = pb; potency = pp; }
 }
 
 function updateUnit(u, dt) {
@@ -2934,7 +3162,7 @@ function updateUnit(u, dt) {
   const home = nexusOf(u.team);
   let tx = null, ty = null;
   if (u.retreat && home) {
-    tx = home.x - teamSide(u.team) * 130; ty = home.y;
+    const hp = homePt(u.team, 130); tx = hp.x; ty = hp.y;
     if (Math.hypot(tx - u.x, ty - u.y) < 160) { u.hp = Math.min(u.maxHp, u.hp + 8 * dt); u.tired = Math.max(0, (u.tired || 0) - 0.25 * dt); }
     if (u.hp >= u.maxHp * 0.95 && !(u.tired > 0.1 && smartRed(u))) u.retreat = false;
   } else if (teamStance(u.team) !== 'follow' && orderFor(u).startsWith('protect')) {
@@ -2947,8 +3175,8 @@ function updateUnit(u, dt) {
         if (d > u.def.range - 4) { tx = t.x; ty = t.y; } else unitAttack(u, t);
       } else {
         const rad = post.r + 40 + (u.wob % 1) * 50;
-        const fwd = -teamSide(u.team) * 0.6; // stand mostly on the side facing the enemy
-        tx = post.x + (Math.cos(u.slot) * 0.6 + fwd) * rad; ty = post.y + Math.sin(u.slot) * rad;
+        const d = teamDir(u.team); // stand mostly on the side facing the middle
+        tx = post.x + (Math.cos(u.slot) * 0.6 - d.x * 0.6) * rad; ty = post.y + (Math.sin(u.slot) - d.y * 0.6) * rad;
         if (Math.hypot(tx - u.x, ty - u.y) < 10) tx = null;
       }
     }
@@ -2972,14 +3200,19 @@ function updateUnit(u, dt) {
       if (d > u.def.range - 4) { tx = t.x; ty = t.y; } else {
         unitAttack(u, t);
         // Very Hard: shooters step back from anything that wants to get close
-        if (smartRed(u) && aiSkill() >= 0.75 && sharp(u) && u.def.ranged && !t.structure && d < u.def.range * 0.5 && !(t.def && t.def.ranged)) { tx = u.x + (u.x - t.x); ty = u.y + (u.y - t.y); }
+        if (smartRed(u) && aiSkill() >= 0.75 && sharp(u) && u.def.ranged && (!t.structure || t.proxyOf) && d < u.def.range * 0.5 && !(t.def && t.def.ranged)) { tx = u.x + (u.x - t.x); ty = u.y + (u.y - t.y); }
       }
     } else {
       const o = objectiveFor(u);
       if (o) {
         // spread out along the field until close, then converge
-        const near = Math.abs(o.x - u.x) < 420;
-        tx = o.x; ty = near ? o.y : (u.laneY + o.y) / 2;
+        if (three()) {
+          const dx = o.x - u.x, dy = o.y - u.y, d = Math.hypot(dx, dy) || 1, off = d < 420 ? 0 : (u.lane || 0) * 260;
+          tx = o.x - dy / d * off; ty = o.y + dx / d * off;
+        } else {
+          const near = Math.abs(o.x - u.x) < 420;
+          tx = o.x; ty = near ? o.y : (u.laneY + o.y) / 2;
+        }
       }
     }
   }
@@ -3104,7 +3337,6 @@ function waveKinds(mix, n) {
   for (let k = 0; k < left; k++) out[order[k][1]]++;
   return MINION_KINDS.flatMap((k, i) => Array(out[i]).fill(k));
 }
-// red's mix: random on Easy; on Hard it leans toward whatever beats your favourite
 // the element that beats the most common element in a list of units (null if empty)
 function counterTo(list) {
   const n = {};
@@ -3112,12 +3344,12 @@ function counterTo(list) {
   const top = Object.keys(n).sort((a, b) => n[b] - n[a])[0];
   return top ? ELEM_CYCLE.find(e => elemBeats(e) === top) : null;
 }
-function redMix() {
-  // lean toward whatever beats your army and turrets; the sharper, the harder it leans
+function aiMix(team) {
+  // lean toward whatever beats the other teams' armies and turrets; the sharper, the harder it leans
   const sk = aiSkill();
   const w = MINION_KINDS.map(() => 0.3 + Math.random() * (1 - sk));
-  for (const u of friends) {
-    if (u.dead || !u.elem || u.kind === 'nexus' || u.kind === 'sigil') continue;
+  for (const u of enemiesOf(team)) {
+    if (u.dead || !u.elem || u.proxyOf || u.kind === 'nexus' || u.kind === 'sigil') continue;
     const counter = MINION_KINDS.find(k => elemBeats(UNITS[k].elem) === u.elem);
     w[MINION_KINDS.indexOf(counter)] += (u.kind === 'titan' || u.kind === 'turret' ? 0.4 : 0.15) * sk;
   }
@@ -3139,70 +3371,85 @@ function redMix() {
 // it rethinks, how sound its choices are, how tightly the army masses and
 // focuses fire, whether it defends, kites and rests its tired minions.
 const AI_SKILL = { easy: 0.25, medium: 0.5, hard: 1, vhard: 1 };
-// Hard and Very Hard: red's wizards cast real spells
+// Hard and Very Hard: the computer's wizards cast real spells
 const redCasts = () => difficulty === 'hard' || difficulty === 'vhard';
-// Very Hard: red already plays as well as it can, so on top of that it gets a
-// bigger, tougher army and wizards that cast more often. Tuned in simulated
-// matches so Very Hard is about twice as hard as Hard: to fight red to a draw
-// your army needs about twice the fighting strength (damage × health) it needs on Hard.
+// Very Hard: the computer already plays as well as it can, so on top of that
+// it gets a bigger, tougher army and wizards that cast more often. Tuned in
+// simulated matches so Very Hard is about twice as hard as Hard: to fight it
+// to a draw your army needs about twice the fighting strength (damage × health) it needs on Hard.
 const VH_EDGE = { minions: 1.35, wizards: 2, hp: 1.275, power: 1.275, cast: 1.45 };
-const vhEdge = () => difficulty === 'vhard' && !versus && mode === 'battle';
+const vhEdge = () => difficulty === 'vhard' && mode === 'battle';
 const aiSkill = () => AI_SKILL[difficulty] ?? 0.5;
-const smartRed = u => u.team === 'red' && !versus && mode === 'battle';
-// some of red's units are sharp and some aren't; better commanders have more sharp ones
+// a team nobody is playing is the computer's
+function isAI(team) { return mode === 'battle' && !!teams && net.role !== 'guest' && !humansOn(team).length; }
+const smartRed = u => isAI(u.team);
+// some of the computer's units are sharp and some aren't; better commanders have more sharp ones
 const sharp = u => (u.sharp ??= Math.random() < 0.25 + 0.75 * aiSkill());
-// the final score if things stay as they are
+// every team's final score if things stay as they are
 function projectedScores() {
-  const g = groundLeader();
-  return { red: teams.red.score + (g === 'red' ? GROUND_BONUS : 0), blue: teams.blue.score + (g === 'blue' ? GROUND_BONUS : 0) };
+  const g = groundLeader(), P = {};
+  for (const t of TEAMS) P[t] = teams[t].score + (g === t ? GROUND_BONUS : 0);
+  return P;
 }
-// how much ground blue would lose without this turret
-function landSwing(t) {
-  const pts = towersOf('blue').filter(o => o !== t).map(o => ({ x: o.x, y: o.y }));
-  pts.push({ x: -WORLD, y: -ARENA_H }, { x: -WORLD, y: ARENA_H });
-  return Math.max(0, polyArea(hulls.blue) - polyArea(hull(pts)));
-}
-const FIELD_AREA = Math.PI * WORLD * ARENA_H;
-function redBrain(dt) {
-  const T = teams, sk = aiSkill();
-  const B = T.brain || (T.brain = { phase: 'gather', t: 0, think: 0, target: null, rally: { x: FRONT_X * 0.5, y: 0 }, defend: null, mood: 'even' });
+// how much ground a team would lose without this turret
+function landSwing(t) { return Math.max(0, polyArea(hulls[t.team]) - polyArea(teamShape(t.team, null, t))); }
+const fieldArea = () => Math.PI * ARENA_W * ARENA_H;
+function aiBrain(team, dt) {
+  const T = teams, TT = T[team], sk = aiSkill();
+  const B = TT.brain || (TT.brain = { phase: 'gather', t: 0, think: 0, target: null, rally: rallyPt(team, frontDist() * 0.5), defend: null, mood: 'even' });
   B.t += dt; B.think -= dt;
+  const mine = units[team];
   // who's shooting whom, for focus fire
-  T.focus = new Map();
-  for (const u of foes) if (!u.dead && u.lastTgt && !u.lastTgt.dead) T.focus.set(u.lastTgt, (T.focus.get(u.lastTgt) || 0) + 1);
+  TT.focus = new Map();
+  for (const u of mine) if (!u.dead && u.lastTgt && !u.lastTgt.dead) TT.focus.set(u.lastTgt, (TT.focus.get(u.lastTgt) || 0) + 1);
   if (B.think > 0) return;
   B.think = 0.5 + (1 - sk) * 1.5; // sharper commanders rethink more often
-  const army = foes.filter(u => !u.dead && !u.structure && !u.proxyOf && !u.retreat);
-  const blue = friends.filter(o => !o.dead);
-  const fighters = blue.filter(o => !o.structure).concat(state === 'play' && !player.onBoat ? [player] : []);
-  const home = nexusOf('red');
+  const army = mine.filter(u => !u.dead && !u.structure && !u.proxyOf && !u.retreat);
+  const enemy = enemiesOf(team).filter(o => !o.dead);
+  const fighters = enemy.filter(o => !o.structure || o.proxyOf); // their units, and players' wizards
+  const home = nexusOf(team), others = TEAMS.filter(t => t !== team);
 
   // 0. read the scoreboard: behind late on means gamble, well ahead means protect
-  const P = projectedScores(), lead = P.red - P.blue, left = T.time;
-  const landClose = Math.abs(T.red.cells - T.blue.cells) < FIELD_CELLS * 0.08;
+  const P = projectedScores(), rival = Math.max(...others.map(t => P[t])), lead = P[team] - rival, left = T.time;
+  const landClose = Math.abs(TT.cells - Math.max(...others.map(t => T[t].cells))) < FIELD_CELLS * 0.08;
   let mood = lead < -10 && left < 150 ? 'chase' : lead > 70 && left < 120 ? 'protect' : 'even';
   if (Math.random() > sk) mood = 'even'; // weaker commanders don't adjust
-  if (mood !== B.mood && mood !== 'even' && sk >= 0.5) castMessage(mood === 'chase' ? 'Red throws everything at you!' : 'Red digs in to protect its lead', TEAM_COLOR.red);
+  if (mood !== B.mood && mood !== 'even' && sk >= 0.5) castMessage(mood === 'chase' ? `${TEAM_NAME[team]} throws everything ${three() ? 'into the fight' : 'at you'}!` : `${TEAM_NAME[team]} digs in to protect its lead`, TEAM_COLOR[team]);
   B.mood = mood;
+
+  // three teams: go after whichever rival is winning, and leave a team that's
+  // already under attack to the other one
+  const pull = {};
+  for (const t of others) {
+    let w = 1;
+    if (others.length > 1) {
+      const ahead = P[t] - Math.max(...others.filter(x => x !== t).map(x => P[x]));
+      w = clamp(1 + ahead / 150, 0.6, 1.5);
+      if (others.some(x => x !== t && T[x].brain && T[x].brain.target && T[x].brain.target.team === t)) w *= 0.7;
+    }
+    pull[t] = w;
+  }
 
   // 1. the most valuable target for the effort
   const cost = t => t.hp * 6 + (home ? Math.hypot(t.x - home.x, t.y - home.y) * 0.35 : 0)
                   + fighters.filter(f => Math.hypot(f.x - t.x, f.y - t.y) < 350).length * 40;
   const opts = [];
-  for (const o of blue) {
-    if (!o.structure || shielded(o)) continue;
+  for (const o of enemy) {
+    if (!o.structure || o.proxyOf || shielded(o)) continue;
     let v = 0;
     if (o.kind === 'sigil') v = 80;                                                          // 65 and a bonus build
-    else if (o.kind === 'turret') v = TURRET_PTS + landSwing(o) / FIELD_AREA * GROUND_BONUS * (landClose ? 2 : 0.7);
-    else if (o.kind === 'nexus') v = P.red + BASE_BONUS > P.blue ? 120 : -50;                // only end a match you'd win
+    else if (o.kind === 'turret') v = TURRET_PTS + landSwing(o) / fieldArea() * GROUND_BONUS * (landClose ? 2 : 0.7);
+    else if (o.kind === 'nexus') v = P[team] + BASE_BONUS > rival ? 120 : -50;               // only end a match you'd win
     if (mood === 'chase' && (o.kind === 'sigil' || o.kind === 'nexus')) v *= 1.5;
-    if (v > 0) opts.push({ o, score: v / (cost(o) / 100 + 1) });
+    if (v > 0) opts.push({ o, score: v * (pull[o.team] || 1) / (cost(o) / 100 + 1) });
   }
   opts.sort((a, b) => b.score - a.score);
   // weaker commanders often go for something else
   const pick = opts.length ? (Math.random() < sk ? opts[0] : opts[Math.floor(Math.random() * opts.length)]) : null;
-  B.target = pick ? pick.o : nexusOf('blue');
-  if (B.target) B.rally = { x: FRONT_X * (mood === 'protect' ? 0.8 : 0.5), y: clamp(B.target.y * 0.6, -ARENA_H * 0.45, ARENA_H * 0.45) };
+  let fallback = null, fd = Infinity;
+  if (!pick) for (const o of enemy) if (o.kind === 'nexus') { const d = home ? Math.hypot(o.x - home.x, o.y - home.y) : 0; if (d < fd) { fd = d; fallback = o; } }
+  B.target = pick ? pick.o : fallback;
+  if (B.target) B.rally = rallyPt(team, frontDist() * (mood === 'protect' ? 0.8 : 0.5), B.target);
 
   // 2. mass, then push together (the weakest just stream forward)
   if (sk < 0.35) { B.phase = 'push'; for (const u of army) u.inPush = true; }
@@ -3214,7 +3461,7 @@ function redBrain(dt) {
       if ((gathered.length >= need && army.length >= 5) || (B.t > 12 + 8 * sk && gathered.length >= 4)) {
         B.phase = 'push'; B.t = 0;
         for (const u of gathered) u.inPush = true;
-        if (sk >= 0.75) castMessage('Red attacks together!', TEAM_COLOR.red);
+        if (sk >= 0.75) castMessage(`${TEAM_NAME[team]} attacks together!`, TEAM_COLOR[team]);
       }
     } else if (pushers.length < 3 || B.t > 45) {
       B.phase = 'gather'; B.t = 0;
@@ -3222,21 +3469,21 @@ function redBrain(dt) {
     }
   }
 
-  // 2b. eclipses: strike while blue's army is eclipsed, hold back while red's is
+  // 2b. eclipses: strike while the enemy's army is eclipsed, hold back while yours is
   if (CHARGE_TYPES.some(e => !eclipseMult(e)) && sk >= 0.5) {
     const work = us => us.length ? us.reduce((a, u) => a + eclipseMult(u.elem), 0) / us.length : 1;
-    const edge = work(army) - work(blue.filter(o => !o.structure));
+    const edge = work(army) - work(fighters.filter(o => !o.structure));
     if (edge > 0.2 && B.phase === 'gather') { B.phase = 'push'; B.t = 0; for (const u of army) u.inPush = true; }
     else if (edge < -0.2 && B.phase === 'push' && sk >= 0.75) { B.phase = 'gather'; B.t = 0; for (const u of army) u.inPush = false; }
   }
 
-  // 3. defend: enemies closing on a red building (better commanders react sooner, with more)
+  // 3. defend: enemies closing on one of its buildings (better commanders react sooner, with more)
   let worst = null, wn = 0;
-  for (const st of foes) {
+  for (const st of mine) {
     if (st.dead || !st.structure || st.proxyOf) continue;
     const near = fighters.filter(f => Math.hypot(f.x - st.x, f.y - st.y) < 420);
     const worth = st.kind === 'sigil' || st.kind === 'nexus' ? 2 : 0;
-    const weight = near.length + (near.includes(player) ? 3 : 0) + worth;
+    const weight = near.length + (near.some(f => f.proxyOf) ? 3 : 0) + worth;
     if (weight > wn) { wn = weight; worst = st; }
   }
   const alarm = mood === 'protect' ? 2 : sk >= 0.5 ? 3 : 6;
@@ -3248,41 +3495,39 @@ function redBrain(dt) {
     for (const u of free.slice(0, Math.min(free.length, n))) u.defend = true;
   }
 }
-// where a smart red unit heads when nothing is in reach
+// where a smart computer unit heads when nothing is in reach
 function smartObjective(u) {
-  const B = teams.brain;
+  const B = teams[u.team] && teams[u.team].brain;
   if (!B) return null;
-  if (u.defend && B.defend) return { x: B.defend.x - 60 + Math.cos(u.slot) * 50, y: B.defend.y + Math.sin(u.slot) * 50 };
+  if (u.defend && B.defend) { const d = teamDir(u.team); return { x: B.defend.x - d.x * 60 + Math.cos(u.slot) * 50, y: B.defend.y - d.y * 60 + Math.sin(u.slot) * 50 }; }
   if (B.phase === 'push' && u.inPush && B.target) return B.target;
   return { x: B.rally.x + Math.cos(u.slot) * 70, y: B.rally.y + Math.sin(u.slot) * 70 };
 }
 // target choice that chases points: wizards and heroes fill the tally fastest,
 // titans next; finish the wounded, hit what you beat, gang up (all scaled by skill)
 function smartScore(u, o, d) {
-  const sk = aiSkill();
+  const sk = aiSkill(), TT = teams[u.team];
   let sc = -d * 0.012;
-  if (o === hostP || o === player) sc += (u.kind === 'wizard' ? 2.5 : 1.2) * sk;
+  if (o.proxyOf || o === hostP) sc += (u.kind === 'wizard' ? 2.5 : 1.2) * sk;
   else if (o.unit) {
     sc += (1 - o.hp / (o.maxHp || 1)) * 2 * sk;
     sc += (matchup(u.elem, o) - 1) * 2 * sk;
     if (o.kind === 'wizard') sc += 1.5 * sk;
     else if (o.kind === 'titan') sc += 0.8 * sk;
-    if (o.structure && o !== (teams.brain && teams.brain.target)) sc -= 1.5;
+    if (o.structure && o !== (TT.brain && TT.brain.target)) sc -= 1.5;
   }
-  if (teams.brain && o === teams.brain.target) sc += 1.5 * sk;
-  sc += Math.min(4, teams.focus.get(o) || 0) * 0.6 * sk;
+  if (TT.brain && o === TT.brain.target) sc += 1.5 * sk;
+  sc += Math.min(4, TT.focus.get(o) || 0) * 0.6 * sk;
   return sc;
 }
 
-// ── Hard and Very Hard: red's wizards cast the whole spell book ──
-// Each red wizard has an invisible caster that runs real spells through the
-// same engine as yours (and a duel friend's). Every few seconds it reads the
+// ── Hard and Very Hard: the computer's wizards cast the whole spell book ──
+// Each computer wizard has an invisible caster that runs real spells through
+// the same engine as yours (and your friends'). Every few seconds it reads the
 // fight and picks a kind of spell: heal or guard when hurt, crowd control and
-// blasts into a crowd, attacks on you, helpers when it has none, buffs before
-// a push. Within that kind it prefers spells it hasn't cast yet, so over a
-// match red works through its whole spell book.
-const aiMagic = () => mode === 'battle' && redCasts() && !versus && !!teams;
-let leadMage = null;
+// blasts into a crowd, attacks on players' wizards, helpers when it has none,
+// buffs before a push. Within that kind it prefers spells it hasn't cast yet,
+// so over a match it works through its whole spell book.
 const AI_BOOK = {};
 for (const [k, sp] of Object.entries(SPELLS)) if (sp.kind !== 'time') (AI_BOOK[sp.kind] || (AI_BOOK[sp.kind] = [])).push(k);
 function makeMage(u) {
@@ -3290,16 +3535,17 @@ function makeMage(u) {
   player = {}; resetPlayer();
   const m = player;
   player = keep;
-  Object.assign(m, { x: u.x, y: u.y, face: { x: -1, y: 0 }, isMage: true, hp: u.hp, maxHp: u.maxHp, hpSeen: u.hp, mana: 14 });
+  const d = teamDir(u.team);
+  Object.assign(m, { x: u.x, y: u.y, face: { x: -d.x, y: -d.y }, isMage: true, team: u.team, hp: u.hp, maxHp: u.maxHp, hpSeen: u.hp, mana: 14 });
   return m;
 }
 const pickW = opts => { const t = opts.reduce((a, o) => a + o[1], 0); let r = Math.random() * t; for (const [v, w] of opts) if ((r -= w) <= 0) return v; return opts[0][0]; };
 function chooseSpell(u, m) {
-  const T = teams;
-  const fighters = friends.filter(o => !o.dead && !o.structure).concat(state === 'play' && !player.onBoat ? [player] : []);
+  const TT = teams[u.team];
+  const fighters = enemiesOf(u.team).filter(o => !o.dead && (!o.structure || o.proxyOf));
   const near = fighters.filter(o => Math.hypot(o.x - u.x, o.y - u.y) < 330).length;
-  const heroNear = state === 'play' && Math.hypot(player.x - u.x, player.y - u.y) < 420;
-  const helpers = redSide.allies.filter(a => a.kind === 'critter' && a.life > 0).length;
+  const heroNear = fighters.some(o => o.proxyOf && Math.hypot(o.x - u.x, o.y - u.y) < 420);
+  const helpers = fxOf(u.team).allies.filter(a => a.kind === 'critter' && a.life > 0).length;
   const hurt = u.hp / u.maxHp;
   let want;
   if (hurt < 0.45) want = pickW([['heal', 4], ['defence', 3], ['move', near ? 2 : 0]]);
@@ -3308,43 +3554,42 @@ function chooseSpell(u, m) {
   else if (near >= 1) want = pickW([['attack', 3], ['poison', 2], ['control', 2], ['summon', 1]]);
   else want = pickW([['summon', 3], ['buff', 3], ['defence', 1], ['heal', hurt < 0.9 ? 2 : 0]]);
   if (want === 'summon' && helpers >= MAX_HELPERS) want = 'buff';
-  T.ultCd = Math.max(0, T.ultCd || 0);
-  const ok = k => SPELLS[k].cost <= m.mana && (k.length < 6 || T.ultCd <= 0) && eclipseMult(RUNE_ELEM[k[0]]) > 0;
+  TT.ultCd = Math.max(0, TT.ultCd || 0);
+  const ok = k => SPELLS[k].cost <= m.mana && (k.length < 6 || TT.ultCd <= 0) && eclipseMult(RUNE_ELEM[k[0]]) > 0;
   const all = (AI_BOOK[want] || []).filter(ok);
   if (!all.length) return null;
-  T.redUsed = T.redUsed || new Set();
-  const fresh = all.filter(k => !T.redUsed.has(k));
+  const fresh = all.filter(k => !TT.used.has(k));
   const pool = fresh.length ? fresh : all;
   return pickW(pool.map(k => [k, k.length * k.length])); // stronger spells more often when affordable
 }
 function aiCast(u, m, key) {
-  const sp = SPELLS[key], T = teams;
+  const sp = SPELLS[key], TT = teams[u.team];
   // face the nearest enemy (or away from it, to blink out)
-  const t = withSide('red', () => nearestFoe(m.x, m.y, 700), m);
+  const t = withSide(u.team, () => nearestFoe(m.x, m.y, 700), m);
   if (t) { const dx = t.x - m.x, dy = t.y - m.y, d = Math.hypot(dx, dy) || 1; m.face = sp.kind === 'move' ? { x: -dx / d, y: -dy / d } : { x: dx / d, y: dy / d }; }
   const manaBefore = m.mana;
-  withSide('red', () => { seq = key.split(''); castSequence(); }, m);
+  withSide(u.team, () => { seq = key.split(''); castSequence(); }, m);
   if (m.mana >= manaBefore) return; // not enough mana after all
-  T.redUsed.add(key);
-  if (key.length >= 6) T.ultCd = 45;
+  TT.used.add(key);
+  if (key.length >= 6) TT.ultCd = 45;
   u.x = m.x; u.y = m.y; // a blink moves the wizard
   floatText(u.x, u.y - 52, sp.name, TIER_COLOR[key.length], key.length >= 5 ? 16 : 13);
 }
-function updateMages(dt) {
-  const T = teams;
-  const ws = foes.filter(u => u.kind === 'wizard' && !u.dead);
+function updateMages(team, dt) {
+  const TT = teams[team];
+  const ws = units[team].filter(u => u.kind === 'wizard' && !u.dead);
   for (const u of ws) {
     const m = u.mage || (u.mage = makeMage(u));
     // keep the caster on the wizard; heals on the caster heal the wizard
     if (m.hp > m.hpSeen) u.hp = Math.min(u.maxHp, u.hp + (m.hp - m.hpSeen));
     m.x = u.x; m.y = u.y; m.maxHp = u.maxHp; m.hp = m.hpSeen = u.hp;
-    withSide('red', () => heroTimers(dt), m);
+    withSide(team, () => heroTimers(dt), m);
     if (vhEdge()) m.mana = Math.min(m.maxMana, m.mana + (VH_EDGE.cast - 1) * 2.2 * dt);
     // a loaded attack: stand still for each wind-up, then let fly
     if (u.castT > 0) {
       u.castT -= dt;
       if (u.castT <= 0 && m.loaded) {
-        withSide('red', () => {
+        withSide(team, () => {
           const L = m.loaded, a = aimFrom(m, 650);
           m.face = { x: a.x, y: a.y };
           if (--L.left <= 0) m.loaded = null;
@@ -3355,7 +3600,7 @@ function updateMages(dt) {
       continue;
     }
     if (m.loaded) {
-      if (eclipseMult(RUNE_ELEM[m.loaded.key[0]]) > 0 && withSide('red', () => nearestFoe(m.x, m.y, 600), m)) u.castT = Math.max(0.3, SPELLS[m.loaded.key].windup ?? TIER_WINDUP[m.loaded.key.length]);
+      if (eclipseMult(RUNE_ELEM[m.loaded.key[0]]) > 0 && withSide(team, () => nearestFoe(m.x, m.y, 600), m)) u.castT = Math.max(0.3, SPELLS[m.loaded.key].windup ?? TIER_WINDUP[m.loaded.key.length]);
       continue;
     }
     u.think = (u.think ?? rnd(1, 3)) - dt;
@@ -3364,14 +3609,8 @@ function updateMages(dt) {
     const key = chooseSpell(u, m);
     if (key) aiCast(u, m, key);
   }
-  if (ws.length) leadMage = ws[0].mage;
-  T.ultCd = Math.max(0, (T.ultCd || 0) - dt);
-  // red's own spells, pools, helpers and storms
-  if (leadMage) {
-    potency = 1;
-    withSide('red', () => { updateShots(dt); updateAllies(dt); updateStorms(dt); updateEffects(dt); }, leadMage);
-    potency = 1;
-  }
+  if (ws.length) TT.leadMage = ws[0].mage;
+  TT.ultCd = Math.max(0, (TT.ultCd || 0) - dt);
 }
 // a wizard's guard spells protect it
 function mageGuard(u, dmg) {
@@ -3394,133 +3633,118 @@ function updateBattle(dt) {
   T.time -= dt;
   if (T.time <= 0) { T.time = 0; battleOver(null); return; }
 
-  if (!versus) { redBrain(dt); if (redCasts()) updateMages(dt); }
-  // space: recount the ground now and then; the bigger side scores every 15s
+  syncProxies();
+  // the computer's teams: a commander each, and (Hard and up) wizards that cast
+  for (const team of TEAMS) if (isAI(team)) { aiBrain(team, dt); if (redCasts()) updateMages(team, dt); }
+  // recount the ground now and then
   T.terrRecalc -= dt;
   if (T.terrRecalc <= 0) { T.terrRecalc = 0.5; computeTerritory(); }
   // note who holds how much ground, for the graph at the end
   T.landT = (T.landT ?? 0) - dt;
-  if (T.landT <= 0 && T.stats) { T.landT = 2; T.stats.land.push([Math.round(MATCH_TIME - T.time), T.blue.cells, T.red.cells]); }
+  if (T.landT <= 0 && T.stats) { T.landT = 2; T.stats.land.push([Math.round(MATCH_TIME - T.time), ...TEAMS.map(t => T[t].cells)]); }
   T.resT = (T.resT ?? 0) - dt;
   if (T.resT <= 0) { T.resT = 0.5; computeResonance(); }
 
   // the last 15 seconds: building closes (any turn under way is called off)
   if (T.time <= BUILD_CLOSE && !T.buildClosed) {
     T.buildClosed = true;
-    T.pending = null; T.pendingRed = null; T.bonus = { blue: 0, red: 0 };
+    T.pending = null; T.pendingG = {};
+    for (const team of TEAMS) T.bonus[team] = 0;
     showBanner('Building is closed', 'Final 15 seconds: fight for every point!', 3);
     netEvents.push(['banner', 'Building is closed', 'Final 15 seconds: fight for every point!', 3]);
   }
-  // build turns alternate between the sides
-  if (T.buildClosed) { /* no more builds */ }
-  else if (T.pending) {
-    T.pending.t -= dt;
-    if (T.pending.t <= 0) { T.pending = null; castMessage('Build turn passed', '#aaa'); }
-  } else {
-    T.build.t -= dt;
-    if (T.build.t <= 0) {
-      if (T.build.team === 'blue') {
-        T.pending = { t: BUILD_EVERY - 1 };
-        showBanner('Your build turn!', 'Turret: stand on open ground · or send a Titan', 3);
-        SFX.discover();
-      } else if (rivalPlaying()) {
-        T.pendingRed = { t: BUILD_EVERY - 1 };
-        netEvents.push(['banner', 'Your build turn!', 'Turret: stand on open ground · or send a Titan', 3]);
-      } else redBuild();
-      T.build.team = otherTeam(T.build.team);
-      T.build.t = BUILD_EVERY;
+  if (!T.buildClosed) {
+    // a player's turn passes if they don't choose in time
+    if (T.pending) { T.pending.t -= dt; if (T.pending.t <= 0) { T.pending = null; castMessage('Build turn passed', '#aaa'); } }
+    for (const id of Object.keys(T.pendingG)) {
+      const p = T.pendingG[id], h = heroById(id);
+      p.t -= dt;
+      if (p.t <= 0 || !h || h.gone) { delete T.pendingG[id]; tellHero(id, ['msg', 'Build turn passed', '#aaa']); }
+    }
+    // build turns go round the teams (each gets one every 20 seconds); a
+    // team's players take its turns in order, and the clock waits while one chooses
+    if (!T.pending && !Object.keys(T.pendingG).length) {
+      T.build.t -= dt;
+      if (T.build.t <= 0) {
+        giveBuildTurn(T.build.team);
+        T.build.team = TEAMS[(TEAMS.indexOf(T.build.team) + 1) % TEAMS.length];
+        T.build.t = buildEvery();
+      }
+    }
+    // a broken sigil earns its breaker an extra build turn
+    for (const team of TEAMS) {
+      if (!(T.bonus[team] > 0)) continue;
+      if (humansOn(team).some(h => hasPending(h.id))) continue;
+      T.bonus[team]--;
+      giveBuildTurn(team, true);
     }
   }
-  // a broken sigil earns its breaker an extra build turn
-  T.bonus = T.bonus || { blue: 0, red: 0 };
-  if (T.buildClosed) T.bonus = { blue: 0, red: 0 };
-  if (T.bonus.blue > 0 && !T.pending) {
-    T.bonus.blue--;
-    T.pending = { t: BUILD_EVERY - 1 };
-    showBanner('Bonus build!', 'For breaking the sigil: a turret or a titan', 3);
-    SFX.discover();
-  }
-  if (T.bonus.red > 0) {
-    if (rivalPlaying()) {
-      if (!T.pendingRed) {
-        T.bonus.red--;
-        T.pendingRed = { t: BUILD_EVERY - 1 };
-        netEvents.push(['banner', 'Bonus build!', 'For breaking the sigil: a turret or a titan', 3]);
-      }
-    } else { T.bonus.red--; redBuild(); }
-  }
-  if (T.pending) T.build.t = Math.max(T.build.t, T.pending.t + 1); // red waits for you to finish
-  if (T.pendingRed) {
-    T.pendingRed.t -= dt;
-    if (T.pendingRed.t <= 0) { T.pendingRed = null; netEvents.push(['msg', 'Build turn passed', '#aaa']); }
-    T.build.t = Math.max(T.build.t, (T.pendingRed ? T.pendingRed.t : 0) + 1);
-  }
 
-  for (const team of ['blue', 'red']) {
-    const S = T[team], sd = teamSide(team);
+  for (const team of TEAMS) {
+    const S = T[team];
     S.wave -= dt;
     if (S.wave <= 0) {
       S.wave = 14;
-      if (team === 'red' && !versus) S.mix = redMix();
+      if (isAI(team)) S.mix = aiMix(team);
       for (const kind of waveKinds(S.mix, S.minions)) {
-        const u = addUnit(team, kind, sd * (BASE_X - 90) + rnd(-20, 20), rnd(-120, 120));
-        u.laneY = rnd(-1, 1) * ARENA_H * 0.55;
+        const p = homePt(team, 90 + rnd(-20, 20), rnd(-120, 120)), u = addUnit(team, kind, p.x, p.y);
+        u.lane = rnd(-1, 1); u.laneY = u.lane * ARENA_H * 0.55;
       }
     }
     S.wizQ = S.wizQ.filter(q => {
       q.t -= dt;
       if (q.t > 0) return true;
-      addUnit(team, 'wizard', sd * (BASE_X - 130), rnd(-90, 90), ELEM_CYCLE[Math.floor(Math.random() * 5)]);
+      const p = homePt(team, 130, rnd(-90, 90));
+      addUnit(team, 'wizard', p.x, p.y, ELEM_CYCLE[Math.floor(Math.random() * 5)]);
       return false;
     });
-    if (!teamList(team).some(u => u.kind === 'sigil' && !u.dead)) {
+    if (!units[team].some(u => u.kind === 'sigil' && !u.dead)) {
       S.sigilT -= dt;
       if (S.sigilT <= 0) placeSigil(team);
     }
   }
 
-  // laser walls hurt enemies that cross them
+  // laser walls hurt enemies that cross them (players' wizards too)
   for (const l of links) {
     if (l.a.dead || l.b.dead) continue;
-    const opp = l.team === 'blue' ? foes : friends.concat(state === 'play' ? [player] : []);
-    for (const o of opp) {
-      if (o.dead || o.structure) continue;
+    for (const o of enemiesOf(l.team)) {
+      if (o.dead || (o.structure && !o.proxyOf)) continue;
       if (segDist(o.x, o.y, l.a, l.b) > (o.r || PLAYER_R) + 4) continue;
       o.laserT = (o.laserT || 0) + dt;
-      if (o.laserT >= 0.5) { o.laserT = 0; hitUnit(o, 1); burst(o.x, o.y, TEAM_COLOR[l.team], 4, 100); }
+      if (o.laserT >= 0.5) { o.laserT = 0; hitUnit(o, 1, l.team); burst(o.x, o.y, TEAM_COLOR[l.team], 4, 100); }
     }
   }
 
-  for (const u of friends) {
-    if (u.dead) continue;
-    updateUnit(u, dt);
-    if (!u.structure) {
-      clampArena(u, u.r);
-      if (!u.def.flying) pushOut(u, u.r);
-    }
+  // every team's units (your time magic slows everyone else's)
+  potency = 1;
+  for (const team of TEAMS) {
+    const tdt = team === 'blue' ? dt : dt * timeScale();
+    if (tdt > 0) for (const u of units[team]) if (!u.dead && !u.proxyOf) stepUnit(u, tdt);
+    separate(units[team]);
   }
-  separate(friends);
-  friends = friends.filter(u => !u.dead);
+  for (const team of TEAMS) units[team] = units[team].filter(u => !u.dead || u.proxyOf);
+  unitsVer++; setViews(curSide);
 
   for (const sh of bshots) {
-    const sdt = sh.team === 'red' ? dt * timeScale() : dt;
+    const sdt = sh.team !== 'blue' ? dt * timeScale() : dt;
     sh.x += sh.vx * sdt; sh.y += sh.vy * sdt; sh.life -= sdt;
     sh.spin += sdt * 9;
     if (sh.elem && !sh.arrow && Math.random() < 0.6) shotTrail(sh);
-    if (sh.team === 'red' && solidTemps().some(b => Math.hypot(b.x - sh.x, b.y - sh.y) < b.r + sh.r)) { sh.life = 0; continue; }
-    const opp = sh.team === 'red'
-      ? (state === 'play' && !player.onBoat ? [player] : []).concat(friends, allies.filter(a => a.kind === 'critter'))
-      : foes.concat(rivalHelpers());
+    // walls stop the other sides' shots
+    if (solidTemps().some(b => (b.side || 'blue') !== sh.team && Math.hypot(b.x - sh.x, b.y - sh.y) < b.r + sh.r)) { sh.life = 0; continue; }
+    const opp = targetsFor(sh.team);
     for (const o of opp) {
       if (o.dead || Math.hypot(o.x - sh.x, o.y - sh.y) > sh.r + (o.r || PLAYER_R)) continue;
-      if (o === player && player.mirror > 0) {
+      const hero = o.proxyOf ? heroOf(o) : null;
+      if (hero && hero.mirror > 0) {
+        // a Mirror Shield sends it back the way it came
         const sp = Math.hypot(sh.vx, sh.vy) || 1;
-        launch(sh.x, sh.y, { x: -sh.vx / sp, y: -sh.vy / sp }, { dmg: sh.dmg * 2, type: 'mirror', speed: sp * 1.4, r: sh.r });
+        withSide(o.team, () => launch(sh.x, sh.y, { x: -sh.vx / sp, y: -sh.vy / sp }, { dmg: sh.dmg * 2, type: 'mirror', speed: sp * 1.4, r: sh.r }), hero);
         SFX.block();
       } else {
-        hitUnit(o, sh.dmg * matchup(sh.src, o));
+        hitUnit(o, sh.dmg * matchup(sh.src, o), sh.team);
         if (sh.boom) {
-          for (const o2 of opp) if (o2 !== o && !o2.dead && Math.hypot(o2.x - sh.x, o2.y - sh.y) < sh.boom) hitUnit(o2, sh.dmg * 0.5);
+          for (const o2 of opp) if (o2 !== o && !o2.dead && Math.hypot(o2.x - sh.x, o2.y - sh.y) < sh.boom) hitUnit(o2, sh.dmg * 0.5, sh.team);
           burst(sh.x, sh.y, sh.color, 16, 220);
         }
       }
@@ -3530,6 +3754,26 @@ function updateBattle(dt) {
     }
   }
   bshots = bshots.filter(sh => sh.life > 0);
+}
+
+// build turns: each team gets one every 20 seconds
+function buildEvery() { return BUILD_EVERY * 2 / TEAMS.length; }
+function hasPending(id) { return id === 'host' ? !!teams.pending : !!teams.pendingG[id]; }
+// a team's build turn: the computer builds at once; a team with players hands
+// it to the next of them in turn
+function giveBuildTurn(team, bonus) {
+  const hs = humansOn(team);
+  if (!hs.length) { aiBuild(team); return; }
+  const T = teams, h = hs[(T[team].turn++) % hs.length];
+  const title = bonus ? 'Bonus build!' : 'Your build turn!', sub = bonus ? 'For breaking the sigil: a turret or a titan' : 'Turret: stand on open ground · or send a Titan';
+  if (h.id === 'host') { T.pending = { t: BUILD_EVERY - 1 }; showBanner(title, sub, 3); SFX.discover(); }
+  else { T.pendingG[h.id] = { t: BUILD_EVERY - 1 }; tellHero(h.id, ['banner', title, sub, 3]); }
+}
+// a friend choosing their build right now (for the build clock)
+function otherPending() {
+  if (!teams || !teams.pendingG) return null;
+  for (const id in teams.pendingG) { const h = heroById(id); if (h) return { t: teams.pendingG[id].t, team: h.team }; }
+  return null;
 }
 
 // your build turn: the two choices
@@ -3582,40 +3826,60 @@ function separate(list) {
   }
 }
 
-// ── duels: Battle against a friend ──────────────────────────────────────────
-// The host's device runs the battle. The friend (guest) plays red, but their
-// screen is mirrored so they see themselves as blue on the left like always.
-// The guest moves their own wizard locally and sends their position and
-// actions; the host sends back the whole battle ten times a second.
-let versus = false;
+// ── playing with friends: the host's device runs the battle ──
+// Friends (guests) join a host and each plays a wizard on a team the host
+// picks. A guest's screen is turned so their own base sits where yours does,
+// with their team in blue. Guests move their own wizard locally and send its
+// position and their actions; the host sends back the whole battle ten times
+// a second.
+let versus = false;                         // playing online
 const net = { role: null, send: () => {}, sendT: 0, posT: 0, mixT: 0 };
 let curSide = 'blue';                       // whose spells are being run right now (host)
-let rivalP = null, rivalProxy = null, hostProxy = null;
+let dmgBy = null;                           // the team a hit counts for, when it isn't the current side's
+let rivalP = null;                          // (a duel) your friend's wizard
 let otherHero = null;                       // guest: the host's wizard, to draw
 let unitSeq = 0;
-const redSide = { shots: [], allies: [], traps: [], zones: [], waves: [], meteors: [], storms: [], discovered: new Set(), seq: [] };
-let netEvents = [];                         // host → guest: visual effects and messages to replay
+let netEvents = [];                         // host → guests: visual effects and messages to replay
+// a message for one friend's screen only
+function tellHero(id, ev) { if (net.role === 'host') netEvents.push(['to', id, ...ev]); }
 
-// Run fn as your friend: their wizard is "player", blue's units are the targets,
-// and their own spells, helpers and pools are the live lists.
-function withSide(side, fn, caster) {
-  if (side !== 'red' || !(versus ? net.role === 'host' : aiMagic())) return fn();
-  const saved = { player, foes, shots, allies, traps, zones, waves, meteors, storms, discovered, seq };
-  player = caster || rivalP;
-  foes = blueTargets();
-  ({ shots, allies, traps, zones, waves, meteors, storms, discovered, seq } = redSide);
-  curSide = 'red';
-  try { return fn(); }
-  finally {
-    Object.assign(redSide, { shots, allies, traps, zones, waves, meteors, storms, discovered, seq });
-    ({ player, foes, shots, allies, traps, zones, waves, meteors, storms, discovered, seq } = saved);
-    curSide = 'blue';
+// the players' wizards in a battle: you (the host), and friends who joined
+let heroes = [];
+const heroById = id => heroes.find(h => h.id === id);
+const humansOn = team => heroes.filter(h => h.team === team && !h.gone);
+const HERO_LOOK = { blue: ['#2d4a7a', '#3a7bc0'], red: ['#7a2d2d', '#c03a3a'], green: ['#2d6a4a', '#3ac07a'] };
+function addHero(id, team, skin) {
+  const keep = player;
+  player = {};
+  resetPlayer();
+  const p = player;
+  player = keep;
+  const fp = fountainPos(team), d = teamDir(team);
+  Object.assign(p, { heroId: id, team, x: fp.x, y: fp.y, face: { x: -d.x, y: -d.y }, tp: 0, robe: HERO_LOOK[team][0], hat: HERO_LOOK[team][1], book: new Set(), seq: [] });
+  if (skin) p.skin = skin;
+  const h = { id, team, p, proxy: heroProxy(id, team) };
+  heroes.push(h);
+  return h;
+}
+// a stand-in so units, towers and spells can target and hit a player's wizard
+function heroProxy(of, team) {
+  return { unit: true, proxyOf: of, team, kind: 'hero', def: { mult: {}, pts: 10, name: 'Wizard', reach: 0 }, structure: true, r: PLAYER_R, hp: 1, maxHp: 1, x: 0, y: 0, dead: false, txtCd: 0 };
+}
+function heroOf(proxy) { const h = heroById(proxy.proxyOf); return h ? h.p : null; }
+// keep each stand-in on its wizard
+function syncProxies() {
+  for (const h of heroes) {
+    const p = h.p, pr = h.proxy;
+    pr.x = p.x; pr.y = p.y;
+    pr.dead = !!h.gone || (p === hostP ? state !== 'play' : !!p.dead) || !!p.onBoat;
   }
 }
-// what your friend's spells can hit: blue's units, your helpers, and you
-function blueTargets() {
-  hostProxy.x = hostP.x; hostProxy.y = hostP.y; hostProxy.dead = state !== 'play' || hostP.onBoat;
-  return friends.filter(u => !u.dead).concat(allies.filter(a => a.kind === 'critter').map(helperTarget), [hostProxy]);
+// someone to run a side's spells as: you for blue, else one of its players, else its lead computer wizard
+function casterFor(team) {
+  if (team === 'blue') return hostP;
+  const hs = humansOn(team);
+  if (hs.length) return hs[0].p;
+  return (teams && teams[team] && teams[team].leadMage) || (heroes.find(h => h.team === team) || {}).p || null;
 }
 // helpers can be hit like units
 function helperTarget(a) {
@@ -3623,81 +3887,77 @@ function helperTarget(a) {
   const t = a.asTarget; t.x = a.x; t.y = a.y; t.hp = a.hp; t.maxHp = a.maxHp; t.dead = a.life <= 0;
   return t;
 }
-function heroProxy(of, team) {
-  return { unit: true, proxyOf: of, team, kind: 'hero', def: { mult: {}, pts: 10, name: 'Wizard', reach: 0 }, structure: true, r: PLAYER_R, hp: 1, maxHp: 1, x: 0, y: 0, dead: false, txtCd: 0 };
-}
-function heroOf(proxy) { return proxy.proxyOf === 'rival' ? rivalP : hostP; }
 
-function makeRival() {
-  const keep = player;
-  player = {};
-  resetPlayer();
-  rivalP = player;
-  player = keep;
-  rivalP.isRival = true;
-  rivalP.robe = '#7a2d2d'; rivalP.hat = '#c03a3a';
-  const fp = fountainPos('red');
-  rivalP.x = fp.x; rivalP.y = fp.y; rivalP.face = { x: -1, y: 0 };
-  rivalP.tp = 0;
+// each side's live spells: its shots, helpers, traps, pools, waves, meteors and storms
+const newFx = () => ({ shots: [], allies: [], traps: [], zones: [], waves: [], meteors: [], storms: [] });
+let sideFx = { blue: newFx(), red: newFx(), green: newFx() };
+function stashFx(side) { sideFx[side] = { shots, allies, traps, zones, waves, meteors, storms }; }
+function loadFx(side) { ({ shots, allies, traps, zones, waves, meteors, storms } = sideFx[side] || (sideFx[side] = newFx())); }
+function fxOf(side) { return side === curSide ? { shots, allies, traps, zones, waves, meteors, storms } : (sideFx[side] || newFx()); }
+
+// Run fn as another side, or as another wizard: their wizard is "player", the
+// other teams' units are the targets, and their own spells, helpers and pools
+// are the live lists.
+function withSide(side, fn, caster) {
+  if (mode !== 'battle' || !teams || net.role === 'guest' || !TEAMS.includes(side)) return fn();
+  const prevSide = curSide, prevPlayer = player, prevBook = discovered, prevSeq = seq;
+  const swap = side !== prevSide, as = !!caster && caster !== player;
+  if (swap) { stashFx(prevSide); loadFx(side); curSide = side; setViews(side); }
+  if (as) { player = caster; discovered = caster.book || (caster.book = new Set()); seq = caster.seq || (caster.seq = []); }
+  try { return fn(); }
+  finally {
+    if (as) { caster.seq = seq; player = prevPlayer; discovered = prevBook; seq = prevSeq; }
+    if (swap) { stashFx(side); loadFx(prevSide); curSide = prevSide; setViews(prevSide); }
+  }
 }
 
 function startVersusHost(send) {
   net.role = 'host'; net.send = send; versus = true;
-  startBattle('easy');
-  unitSeq = 0; for (const u of friends.concat(foes)) u.id = ++unitSeq;
-  makeRival();
-  Object.assign(redSide, { shots: [], allies: [], traps: [], zones: [], waves: [], meteors: [], storms: [], discovered: new Set(), seq: [] });
-  rivalProxy = heroProxy('rival', 'red');
-  hostProxy = heroProxy('host', 'blue');
-  foes.push(rivalProxy);
-  teams.redOrder = 'spread';
-  teams.redOrders = { minion: 'attackTurrets', titan: 'attackTurrets' };
-  teams.pendingRed = null; teams.buildElemRed = 'water';
+  startBattle('easy', ['blue', 'red'], [{ id: 'g1', team: 'red' }]);
+  unitSeq = 0; for (const t of TEAMS) for (const u of units[t]) if (!u.proxyOf) u.id = ++unitSeq;
+  rivalP = heroById('g1').p;
   showBanner('Duel! Universes collide', 'Your friend leads the red universe', 4);
   net.send({ t: 'start' });
 }
 
-// your friend fell: back at their fountain in 5 seconds
-function rivalDown() {
-  rivalP.hp = 0; rivalP.dead = true; rivalP.respawnT = 5;
-  rivalProxy.dead = true;
-  rivalP.charging = null; rivalP.loaded = null;
-  burst(rivalP.x, rivalP.y, TEAM_COLOR.red, 30, 260);
-  scoreKill('blue', 'hero', rivalP.x, rivalP.y - 30);
-  showBanner('You defeated your friend’s wizard! +10', '', 2.5);
-  netEvents.push(['you-fell']);
+// a friend's wizard fell: back at their fountain in 5 seconds
+function heroDown(p) {
+  const h = heroById(p.heroId);
+  if (!h) return;
+  p.hp = 0; p.dead = true; p.respawnT = 5;
+  h.proxy.dead = true;
+  p.charging = null; p.loaded = null;
+  burst(p.x, p.y, TEAM_COLOR[h.team], 30, 260);
+  const by = killerOf(p, h.team);
+  if (by) scoreKill(by, 'hero', p.x, p.y - 30);
+  if (by === 'blue' && h.team !== 'blue') showBanner(TEAMS.length === 2 ? 'You defeated your friend’s wizard! +10' : `You defeated the ${TEAM_NAME[h.team].toLowerCase()} wizard! +10`, '', 2.5);
+  tellHero(h.id, ['you-fell']);
 }
 
-function updateRival(dt) {
-  if (rivalP.dead) {
-    rivalP.respawnT -= dt;
-    if (rivalP.respawnT <= 0) {
-      const tp = rivalP.tp + 1;
-      withSide('red', () => { resetPlayer(); });
-      Object.assign(rivalP, { isRival: true, robe: '#7a2d2d', hat: '#c03a3a', dead: false, invuln: 2, tp });
-      const fp = fountainPos('red'); rivalP.x = fp.x; rivalP.y = fp.y; rivalP.face = { x: -1, y: 0 };
-      rivalProxy.dead = false;
+// friends' wizards: respawning, mana, buffs
+function updateHeroes(dt) {
+  for (const h of heroes) {
+    const p = h.p;
+    if (p === hostP || h.gone) continue;
+    if (p.dead) {
+      p.respawnT -= dt;
+      if (p.respawnT <= 0) {
+        const tp = (p.tp || 0) + 1;
+        withSide(h.team, () => { resetPlayer(); }, p);
+        const fp = fountainPos(h.team), d = teamDir(h.team);
+        Object.assign(p, { dead: false, invuln: 2, tp, x: fp.x, y: fp.y, face: { x: -d.x, y: -d.y } });
+      }
     }
+    if (!p.dead) withSide(h.team, () => heroTimers(dt), p);
   }
-  rivalProxy.x = rivalP.x; rivalProxy.y = rivalP.y; rivalProxy.dead = !!rivalP.dead;
-  withSide('red', () => {
-    if (!player.dead) heroTimers(dt);
-    potency = 1;
-    updateShots(dt);
-    updateAllies(dt);
-    updateStorms(dt);
-    updateEffects(dt);
-    potency = 1;
-  });
-  // ship the battle to your friend
-  net.sendT -= dt;
-  if (net.sendT <= 0) { net.sendT = 0.1; net.send(makeSnapshot()); netEvents = []; }
+  syncProxies();
 }
 
 // your friend's actions arrive here (positions are in the host's coordinates)
 function hostReceive(m) {
   if (!versus || !rivalP) return;
-  const R = fn => withSide('red', fn);
+  const h = heroById('g1'), team = h.team, TT = teams[team];
+  const R = fn => withSide(team, fn, rivalP);
   switch (m.t) {
     case 'pos':
       if (!rivalP.dead && !rivalP.charging && m.tp === rivalP.tp) { rivalP.x = m.x; rivalP.y = m.y; rivalP.face = { x: m.fx, y: m.fy }; }
@@ -3706,34 +3966,30 @@ function hostReceive(m) {
     case 'fire': if (!rivalP.dead) R(fireLoaded); break;
     case 'arrow': if (!rivalP.dead) R(() => shootArrow(m.x, m.y)); break;
     case 'build':
-      if (teams.pendingRed && !rivalP.dead && teams.time > BUILD_CLOSE) {
-        teams.buildElemRed = ELEM_CYCLE.includes(m.elem) ? m.elem : 'fire';
+      if (teams.pendingG.g1 && !rivalP.dead && teams.time > BUILD_CLOSE) {
+        TT.buildElem = ELEM_CYCLE.includes(m.elem) ? m.elem : 'fire';
         if (m.key === 'turret') {
-          if (canBuildAt(rivalP.x, rivalP.y, 'red')) { buildTurret('red', rivalP.x, rivalP.y, teams.buildElemRed); teams.pendingRed = null; }
-          else netEvents.push(['msg', 'Can’t build here: not in red ground or on a tree, rock or tower', '#ccc']);
-        } else { buildTitan('red', teams.buildElemRed); teams.pendingRed = null; }
+          if (canBuildAt(rivalP.x, rivalP.y, team)) { buildTurret(team, rivalP.x, rivalP.y, TT.buildElem); delete teams.pendingG.g1; }
+          else tellHero('g1', ['msg', 'Can’t build here: not in enemy ground or on a tree, rock or tower', '#ccc']);
+        } else { buildTitan(team, TT.buildElem); delete teams.pendingG.g1; }
       }
       break;
-    case 'mix': if (m.mix) teams.red.mix = Object.fromEntries(MINION_KINDS.map(k => [k, Math.max(0, +m.mix[k] || 0)])); break;
-    case 'order': teams.redOrder = m.v === 'follow' ? 'follow' : 'spread'; break;
-    case 'orders': if (m.grp === 'minion' || m.grp === 'titan') teams.redOrders[m.grp] = m.v; break;
-    case 'skin': teams.redSkin = m.v === 'space' ? 'space' : 'wizard'; break;
+    case 'mix': if (m.mix) TT.mix = Object.fromEntries(MINION_KINDS.map(k => [k, Math.max(0, +m.mix[k] || 0)])); break;
+    case 'order': TT.order = m.v === 'follow' ? 'follow' : 'spread'; TT.leader = 'g1'; break;
+    case 'orders': if (m.grp === 'minion' || m.grp === 'titan') TT.orders[m.grp] = m.v; break;
+    case 'skin': teams.skins[team] = rivalP.skin = m.v === 'space' ? 'space' : 'wizard'; break;
     case 'bye': friendLeft(); break;
   }
 }
-
-// a duel's red side is in your friend's hands (even while their wizard
-// respawns) until they leave; then the computer takes over
-function rivalPlaying() { return versus && net.role === 'host' && rivalP && !(rivalP.dead && rivalP.respawnT > 1e8); }
 
 function friendLeft() {
   if (!versus) return;
   setTimeout(hangUp, 0);
   showBanner('Your friend left', 'The red side carries on without them', 3);
   if (net.role === 'host') {
-    if (rivalProxy) rivalProxy.dead = true;
-    if (rivalP) { rivalP.dead = true; rivalP.respawnT = 1e9; }
-    teams.pendingRed = null;
+    const h = heroById('g1');
+    if (h) { h.gone = true; h.proxy.dead = true; h.p.dead = true; h.p.respawnT = 1e9; }
+    if (teams) delete teams.pendingG.g1;
   } else {
     mirrorArena(false); versus = false; net.role = null; otherHero = null;
     if (state === 'play' || state === 'dead') state = 'title';
@@ -3755,28 +4011,28 @@ function packHero(p, disc) {
   };
 }
 function makeSnapshot() {
-  const T = teams, both = (a, b) => a.concat(b);
+  const T = teams, all = k => TEAMS.flatMap(t => fxOf(t)[k]), pg = T.pendingG.g1;
   return {
     t: 'snap', sk: mySkin,
     st: state, res: T.result, bd: state === 'won' || state === 'lost' ? T.breakdown || null : null,
     ss: state === 'won' || state === 'lost' ? T.stats || null : null, eb: T.endedBy || null, bf: T.baseFell || null, gt: T.groundTo || null,
-    sc: [T.blue.score, T.red.score], time: r1(T.time), tl: T.tally ? [T.tally.blue, T.tally.red] : [0, 0], rs: T.res || null, ec: T.eclipse || null,
-    bt: [T.build.team, r1(T.build.t)], pr: T.pendingRed ? r1(T.pendingRed.t) : null,
-    me: packHero(rivalP, redSide.discovered.size), host: packHero(hostP, discovered.size),
-    u: friends.concat(foes).filter(u => !u.dead && !u.proxyOf).map(u => [
-      u.id, u.team === 'blue' ? 0 : 1, UNIT_KINDS.indexOf(u.kind), Math.round(u.x), Math.round(u.y), r1(u.hp), r1(u.maxHp),
+    sc: [T.blue.score, T.red.score], time: r1(T.time), tl: [T.tally.blue || 0, T.tally.red || 0], rs: T.res || null, ec: T.eclipse || null,
+    bt: [T.build.team, r1(T.build.t)], pr: pg ? r1(pg.t) : null,
+    me: packHero(rivalP, rivalP.book ? rivalP.book.size : 0), host: packHero(hostP, discovered.size),
+    u: TEAMS.flatMap(t => units[t]).filter(u => !u.dead && !u.proxyOf).map(u => [
+      u.id, TEAM_CODE[u.team] - 1, UNIT_KINDS.indexOf(u.kind), Math.round(u.x), Math.round(u.y), r1(u.hp), r1(u.maxHp),
       u.elem ? ELEM_CYCLE.indexOf(u.elem) : -1, r1(u.wall), Math.round(u.walk || 0), r1(u.slamT), u.face || 1, r1(u.fireFlash),
       u.retreat ? 1 : 0, r1(Math.max(0, u.cd || 0) / (u.def.cd || 1)),
       STATUS_KEYS.map(k => r1(u[k] > 0 ? u[k] : 0)), r1(u.tired),
     ]),
-    bs: bshots.map(s => [s.team === 'blue' ? 0 : 1, Math.round(s.x), Math.round(s.y), Math.round(s.vx), Math.round(s.vy), s.r, s.elem || '', s.arrow ? 1 : 0]),
-    sh: both(shots, redSide.shots).map(s => [Math.round(s.x), Math.round(s.y), Math.round(s.vx), Math.round(s.vy), r1(s.r), s.type]),
-    zn: both(zones, redSide.zones).map(z => [z.type || '', Math.round(z.x), Math.round(z.y), Math.round(z.r), r1(z.life), z.max, z.spec ? z.spec.elem : '', z.spec && z.spec.fx.has('poison') ? 1 : 0, r1(z.charged)]),
-    tr: both(traps, redSide.traps).map(t => [Math.round(t.x), Math.round(t.y), t.arm > 0 ? 1 : 0, t.spec ? t.spec.elem : '']),
+    bs: bshots.map(s => [TEAM_CODE[s.team] - 1, Math.round(s.x), Math.round(s.y), Math.round(s.vx), Math.round(s.vy), s.r, s.elem || '', s.arrow ? 1 : 0]),
+    sh: all('shots').map(s => [Math.round(s.x), Math.round(s.y), Math.round(s.vx), Math.round(s.vy), r1(s.r), s.type]),
+    zn: all('zones').map(z => [z.type || '', Math.round(z.x), Math.round(z.y), Math.round(z.r), r1(z.life), z.max, z.spec ? z.spec.elem : '', z.spec && z.spec.fx.has('poison') ? 1 : 0, r1(z.charged)]),
+    tr: all('traps').map(t => [Math.round(t.x), Math.round(t.y), t.arm > 0 ? 1 : 0, t.spec ? t.spec.elem : '']),
     ts: tempSolids.map(b => [Math.round(b.x), Math.round(b.y), b.r, r1(b.life), b.elem || '', b.solid === false ? 0 : 1]),
-    al: both(allies.map(a => [a, 0]), redSide.allies.map(a => [a, 1])).map(([a, side]) => [a.kind, Math.round(a.x), Math.round(a.y), r1(a.life), a.elem || '', r1(a.r), r1(a.hp), r1(a.maxHp), r1(a.ang), side]),
-    wv: both(waves, redSide.waves).map(w => [Math.round(w.x), Math.round(w.y), Math.round(w.r), w.maxR]),
-    mt: both(meteors, redSide.meteors).map(m => [Math.round(m.x), Math.round(m.y), r1(m.t), m.max]),
+    al: TEAMS.flatMap(t => fxOf(t).allies.map(a => [a, TEAM_CODE[t] - 1])).map(([a, side]) => [a.kind, Math.round(a.x), Math.round(a.y), r1(a.life), a.elem || '', r1(a.r), r1(a.hp), r1(a.maxHp), r1(a.ang), side]),
+    wv: all('waves').map(w => [Math.round(w.x), Math.round(w.y), Math.round(w.r), w.maxR]),
+    mt: all('meteors').map(m => [Math.round(m.x), Math.round(m.y), r1(m.t), m.max]),
     ev: netEvents.slice(0, 160),
   };
 }
@@ -3796,8 +4052,10 @@ const flipTeam = t => (t === 'blue' ? 'red' : 'blue');
 
 function startVersusGuest(send) {
   net.role = 'guest'; net.send = send; versus = true;
-  setMode('battle'); mirrorArena(true);
+  setMode('battle'); setArena(['blue', 'red']); mirrorArena(true);
   difficulty = 'easy';
+  units = { blue: [], red: [], green: [] }; unitsVer++; heroes = []; curSide = 'blue';
+  hostP.team = 'blue';
   resetPlayer(); clearCombat();
   const fp = fountainPos(); player.x = fp.x; player.y = fp.y; player.face = { x: 1, y: 0 }; player.tp = 0;
   foes = []; friends = []; bshots = []; links = []; chests = []; scrolls = []; boat.x = boat.y = 1e6;
@@ -3805,7 +4063,7 @@ function startVersusGuest(send) {
   teams = {
     blue: { score: 0, cells: 0, minions: 10, mix: evenMix() }, red: { score: 0, cells: 0, mix: evenMix() },
     time: MATCH_TIME, terrRecalc: 0, build: { team: 'blue', t: BUILD_EVERY }, pending: null, result: null,
-    order: 'spread', orders: { minion: 'attackTurrets', titan: 'attackTurrets' }, buildElem: 'water',
+    order: 'spread', orders: { minion: 'attackTurrets', titan: 'attackTurrets' }, buildElem: 'water', skins: {},
   };
   guestUnits = new Map(); otherHero = null; eclipseSeen = {};
   net.send({ t: 'skin', v: mySkin });
@@ -3834,9 +4092,10 @@ function guestReceive(m) {
   if (me.tp !== player.tp || me.dead) { player.x = X(me.x); player.y = me.y; player.tp = me.tp; } // respawned or blinked
   if (me.dead) { if (state === 'play') { state = 'dead'; } overlayT = 5 - me.rt; }
   else if (state === 'dead') state = 'play';
-  teams.redSkin = m.sk === 'space' ? 'space' : 'wizard'; // the host's look is the red side's
+  teams.skins = { red: m.sk === 'space' ? 'space' : 'wizard' }; // the host's look is the red side's
   // the host's wizard
-  otherHero = unpackHero(m.host, otherHero || { robe: '#7a2d2d', hat: '#c03a3a', isRival: true });
+  otherHero = unpackHero(m.host, otherHero || { robe: '#7a2d2d', hat: '#c03a3a', team: 'red' });
+  otherHero.skin = teams.skins.red;
   otherHero.x = X(m.host.x); otherHero.y = m.host.y; otherHero.face = { x: -m.host.fx, y: m.host.fy };
   // scores and turns (flipped: you are "blue")
   teams.blue.score = m.sc[1]; teams.red.score = m.sc[0]; teams.time = m.time;
@@ -3860,6 +4119,7 @@ function guestReceive(m) {
   }
   for (const id of guestUnits.keys()) if (!seen.has(id)) guestUnits.delete(id);
   friends = F; foes = E;
+  units = { blue: F, red: E, green: [] }; unitsVer++;
   bshots = m.bs.map(([t, x, y, vx, vy, r, el, ar]) => { const team = flipTeam(t ? 'red' : 'blue'); return { team, x: X(x), y, vx: -vx, vy, r, elem: el || null, arrow: !!ar, spin: rnd(0, TAU), color: TYPE_COLOR[el] || TEAM_COLOR[team], life: 2 }; });
   shots = m.sh.map(([x, y, vx, vy, r, type]) => ({ x: X(x), y, vx: -vx, vy, r, type, color: TYPE_COLOR[type] || '#fff', life: 2 }));
   zones = m.zn.map(([type, x, y, r, life, max, el, poison, charged]) => ({ type: type || undefined, x: X(x), y, r, life, max, charged, tick: 1,
@@ -3878,6 +4138,9 @@ function guestReceive(m) {
       case 'msg': castMessage(e[1], e[2]); break;
       case 'banner': showBanner(e[1], e[2], e[3]); break;
       case 'you-fell': SFX.death(); break;
+      case 'to': // meant for one player
+        if (e[1] === 'g1') { if (e[2] === 'banner') showBanner(e[3], e[4], e[5]); else if (e[2] === 'msg') castMessage(e[3], e[4]); else if (e[2] === 'you-fell') SFX.death(); }
+        break;
     }
   }
   // the end (from your side)
@@ -4255,7 +4518,7 @@ function fireButtonHit(x, y) {
 
 // battle's top-right column, under the map: score and kill tally, then the build clock
 function rightStack() {
-  const mapH = Math.min(160, W * 0.38) * ARENA_H / WORLD, scoreY = 12 + mapH + 20;
+  const mapH = mapSize().h, scoreY = 12 + mapH + 20;
   return { mapH, scoreY, tallyY: scoreY + 15, buildY: scoreY + 42 };
 }
 function soundButton() { const r = 19; return { x: W - 14 - r, y: H - 14 - r, r }; }
@@ -4583,7 +4846,7 @@ function wrapText(text, x, y, maxW, lineH) {
 function drawArena(camX, camY) {
   // a hedge of round treetops around the field
   for (let k = 0; k < 90; k++) {
-    const a = k / 90 * TAU, x = Math.cos(a) * (WORLD + 46), y = Math.sin(a) * (ARENA_H + 46);
+    const a = k / 90 * TAU, x = Math.cos(a) * (ARENA_W + 46), y = Math.sin(a) * (ARENA_H + 46);
     if (!inView(x, y, 70, camX, camY)) continue;
     const sw = Math.sin(elapsed * 1.4 + k) * windAt() * 2;
     circle(x + 6, y + 10, 46, 'rgba(15,35,20,0.45)');
@@ -4594,27 +4857,45 @@ function drawArena(camX, camY) {
   ctx.save();
   ovalPath(0); ctx.clip();                                       // everything below stays inside the oval
   // each side's land carries its colour
-  for (const team of ['blue', 'red']) {
-    const x = teamSide(team) * BASE_X, g = ctx.createRadialGradient(x, 0, 0, x, 0, 700);
+  for (const team of TEAMS) {
+    const b = homePt(team, 0), g = ctx.createRadialGradient(b.x, b.y, 0, b.x, b.y, 700);
     g.addColorStop(0, TEAM_COLOR[team] + '33'); g.addColorStop(1, TEAM_COLOR[team] + '00');
-    ctx.fillStyle = g; ctx.fillRect(x - 700, -ARENA_H, 1400, ARENA_H * 2);
+    ctx.fillStyle = g; ctx.fillRect(b.x - 700, b.y - 700, 1400, 1400);
   }
-  // the trodden road between the towers, a sandy path with soft edges
-  const road = ctx.createLinearGradient(0, -70, 0, 70);
-  road.addColorStop(0, 'rgba(210,185,130,0)'); road.addColorStop(0.3, 'rgba(210,185,130,0.38)');
-  road.addColorStop(0.7, 'rgba(210,185,130,0.38)'); road.addColorStop(1, 'rgba(210,185,130,0)');
-  ctx.fillStyle = road;
-  ctx.fillRect(-BASE_X, -70, BASE_X * 2, 140);
-  ctx.strokeStyle = 'rgba(255,255,255,0.12)'; ctx.setLineDash([18, 18]); ctx.lineWidth = 2;
-  ctx.beginPath(); ctx.moveTo(0, -ARENA_H); ctx.lineTo(0, ARENA_H); ctx.stroke(); ctx.setLineDash([]);
+  if (three()) {
+    // three trodden roads into the middle, and soft lines where the lands meet
+    ctx.lineCap = 'round';
+    for (const team of TEAMS) {
+      const b = homePt(team, 0);
+      ctx.strokeStyle = 'rgba(210,185,130,0.16)'; ctx.lineWidth = 150;
+      ctx.beginPath(); ctx.moveTo(b.x, b.y); ctx.lineTo(0, 0); ctx.stroke();
+      ctx.strokeStyle = 'rgba(210,185,130,0.22)'; ctx.lineWidth = 80;
+      ctx.beginPath(); ctx.moveTo(b.x, b.y); ctx.lineTo(0, 0); ctx.stroke();
+    }
+    ctx.strokeStyle = 'rgba(255,255,255,0.12)'; ctx.setLineDash([18, 18]); ctx.lineWidth = 2;
+    for (const team of TEAMS) {
+      const a = TEAM_ANGLE3[team] + Math.PI / 3;
+      ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(Math.cos(a) * ROUND_R, Math.sin(a) * ROUND_R); ctx.stroke();
+    }
+    ctx.setLineDash([]); ctx.lineCap = 'butt';
+  } else {
+    // the trodden road between the towers, a sandy path with soft edges
+    const road = ctx.createLinearGradient(0, -70, 0, 70);
+    road.addColorStop(0, 'rgba(210,185,130,0)'); road.addColorStop(0.3, 'rgba(210,185,130,0.38)');
+    road.addColorStop(0.7, 'rgba(210,185,130,0.38)'); road.addColorStop(1, 'rgba(210,185,130,0)');
+    ctx.fillStyle = road;
+    ctx.fillRect(-BASE_X, -70, BASE_X * 2, 140);
+    ctx.strokeStyle = 'rgba(255,255,255,0.12)'; ctx.setLineDash([18, 18]); ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(0, -ARENA_H); ctx.lineTo(0, ARENA_H); ctx.stroke(); ctx.setLineDash([]);
+  }
   // claimed ground (only the cells on screen)
-  const i0 = Math.max(0, Math.floor((camX + WORLD) / CELL)), i1 = Math.min(COLS - 1, Math.floor((camX + W + WORLD) / CELL));
+  const i0 = Math.max(0, Math.floor((camX + ARENA_W) / CELL)), i1 = Math.min(COLS - 1, Math.floor((camX + W + ARENA_W) / CELL));
   const j0 = Math.max(0, Math.floor((camY + ARENA_H) / CELL)), j1 = Math.min(ROWS - 1, Math.floor((camY + H + ARENA_H) / CELL));
   for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
     const v = terr[j * COLS + i];
     if (!v) continue;
-    ctx.fillStyle = v === 1 ? 'rgba(74,168,255,0.11)' : 'rgba(255,74,90,0.11)';
-    ctx.fillRect(-WORLD + i * CELL, -ARENA_H + j * CELL, CELL, CELL);
+    ctx.fillStyle = TERR_FILL[v];
+    ctx.fillRect(-ARENA_W + i * CELL, -ARENA_H + j * CELL, CELL, CELL);
   }
   ctx.restore();
   ctx.strokeStyle = 'rgba(40,70,40,0.6)'; ctx.lineWidth = 6;
@@ -5302,6 +5583,7 @@ try { if (localStorage.getItem('pentagram-skin') === 'space') mySkin = 'space'; 
 // they meet. Your look is your universe.
 const UNIVERSE = { wizard: 'Wizard', space: 'Space' };
 function collisionLine() {
+  if (three()) return 'Three universes collide!';
   return skinOf('red') === skinOf('blue') ? 'A mirror universe collides with yours!' : `The ${UNIVERSE[skinOf('red')]} universe collides with yours!`;
 }
 function setSkin(v) {
@@ -5311,12 +5593,13 @@ function setSkin(v) {
 }
 function skinOf(team) {
   if (mode !== 'battle' || !teams || team === 'blue') return mySkin;
-  if (versus) return teams.redSkin || 'wizard';
-  return mySkin === 'space' ? 'wizard' : 'space';
+  if (teams.skins && teams.skins[team]) return teams.skins[team]; // a friend's team: their look
+  // the computer's: red is the other universe, green a mirror of yours
+  return team === 'green' ? mySkin : mySkin === 'space' ? 'wizard' : 'space';
 }
 function heroSkin(p) {
-  if (mode !== 'battle') return mySkin;
-  return skinOf(p.isRival || p === otherHero ? 'red' : 'blue');
+  if (mode !== 'battle' || p === hostP) return mySkin;
+  return p.skin || skinOf(p.team || 'blue');
 }
 
 // a spacefarer in a white suit; accent is the team colour, gun glows with the next spell
@@ -5783,7 +6066,7 @@ function drawPlayer(p = player) {
   ctx.save();
   ctx.translate(x, y + 14); ctx.scale(1 - sq * 0.8, 1 + sq); ctx.translate(-x, -(y + 14) - hop);
   if (heroSkin(p) === 'space') {
-    const accent = mode === 'battle' ? TEAM_COLOR[p.isRival || p === otherHero ? 'red' : 'blue'] : '#c77dff';
+    const accent = mode === 'battle' ? TEAM_COLOR[p.team || 'blue'] : '#c77dff';
     drawAstronaut(x, y, 1, accent, accent, p.face, orb);
   } else drawWizardFigure(x, y, p.face.x, p.robe, p.hat, orb);
   ctx.restore();
@@ -6465,8 +6748,8 @@ function drawWorld() {
     ctx.globalAlpha = 1;
   }
   drawTraps();
-  if (versus && net.role === 'host') withSide('red', drawTraps);
-  else if (aiMagic() && leadMage) withSide('red', drawTraps, leadMage);
+  const others = mode === 'battle' && teams && net.role !== 'guest' ? TEAMS.filter(t => t !== curSide && casterFor(t)) : [];
+  for (const side of others) withSide(side, drawTraps, casterFor(side));
   drawBoat();
   drawScrolls();
   for (const c of chests) drawChest(c);
@@ -6475,7 +6758,7 @@ function drawWorld() {
     if (f.x < camX - 120 || f.x > camX + W + 120 || f.y < camY - 120 || f.y > camY + H + 120) continue;
     f.boss ? drawBoss(f) : f.unit && !(f.hex > 0) ? drawUnit(f) : drawFoe(f);
   }
-  for (const u of friends) if (!u.dead && inView(u.x, u.y, 120, camX, camY)) drawUnit(u);
+  for (const u of friends) if (!u.dead && !u.proxyOf && inView(u.x, u.y, 120, camX, camY)) drawUnit(u);
   for (const sh of bshots) {
     if (sh.arrow) {
       const sp = Math.hypot(sh.vx, sh.vy) || 1;
@@ -6495,11 +6778,10 @@ function drawWorld() {
   }
   for (const a of allies) drawAlly(a);
   drawPlayer();
-  if (versus) {
-    // your friend's wizard, helpers and spells
-    if (net.role === 'host') withSide('red', () => { for (const a of allies) drawAlly(a); drawPlayer(); drawSideFx(); });
-    else if (otherHero) drawPlayer(otherHero);
-  } else if (aiMagic() && leadMage) withSide('red', () => { for (const a of allies) drawAlly(a); drawSideFx(); }, leadMage);
+  // the other sides' helpers and spells, and your friends' wizards
+  for (const side of others) withSide(side, () => { for (const a of allies) drawAlly(a); drawSideFx(); }, casterFor(side));
+  if (net.role === 'host') { for (const h of heroes) if (h.p !== hostP && !h.gone) drawPlayer(h.p); }
+  else if (otherHero) drawPlayer(otherHero);
   drawSideFx();
   drawSharedFx();
   drawMotes(camX, camY);
@@ -6624,13 +6906,14 @@ function drawBuildClock(cx, cy, right) {
   } else if (T.pending) {      // your turn right now
     frac = T.pending.t / (BUILD_EVERY - 1); num = Math.ceil(T.pending.t); col = '#ffd24a';
     label = 'BUILD NOW'; sub = 'turret or titan'; now = true;
-  } else if (T.pendingRed) { // a duel friend choosing
-    frac = T.pendingRed.t / (BUILD_EVERY - 1); num = Math.ceil(T.pendingRed.t); col = TEAM_COLOR.red;
-    label = 'RED BUILDING'; sub = 'choosing now';
+  } else if (otherPending()) { // a friend choosing
+    const o = otherPending();
+    frac = o.t / (BUILD_EVERY - 1); num = Math.ceil(o.t); col = TEAM_COLOR[o.team];
+    label = o.team === 'blue' ? 'TEAMMATE BUILDING' : `${TEAM_NAME[o.team].toUpperCase()} BUILDING`; sub = 'choosing now';
   } else {
     const mine = T.build.team === 'blue';
-    frac = clamp(T.build.t / BUILD_EVERY, 0, 1); num = Math.ceil(T.build.t); col = TEAM_COLOR[T.build.team];
-    label = mine ? 'YOUR BUILD' : 'RED BUILDS'; sub = `in ${num} second${num === 1 ? '' : 's'}`;
+    frac = clamp(T.build.t / buildEvery(), 0, 1); num = Math.ceil(T.build.t); col = TEAM_COLOR[T.build.team];
+    label = mine ? 'YOUR BUILD' : `${TEAM_NAME[T.build.team].toUpperCase()} BUILDS`; sub = `in ${num} second${num === 1 ? '' : 's'}`;
   }
   const pulse = now ? 0.75 + 0.25 * Math.abs(Math.sin(elapsed * 6)) : 1;
   circle(cx, cy, r + 2, 'rgba(0,0,0,0.6)');
@@ -6958,15 +7241,17 @@ function drawHunt(x, y) {
   if (masterHunter) { ctx.fillStyle = '#ffd24a'; ctx.fillText('★', cx, y); }
 }
 
+// the battle map's size: wide for the oval, a smaller disc for the round field
+function mapSize() { const w = three() ? Math.min(128, W * 0.33) : Math.min(160, W * 0.38); return { w, h: w * ARENA_H / ARENA_W }; }
 function drawBattleMap() {
-  const w = Math.min(160, W * 0.38), h = w * ARENA_H / WORLD, x = W - w - 12, y = 12, k = w / (WORLD * 2);
-  const mx = v => x + (v + WORLD) * k, my = v => y + (v + ARENA_H) * k;
+  const { w, h } = mapSize(), x = W - w - 12, y = 12, k = w / (ARENA_W * 2);
+  const mx = v => x + (v + ARENA_W) * k, my = v => y + (v + ARENA_H) * k;
   ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.beginPath(); ctx.ellipse(x + w / 2, y + h / 2, w / 2, h / 2, 0, 0, TAU); ctx.fill();
   const cw = CELL * k;
   for (let j = 0; j < ROWS; j++) for (let i = 0; i < COLS; i++) {
     const v = terr[j * COLS + i];
     if (!v) continue;
-    ctx.fillStyle = v === 1 ? 'rgba(74,168,255,0.45)' : 'rgba(255,74,90,0.45)';
+    ctx.fillStyle = TERR_MAP[v];
     ctx.fillRect(x + i * cw, y + j * cw, cw + 0.5, cw + 0.5);
   }
   ctx.strokeStyle = 'rgba(199,125,255,0.6)'; ctx.lineWidth = 1;
@@ -7749,9 +8034,11 @@ function drawBattleEnd(win) {
   const tot = o => Object.values(o).reduce((a, b) => a + b, 0);
   ctx.font = `bold 14px ${SERIF}`;
   y = endPair('Total', tot(B.spells), tot(R.spells), L + 6, bw - 12, y);
-  if (redCasts() && !versus && teams.redUsed) {
-    ctx.textAlign = 'left'; ctx.fillStyle = '#ff8ab0'; ctx.font = `italic 12px ${SERIF}`;
-    ctx.fillText(`Red’s wizards used ${teams.redUsed.size} different spells.`, L + 6, y + 12); y += 18;
+  for (const t of TEAMS) {
+    const used = teams[t] && teams[t].used;
+    if (!used || !used.size || t === 'blue') continue;
+    ctx.textAlign = 'left'; ctx.fillStyle = TEAM_COLOR[t]; ctx.font = `italic 12px ${SERIF}`;
+    ctx.fillText(`${TEAM_NAME[t]}’s wizards used ${used.size} different spells.`, L + 6, y + 12); y += 18;
   }
   // resonance
   y = endHeading('Resonance (average)', L + 6, bw - 12, y + 8);
