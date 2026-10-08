@@ -2503,9 +2503,10 @@ function addUnit(team, kind, x, y, elem) {
     kx: 0, ky: 0, slow: 0, poison: 0, poisonDps: 0, poisonTick: 0, flash: 0, hitCd: 0, txtCd: 0,
     wob: rnd(0, TAU), dead: false, boss: false, wall: 0, laserT: 0, slot: rnd(0, TAU), walk: 0, slamT: 0,
   };
-  // Medium and Hard: red's units are a bit tougher and hit a bit harder
+  // red's units: the same at every level, except Very Hard's tougher, harder-hitting army
   if (team === 'red' && !versus && mode === 'battle' && !def.structure) {
-    u.power = 1; // every level fields the same army; the commander is what changes
+    u.power = vhEdge() ? VH_EDGE.power : 1;
+    if (vhEdge()) u.hp = u.maxHp = def.hp * VH_EDGE.hp;
   }
   u.id = ++unitSeq;
   teamList(team).push(u);
@@ -2679,8 +2680,8 @@ function startBattle(diff) {
   banner = null; castMsg = null; reveal = null; wonShown = false;
   seq = []; curNode = null;
   const hard = diff === 'hard' || diff === 'vhard', vhard = diff === 'vhard', med = diff === 'medium';
-  // Easy: evenly matched, so you tip the balance. Hard: red sends far more minions and an extra wizard.
-  // Very Hard: Hard's numbers plus a fourth wizard, and red thinks as one army (see redBrain).
+  // Every level starts with the same army; the commander is what changes (see redBrain).
+  // Very Hard alone gives red more: see VH_EDGE.
   teams = {
     blue: { score: 0, cells: 0, wave: 4, minions: 10, wizards: 2, wizQ: [], sigilT: 0, mix: evenMix() },
     red:  { score: 0, cells: 0, wave: 4, minions: 10, wizards: 2, wizQ: [], sigilT: 0, mix: evenMix() },
@@ -2692,11 +2693,12 @@ function startBattle(diff) {
     breakdown: { blue: {}, red: {} }, stats: newStats(), brain: null, focus: new Map(), redUsed: new Set(), ultCd: 30,
     eclipse: planEclipses(),
   };
+  if (vhard && !versus) { teams.red.minions = Math.round(10 * VH_EDGE.minions); teams.red.wizards = VH_EDGE.wizards; }
   eclipseSeen = {};
-  // Very Hard: red's wizards get their own spell lists, and can hit you through a stand-in
+  // Hard and Very Hard: red's wizards get their own spell lists, and can hit you through a stand-in
   leadMage = null;
   Object.assign(redSide, { shots: [], allies: [], traps: [], zones: [], waves: [], meteors: [], storms: [], discovered: new Set(), seq: [] });
-  if (vhard) hostProxy = heroProxy('host', 'blue');
+  if (hard) hostProxy = heroProxy('host', 'blue');
   for (const team of ['blue', 'red']) {
     const sd = teamSide(team);
     addUnit(team, 'nexus', sd * BASE_X, 0);
@@ -3136,7 +3138,15 @@ function redMix() {
 // gambles to come out ahead. The level sets how WELL it does that: how often
 // it rethinks, how sound its choices are, how tightly the army masses and
 // focuses fire, whether it defends, kites and rests its tired minions.
-const AI_SKILL = { easy: 0.25, medium: 0.5, hard: 0.75, vhard: 1 };
+const AI_SKILL = { easy: 0.25, medium: 0.5, hard: 1, vhard: 1 };
+// Hard and Very Hard: red's wizards cast real spells
+const redCasts = () => difficulty === 'hard' || difficulty === 'vhard';
+// Very Hard: red already plays as well as it can, so on top of that it gets a
+// bigger, tougher army and wizards that cast more often. Tuned in simulated
+// matches so Very Hard is about twice as hard as Hard: to fight red to a draw
+// your army needs about twice the fighting strength (damage × health) it needs on Hard.
+const VH_EDGE = { minions: 1.35, wizards: 2, hp: 1.275, power: 1.275, cast: 1.45 };
+const vhEdge = () => difficulty === 'vhard' && !versus && mode === 'battle';
 const aiSkill = () => AI_SKILL[difficulty] ?? 0.5;
 const smartRed = u => u.team === 'red' && !versus && mode === 'battle';
 // some of red's units are sharp and some aren't; better commanders have more sharp ones
@@ -3264,14 +3274,14 @@ function smartScore(u, o, d) {
   return sc;
 }
 
-// ── Very Hard: red's wizards cast the whole spell book ──
+// ── Hard and Very Hard: red's wizards cast the whole spell book ──
 // Each red wizard has an invisible caster that runs real spells through the
 // same engine as yours (and a duel friend's). Every few seconds it reads the
 // fight and picks a kind of spell: heal or guard when hurt, crowd control and
 // blasts into a crowd, attacks on you, helpers when it has none, buffs before
 // a push. Within that kind it prefers spells it hasn't cast yet, so over a
 // match red works through its whole spell book.
-const aiMagic = () => mode === 'battle' && difficulty === 'vhard' && !versus && !!teams;
+const aiMagic = () => mode === 'battle' && redCasts() && !versus && !!teams;
 let leadMage = null;
 const AI_BOOK = {};
 for (const [k, sp] of Object.entries(SPELLS)) if (sp.kind !== 'time') (AI_BOOK[sp.kind] || (AI_BOOK[sp.kind] = [])).push(k);
@@ -3329,6 +3339,7 @@ function updateMages(dt) {
     if (m.hp > m.hpSeen) u.hp = Math.min(u.maxHp, u.hp + (m.hp - m.hpSeen));
     m.x = u.x; m.y = u.y; m.maxHp = u.maxHp; m.hp = m.hpSeen = u.hp;
     withSide('red', () => heroTimers(dt), m);
+    if (vhEdge()) m.mana = Math.min(m.maxMana, m.mana + (VH_EDGE.cast - 1) * 2.2 * dt);
     // a loaded attack: stand still for each wind-up, then let fly
     if (u.castT > 0) {
       u.castT -= dt;
@@ -3349,7 +3360,7 @@ function updateMages(dt) {
     }
     u.think = (u.think ?? rnd(1, 3)) - dt;
     if (u.think > 0) continue;
-    u.think = rnd(2.2, 3.4);
+    u.think = rnd(2.2, 3.4) / (vhEdge() ? VH_EDGE.cast : 1);
     const key = chooseSpell(u, m);
     if (key) aiCast(u, m, key);
   }
@@ -3383,7 +3394,7 @@ function updateBattle(dt) {
   T.time -= dt;
   if (T.time <= 0) { T.time = 0; battleOver(null); return; }
 
-  if (!versus) { redBrain(dt); if (difficulty === 'vhard') updateMages(dt); }
+  if (!versus) { redBrain(dt); if (redCasts()) updateMages(dt); }
   // space: recount the ground now and then; the bigger side scores every 15s
   T.terrRecalc -= dt;
   if (T.terrRecalc <= 0) { T.terrRecalc = 0.5; computeTerritory(); }
@@ -7301,7 +7312,8 @@ const HOWTO = [
   ['p', 'Pool: Fire erupts, Water spreads, Earth buries it as a mine, Air drifts, Spirit pulls. Burst: Fire echoes, Water rings, Earth quakes, Air sparks, Spirit mends. Creature: Fire volatile, Water kindly, Earth armoured, Air swift, Spirit keen-eyed.'],
   ['p', 'Swap the last two runes and you get a different spell. A few special spells break the pattern; chests and scrolls teach them.'],
   ['h', 'Difficulty'],
-  ['p', 'Every level fields the same army and always plays to win. Easy, Medium, Hard and Very Hard differ in how well red plays: how often it rethinks, how good its targets and builds are, how well it masses, defends and focuses fire. On Very Hard its wizards also cast spells.'],
+  ['p', 'Red always plays to win. Easy and Medium differ in how well red plays: how often it rethinks, how good its targets and builds are, how well it masses, defends and focuses fire. Hard plays as well as red can, and its wizards cast real spells at you.'],
+  ['p', 'Very Hard is about twice as hard as Hard: on top of that, red’s waves are bigger (14 minions instead of 10), its units are tougher and hit harder, and its wizards cast more often.'],
 ];
 function drawHowTo(y, bx, bw) {
   menuButton({ title: 'How to Play', color: '#ffd24a', x: bx, y, w: bw, h: 44 });
@@ -7737,7 +7749,7 @@ function drawBattleEnd(win) {
   const tot = o => Object.values(o).reduce((a, b) => a + b, 0);
   ctx.font = `bold 14px ${SERIF}`;
   y = endPair('Total', tot(B.spells), tot(R.spells), L + 6, bw - 12, y);
-  if (difficulty === 'vhard' && !versus && teams.redUsed) {
+  if (redCasts() && !versus && teams.redUsed) {
     ctx.textAlign = 'left'; ctx.fillStyle = '#ff8ab0'; ctx.font = `italic 12px ${SERIF}`;
     ctx.fillText(`Red’s wizards used ${teams.redUsed.size} different spells.`, L + 6, y + 12); y += 18;
   }
