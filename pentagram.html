@@ -2745,21 +2745,28 @@ function teamShape(team, extra, without) {
 function computeTerritory() {
   const tw = {}, cnt = {};
   for (const team of TEAMS) { hulls[team] = teamShape(team); tw[team] = towersOf(team); cnt[team] = 0; }
-  const nearest = (list, x, y) => { let m = Infinity; for (const t of list) { const d = Math.hypot(t.x - x, t.y - y); if (d < m) m = d; } return m; };
-  for (let j = 0; j < ROWS; j++) for (let i = 0; i < COLS; i++) {
-    const k = j * COLS + i;
-    if (!inOval[k]) { terr[k] = 0; continue; }
-    const c = cellCenter(i, j), inside = [];
-    for (const team of TEAMS) if (inPoly(c.x, c.y, hulls[team])) inside.push(team);
-    let v = inside.length === 1 ? TEAM_CODE[inside[0]] : 0;
-    if (inside.length > 1) {
-      // where shapes overlap, the ground goes to whoever's tower is nearer
-      let best = Infinity;
-      for (const team of inside) { const d = nearest(tw[team], c.x, c.y); if (d < best) { best = d; v = TEAM_CODE[team]; } }
+  if (net.role === 'guest' && hostTerr) applyHostTerr(); // a friend's phone shows the host's map
+  else {
+    const nearest = (list, x, y) => { let m = Infinity; for (const t of list) { const d = Math.hypot(t.x - x, t.y - y); if (d < m) m = d; } return m; };
+    for (let j = 0; j < ROWS; j++) for (let i = 0; i < COLS; i++) {
+      const k = j * COLS + i;
+      if (!inOval[k]) { terr[k] = 0; continue; }
+      const c = cellCenter(i, j), inside = [];
+      for (const team of TEAMS) if (inPoly(c.x, c.y, hulls[team])) inside.push(team);
+      // Ground stays with whoever holds it while their shape still covers it: a
+      // turret built on enemy ground takes that land only once the enemy
+      // turrets holding it fall. New ground in two shapes at once goes to
+      // whoever's tower is nearer.
+      const held = CODE_TEAM[terr[k]];
+      let v = held && inside.includes(held) ? terr[k] : inside.length === 1 ? TEAM_CODE[inside[0]] : 0;
+      if (!(held && inside.includes(held)) && inside.length > 1) {
+        let best = Infinity;
+        for (const team of inside) { const d = nearest(tw[team], c.x, c.y); if (d < best) { best = d; v = TEAM_CODE[team]; } }
+      }
+      terr[k] = v;
     }
-    terr[k] = v;
-    if (v) cnt[CODE_TEAM[v]]++;
   }
+  for (const v of terr) if (v) cnt[CODE_TEAM[v]]++;
   for (const team of TEAMS) teams[team].cells = cnt[team];
   // the lines joining each side's towers (the edge of its shape) are laser walls
   links = [];
@@ -2772,12 +2779,10 @@ function computeTerritory() {
   }
 }
 
-// Turrets go anywhere open: neutral ground or your own, not the enemy's,
-// and not on top of a tree, rock or another building.
+// Turrets go anywhere open, enemy ground too (where they take the land only
+// once the enemy turrets holding it fall), but not on a tree, rock or building.
 function canBuildAt(x, y, team = 'blue') {
-  const own = cellOwner(x, y);
-  if (own === -1 || (own && own !== TEAM_CODE[team])) return false;
-  if (!inArena(x, y, 26)) return false;
+  if (cellOwner(x, y) === -1 || !inArena(x, y, 26)) return false;
   if (solidsNear(x, y).some(o => Math.hypot(o.x - x, o.y - y) < o.r + 22)) return false;
   // (a duel's wizard stand-in isn't a building, so it never blocks its own turret)
   return !allUnits().some(u => !u.dead && u.structure && !u.proxyOf && Math.hypot(u.x - x, u.y - y) < u.r + 30);
@@ -2800,19 +2805,31 @@ function buildTitan(team, elem) {
   news('titan', team, null, elem, 2.5);
 }
 
-// A computer team's build turn: a turret on the open spot that adds the most
-// ground, or a titan when there's nowhere worth building.
-function aiBuild(team) {
+// A computer team builds the way you do: a turret goes up where one of its
+// wizards stands, so it picks a spot a little before its turn and walks the
+// nearest wizard there. On its turn it has as long as you do; if the wizard
+// can't make it (or falls), it sends a titan instead, as you could.
+const AI_PLAN_AHEAD = 10;   // seconds before its turn that the computer picks a spot
+// how far a wizard can walk in `secs` (with a margin for trees and crowds)
+const walkable = secs => Math.max(0, secs) * UNITS.wizard.spd * 0.8;
+// the computer's plan: a turret on the open spot that adds the most ground
+// (one a wizard can reach within `reach`), or a titan when there's nowhere worth building
+function aiPlan(team, reach = Infinity) {
   const T = teams, sk = aiSkill();
+  const wiz = units[team].filter(u => u.kind === 'wizard' && !u.dead), fit = wiz.filter(u => !u.retreat), crew = fit.length ? fit : wiz;
+  const closest = c => { let b = null, bd = Infinity; for (const u of crew) { const d = Math.hypot(u.x - c.x, u.y - c.y); if (d < bd) { bd = d; b = u; } } return [b, bd]; };
   const base = polyArea(hulls[team]), opts = [];
-  for (let k = 0, n = Math.round(20 + 60 * sk); k < n; k++) {
+  if (crew.length) for (let k = 0, n = Math.round(20 + 60 * sk); k < n; k++) {
     const i = Math.floor(Math.random() * COLS), j = 1 + Math.floor(Math.random() * (ROWS - 2));
     if (terr[j * COLS + i] !== 0) continue;
     const c = cellCenter(i, j);
     if (!canBuildAt(c.x, c.y, team)) continue;
-    opts.push({ c, g: polyArea(teamShape(team, c)) - base });
+    const [w, d] = closest(c);
+    if (d > reach) continue;
+    const g = polyArea(teamShape(team, c)) - base;
+    opts.push({ c, w, g, v: g / (1 + d / 450) }); // (a long walk takes a wizard out of the fight)
   }
-  opts.sort((a, b) => b.g - a.g);
+  opts.sort((a, b) => b.v - a.v);
   // a sharp commander takes the best spot; a weaker one takes one of the better ones
   let best = opts.length ? opts[Math.min(opts.length - 1, Math.floor(Math.random() * Math.max(1, opts.length * (1 - sk) * 0.8)))] : null;
   if (best && best.g < 12000) best = null;
@@ -2825,8 +2842,69 @@ function aiBuild(team) {
   const enemy = enemiesOf(team).filter(u => !u.dead && u.elem && !u.proxyOf);
   const army = enemy.filter(u => !u.structure), towers = enemy.filter(u => u.kind === 'turret');
   const elem = Math.random() < sk ? (counterTo(best ? army : towers) || ELEM_CYCLE[Math.floor(Math.random() * 5)]) : ELEM_CYCLE[Math.floor(Math.random() * 5)];
-  if (best) buildTurret(team, best.c.x, best.c.y, elem);
-  else buildTitan(team, elem);
+  if (!best) return { kind: 'titan', elem };
+  return { kind: 'turret', x: best.c.x, y: best.c.y, elem, by: best.w };
+}
+// a planned turret is still on: its wizard is up and the spot still open
+const planOk = P => P && P.kind === 'turret' && P.by && !P.by.dead && canBuildAt(P.x, P.y, P.by.team);
+// send the planned wizard off to its spot (it keeps fighting until it has to go)
+function setOff(P) { if (P && P.by && !P.by.buildAt) P.by.buildAt = { x: P.x, y: P.y }; }
+// seconds a wizard needs to walk to a planned spot
+const walkTime = P => Math.hypot(P.by.x - P.x, P.by.y - P.y) / (UNITS.wizard.spd * 0.8);
+function dropPlan(team) {
+  const TT = teams[team], P = TT.plan;
+  if (P && P.by && P.by.buildAt) P.by.buildAt = null;
+  TT.plan = null; TT.pendingAI = null;
+}
+// a computer team's build turn comes up
+function aiTurn(team, bonus) {
+  const TT = teams[team];
+  if (!planOk(TT.plan)) { dropPlan(team); TT.plan = aiPlan(team, walkable(BUILD_EVERY - 1)); }
+  if (TT.plan.kind === 'titan') { const e = TT.plan.elem; dropPlan(team); buildTitan(team, e); return; }
+  setOff(TT.plan);
+  TT.pendingAI = { t: BUILD_EVERY - 1 }; // the same time a player gets to choose
+}
+// seconds until a team's next build turn
+function turnIn(team) {
+  const T = teams, n = TEAMS.length, d = (TEAMS.indexOf(team) - TEAMS.indexOf(T.build.team) + n) % n;
+  return T.build.t + d * buildEvery();
+}
+// each frame: plans made ahead of a computer team's turn, and the turns under way
+function updateAIBuilds(dt) {
+  const T = teams;
+  for (const team of TEAMS) {
+    if (!isAI(team)) continue;
+    const TT = T[team];
+    if (!TT.pendingAI) {
+      // its turn is coming: pick a spot and start walking
+      if (turnIn(team) <= AI_PLAN_AHEAD && (!TT.plan || (TT.plan.kind === 'turret' && !planOk(TT.plan)))) { dropPlan(team); TT.plan = aiPlan(team, walkable(turnIn(team) + BUILD_EVERY - 1)); }
+      // the wizard sets off just in time to be there when the turn comes
+      if (planOk(TT.plan) && !TT.plan.by.buildAt && turnIn(team) <= walkTime(TT.plan) + 2) setOff(TT.plan);
+      continue;
+    }
+    const P = TT.pendingAI;
+    P.t -= dt;
+    let plan = TT.plan;
+    if (!planOk(plan)) {
+      // the wizard fell or the spot was taken: another spot it can still reach, or a titan
+      const e = plan && plan.elem;
+      if (plan && plan.by && plan.by.buildAt) plan.by.buildAt = null;
+      plan = TT.plan = aiPlan(team, walkable(P.t));
+      if (plan.kind === 'titan') { dropPlan(team); buildTitan(team, e || plan.elem); continue; }
+      setOff(plan);
+    }
+    const b = plan.by;
+    if (Math.hypot(b.x - plan.x, b.y - plan.y) < 50) { // (close enough: crowds jostle)
+      const e = plan.elem;
+      dropPlan(team);
+      if (canBuildAt(b.x, b.y, team)) buildTurret(team, b.x, b.y, e); else buildTitan(team, e);
+    } else if (P.t <= 0) {
+      // out of time: a titan instead
+      const e = plan.elem;
+      dropPlan(team);
+      buildTitan(team, e);
+    }
+  }
 }
 
 // put a team's sigil somewhere in its own ground, away from its base
@@ -3194,7 +3272,13 @@ function updateUnit(u, dt) {
   if (smartRed(u) && aiSkill() >= 0.5 && sharp(u) && isMinion(u) && u.tired > 0.7 && !u.retreat) { u.retreat = true; u.inPush = false; }
   const home = nexusOf(u.team);
   let tx = null, ty = null;
-  if (u.retreat && home) {
+  if (u.buildAt) {
+    // walking out to build a turret (firing at anything in reach on the way, and while it waits there)
+    const t = findTarget(u);
+    if (t && Math.hypot(t.x - u.x, t.y - u.y) - (t.r || PLAYER_R) <= u.def.range) unitAttack(u, t);
+    tx = u.buildAt.x; ty = u.buildAt.y;
+    if (Math.hypot(tx - u.x, ty - u.y) < 4) tx = null;
+  } else if (u.retreat && home) {
     const hp = homePt(u.team, 130); tx = hp.x; ty = hp.y;
     if (Math.hypot(tx - u.x, ty - u.y) < 160) { u.hp = Math.min(u.maxHp, u.hp + 8 * dt); u.tired = Math.max(0, (u.tired || 0) - 0.25 * dt); }
     if (u.hp >= u.maxHp * 0.95 && !(u.tired > 0.1 && smartRed(u))) u.retreat = false;
@@ -3412,11 +3496,12 @@ const redCasts = () => difficulty === 'hard' || difficulty === 'vhard';
 // to a draw your army needs about twice the fighting strength (damage × health) it needs on Hard.
 const VH_EDGE = { minions: 1.35, wizards: 2, hp: 1.275, power: 1.275, cast: 1.45 };
 // How long the computer's wizards wait between spells (×), and its units'
-// health and damage (×), per level. Their spells now burn, poison, freeze and
-// shove your whole army (and their walls stop your shots), so these were
-// re-tuned in simulated matches to keep Hard and Very Hard where they were.
+// health and damage (×), per level. Re-tuned in simulated matches whenever the
+// rules move the balance, to keep each level where it was: the computer's
+// spells hitting your whole army, and its wizards having to walk out to build
+// turrets as you do (Medium, Hard and Very Hard got easier with that).
 const AI_CAST_GAP = { hard: 1, vhard: 2.3 };
-const AI_UNIT = { hard: 0.8, vhard: 1 };
+const AI_UNIT = { medium: 1.05, hard: 1.15, vhard: 1.23 };
 // Friends playing together on one team: the computer's units get 20% more
 // health and damage for each player past the first on the biggest team.
 const CROWD_EDGE = 0.2;
@@ -3696,7 +3781,7 @@ function updateBattle(dt) {
   if (T.time <= BUILD_CLOSE && !T.buildClosed) {
     T.buildClosed = true;
     T.pending = null; T.pendingG = {};
-    for (const team of TEAMS) T.bonus[team] = 0;
+    for (const team of TEAMS) { T.bonus[team] = 0; dropPlan(team); }
     showBanner('Building is closed', 'Final 15 seconds: fight for every point!', 3);
     netEvents.push(['banner', 'Building is closed', 'Final 15 seconds: fight for every point!', 3]);
   }
@@ -3710,7 +3795,8 @@ function updateBattle(dt) {
     }
     // build turns go round the teams (each gets one every 20 seconds); a
     // team's players take its turns in order, and the clock waits while one chooses
-    if (!T.pending && !Object.keys(T.pendingG).length) {
+    updateAIBuilds(dt);
+    if (!T.pending && !Object.keys(T.pendingG).length && !TEAMS.some(t => T[t].pendingAI)) {
       T.build.t -= dt;
       if (T.build.t <= 0) {
         giveBuildTurn(T.build.team);
@@ -3721,7 +3807,7 @@ function updateBattle(dt) {
     // a broken sigil earns its breaker an extra build turn
     for (const team of TEAMS) {
       if (!(T.bonus[team] > 0)) continue;
-      if (humansOn(team).some(h => hasPending(h.id))) continue;
+      if (humansOn(team).some(h => hasPending(h.id)) || T[team].pendingAI) continue;
       T.bonus[team]--;
       giveBuildTurn(team, true);
     }
@@ -3810,9 +3896,9 @@ function hasPending(id) { return id === 'host' ? !!teams.pending : !!teams.pendi
 // it to the next of them in turn
 function giveBuildTurn(team, bonus) {
   const hs = humansOn(team);
-  if (!hs.length) { aiBuild(team); return; }
+  if (!hs.length) { aiTurn(team, bonus); return; }
   const T = teams, h = hs[(T[team].turn++) % hs.length];
-  const title = bonus ? 'Bonus build!' : 'Your build turn!', sub = bonus ? 'For breaking the sigil: a turret or a titan' : 'Turret: stand on open ground · or send a Titan';
+  const title = bonus ? 'Bonus build!' : 'Your build turn!', sub = bonus ? 'For breaking the sigil: a turret or a titan' : 'Turret: build where you stand · or send a Titan';
   if (h.id === 'host') { T.pending = { t: BUILD_EVERY - 1 }; showBanner(title, sub, 3); SFX.discover(); }
   else { T.pendingG[h.id] = { t: BUILD_EVERY - 1 }; tellHero(h.id, ['banner', title, sub, 3]); }
 }
@@ -3821,6 +3907,7 @@ function otherPending() {
   if (net.role === 'guest') return (teams && teams.pendingO) || null;
   if (!teams || !teams.pendingG) return null;
   for (const id in teams.pendingG) { const h = heroById(id); if (h) return { t: teams.pendingG[id].t, team: h.team }; }
+  for (const t of TEAMS) if (teams[t] && teams[t].pendingAI) return { t: teams[t].pendingAI.t, team: t, ai: true };
   return null;
 }
 
@@ -3835,13 +3922,13 @@ function buildButtons() {
 function buildChoice(key) {
   if (!teams || !teams.pending || state !== 'play' || teams.time <= BUILD_CLOSE) return false;
   if (net.role === 'guest') {
-    if (key === 'turret' && !canBuildAt(player.x, player.y)) { castMessage('Can’t build here: not in enemy ground, or on a tree, rock or tower', '#ccc'); return true; }
+    if (key === 'turret' && !canBuildAt(player.x, player.y)) { castMessage('Can’t build here: too close to a tree, rock or building', '#ccc'); return true; }
     // the turn ends when the host confirms it (if the spot is refused, you can still try again)
     net.send({ t: 'build', key, elem: teams.buildElem });
     return true;
   }
   if (key === 'turret') {
-    if (!canBuildAt(player.x, player.y)) { castMessage('Can’t build here: not in enemy ground, or on a tree, rock or tower', '#ccc'); return true; }
+    if (!canBuildAt(player.x, player.y)) { castMessage('Can’t build here: too close to a tree, rock or building', '#ccc'); return true; }
     buildTurret('blue', player.x, player.y, teams.buildElem);
   } else buildTitan('blue', teams.buildElem);
   teams.pending = null;
@@ -3860,7 +3947,7 @@ function buildButtonHit(x, y) {
 
 // keep a crowd of units from stacking on one spot
 function separate(list) {
-  const live = list.filter(u => !u.dead && !u.structure);
+  const live = list.filter(u => !u.dead && !u.structure && !u.buildAt); // (a builder keeps to its spot)
   for (let i = 0; i < live.length; i++) {
     for (let j = i + 1; j < live.length; j++) {
       const a = live[i], b = live[j];
@@ -4057,7 +4144,7 @@ function hostReceive(m, id) {
         const elem = ELEM_CYCLE.includes(m.elem) ? m.elem : 'fire';
         if (m.key === 'turret') {
           if (canBuildAt(p.x, p.y, team)) { buildTurret(team, p.x, p.y, elem); delete teams.pendingG[id]; }
-          else tellHero(id, ['msg', 'Can’t build here: not in enemy ground, or on a tree, rock or tower', '#ccc']);
+          else tellHero(id, ['msg', 'Can’t build here: too close to a tree, rock or building', '#ccc']);
         } else { buildTitan(team, elem); delete teams.pendingG[id]; }
       }
       break;
@@ -4119,8 +4206,9 @@ function packHero(p) {
 // turns the picture round so its own team is blue).
 function makeSnapshot() {
   const T = teams, all = k => TEAMS.flatMap(t => fxOf(t)[k]), over = state === 'won' || state === 'lost';
-  const pend = Object.entries(T.pendingG).map(([id, p]) => [id, r1(p.t)]);
-  if (T.pending) pend.push(['host', r1(T.pending.t)]);
+  const pend = Object.entries(T.pendingG).map(([id, p]) => [id, r1(p.t), (heroById(id) || {}).team]);
+  if (T.pending) pend.push(['host', r1(T.pending.t), 'blue']);
+  for (const t of TEAMS) if (T[t].pendingAI) pend.push(['ai', r1(T[t].pendingAI.t), t, 1]);
   // status effects as [which, seconds, …] pairs (most units have none)
   const st = u => { const v = []; STATUS_KEYS.forEach((k, i) => { if (u[k] > 0) v.push(i, r1(u[k])); }); return v.length ? v : 0; };
   // things that change slowly go in every fifth picture
@@ -4131,6 +4219,8 @@ function makeSnapshot() {
     rs: full && T.res ? Object.fromEntries(TEAMS.map(t => [t, Object.fromEntries(Object.entries(T.res[t] || {}).map(([e, v]) => [e, r2(v)]))])) : undefined,
     ec: full ? T.eclipse : undefined,
     bt: [T.build.team, r1(T.build.t)], pg: pend,
+    tg: full ? packTerr() : undefined,
+    bp: TEAMS.flatMap(t => T[t].plan && T[t].plan.kind === 'turret' && T[t].plan.by && T[t].plan.by.buildAt ? [[TEAM_CODE[t] - 1, Math.round(T[t].plan.x), Math.round(T[t].plan.y)]] : []),
     od: full ? TEAMS.map(t => t === 'blue' ? [T.order, T.orders.minion, T.orders.titan] : [T[t].order, T[t].orders.minion, T[t].orders.titan]) : undefined,
     hs: heroes.map(h => [h.id, h.team, h.gone ? 1 : 0, h.p === hostP ? mySkin : (h.p.look || ''), packHero(h.p)]),
     u: TEAMS.flatMap(t => units[t]).filter(u => !u.dead && !u.proxyOf).map(u => [
@@ -4171,6 +4261,32 @@ function V(x, y) {
   return { x: d * view.ux - x, y: d * view.uy - y };
 }
 const relabel = t => (t === view.team ? 'blue' : t === 'blue' ? view.team : t);
+// the land map, packed as [owner, run length, owner, run length, …]
+function packTerr() {
+  const out = [];
+  let v = terr[0], n = 0;
+  for (let k = 0; k < terr.length; k++) { if (terr[k] === v) n++; else { out.push(v, n); v = terr[k]; n = 1; } }
+  out.push(v, n);
+  return out;
+}
+let hostTerr = null; // (a friend's phone) the host's latest land map, in the host's layout
+function unpackTerr(runs) {
+  const g = new Int8Array(COLS * ROWS);
+  let k = 0;
+  for (let i = 0; i + 1 < runs.length && k < g.length; i += 2) { const v = runs[i], n = runs[i + 1]; g.fill(v, k, Math.min(g.length, k + n)); k += n; }
+  return g;
+}
+// each of your cells takes the owner of the host's cell it turns into (and that owner's name as you see it)
+function applyHostTerr() {
+  for (let j = 0; j < ROWS; j++) for (let i = 0; i < COLS; i++) {
+    const k = j * COLS + i;
+    if (!inOval[k]) { terr[k] = 0; continue; }
+    const c = cellCenter(i, j), q = V(c.x, c.y);
+    const ci = Math.floor((q.x + ARENA_W) / CELL), cj = Math.floor((q.y + ARENA_H) / CELL);
+    const v = ci >= 0 && cj >= 0 && ci < COLS && cj < ROWS ? hostTerr[cj * COLS + ci] : 0;
+    terr[k] = v ? TEAM_CODE[relabel(CODE_TEAM[v])] : 0;
+  }
+}
 // the field's trees and rocks get the same turn (and are turned back afterwards)
 let arenaTurned = null;
 function turnArena(v) {
@@ -4201,7 +4317,7 @@ function startGuestBattle(m) {
     order: 'spread', orders: { minion: 'attackTurrets', titan: 'attackTurrets' }, buildElem: 'water', skins: {}, tally: {},
   };
   for (const t of TEAMS) teams[t] = { score: 0, cells: 0, minions: 10, mix: evenMix() };
-  guestUnits = new Map(); guestOthers = []; eclipseSeen = {};
+  guestUnits = new Map(); guestOthers = []; eclipseSeen = {}; hostTerr = null;
   banner = null; castMsg = null; seq = []; curNode = null;
   const box = document.getElementById('lobby');
   if (box) box.style.display = 'none';
@@ -4264,7 +4380,10 @@ function guestReceive(m) {
   const teamOf = id => { const h = m.hs.find(x => x[0] === id); return h ? h[1] : 'blue'; };
   const myTurn = m.pg.find(p => p[0] === net.myId), theirs = m.pg.find(p => p[0] !== net.myId);
   if (!myTurn) teams.pending = null; else if (!teams.pending || teams.pending.t > myTurn[1] + 0.5) teams.pending = { t: myTurn[1] };
-  teams.pendingO = theirs ? { team: relabel(teamOf(theirs[0])), t: theirs[1] } : null;
+  teams.pendingO = theirs ? { team: relabel(theirs[2] || teamOf(theirs[0])), t: theirs[1], ai: !!theirs[3] } : null;
+  // the land map comes from the host; where the computer's wizards are heading to build
+  if (m.tg) { hostTerr = unpackTerr(m.tg); computeTerritory(); }
+  teams.plans = (m.bp || []).map(([ti, x, y]) => { const q = at(x, y); return { team: relabel(canon(ti)), x: q.x, y: q.y }; });
   // your team's orders (a teammate may have changed them; yours win for a moment)
   const oi = m.tm.indexOf(view.team);
   if (m.od && m.od[oi] && performance.now() - (net.ordT || 0) > 1500) {
@@ -4369,7 +4488,7 @@ function leaveOnline(quiet) {
   if (!versus && !lobby.role) return;
   if (!quiet) try { net.send({ t: 'bye' }); } catch (_) {}
   if (net.role === 'guest') {
-    turnArena(null); Object.assign(view, { team: 'blue', on: false, ux: 0, uy: 1 });
+    turnArena(null); Object.assign(view, { team: 'blue', on: false, ux: 0, uy: 1 }); hostTerr = null;
     // a friend's phone only shows the host's battle: leaving it means back to the menu
     if (state === 'play' || state === 'dead' || state === 'reveal') { state = 'title'; menuPage = 'main'; }
   }
@@ -7158,6 +7277,20 @@ function drawWorld() {
     ctx.globalAlpha = 1;
   }
   drawTraps();
+  if (mode === 'battle' && teams) {
+    const spots = net.role === 'guest' ? teams.plans || [] : TEAMS.filter(t => teams[t] && planOk(teams[t].plan) && teams[t].plan.by.buildAt).map(t => ({ team: t, x: teams[t].plan.x, y: teams[t].plan.y }));
+    for (const sp of spots) {
+      // where a computer team's wizard is heading to build: a turning dashed ring round a ghost turret
+      ctx.save(); ctx.setLineDash([7, 6]); ctx.lineDashOffset = -elapsed * 20;
+      ctx.globalAlpha = 0.7 + 0.3 * Math.sin(elapsed * 4);
+      circle(sp.x, sp.y, 28, 'rgba(0,0,0,0.12)', TEAM_COLOR[sp.team], 3);
+      ctx.setLineDash([]); ctx.globalAlpha = 0.45;
+      ctx.fillStyle = TEAM_COLOR[sp.team];
+      ctx.beginPath(); ctx.moveTo(sp.x - 9, sp.y + 8); ctx.lineTo(sp.x - 6, sp.y - 8); ctx.lineTo(sp.x + 6, sp.y - 8); ctx.lineTo(sp.x + 9, sp.y + 8); ctx.closePath(); ctx.fill();
+      circle(sp.x, sp.y - 12, 4, TEAM_COLOR[sp.team]);
+      ctx.restore();
+    }
+  }
   const others = mode === 'battle' && teams && net.role !== 'guest' ? TEAMS.filter(t => t !== curSide && casterFor(t)) : [];
   for (const side of others) withSide(side, drawTraps, casterFor(side));
   drawBoat();
@@ -7326,7 +7459,7 @@ function drawBuildClock(cx, cy, right) {
   } else if (otherPending()) { // a friend choosing
     const o = otherPending();
     frac = o.t / (BUILD_EVERY - 1); num = Math.ceil(o.t); col = TEAM_COLOR[o.team];
-    label = o.team === 'blue' ? 'TEAMMATE BUILDING' : `${TEAM_NAME[o.team].toUpperCase()} BUILDING`; sub = 'choosing now';
+    label = o.team === 'blue' ? 'TEAMMATE BUILDING' : `${TEAM_NAME[o.team].toUpperCase()} BUILDING`; sub = o.ai ? 'its wizard is on the way' : 'choosing now';
   } else {
     const mine = T.build.team === 'blue';
     frac = clamp(T.build.t / buildEvery(), 0, 1); num = Math.ceil(T.build.t); col = TEAM_COLOR[T.build.team];
@@ -7638,7 +7771,8 @@ function drawBuildButtons() {
     ctx.fillText(`${turret ? 'Build' : 'Send'} ${ELEM_NAME[teams.buildElem]} ${turret ? 'Turret' : 'Titan'}`, bb.x + bb.w / 2, bb.y + 20);
     ctx.font = '10px "Big Caslon", "Libre Caslon Text", Georgia, serif';
     ctx.fillStyle = '#aaa';
-    ctx.fillText(turret ? (ok ? 'right here' : 'not here: move to open ground') : 'from your base', bb.x + bb.w / 2, bb.y + 36);
+    const theirs = ok && cellOwner(player.x, player.y) > 0 && cellOwner(player.x, player.y) !== TEAM_CODE.blue;
+    ctx.fillText(turret ? (!ok ? 'not here: too close to something' : theirs ? 'enemy land: claims it later' : 'right here') : 'from your base', bb.x + bb.w / 2, bb.y + 36);
   }
 }
 
@@ -7977,6 +8111,8 @@ const HOWTO = [
   ['p', 'Pick 1 rival or 2 on the Battle page. With 2 rivals, three universes fight on a round field: you (blue), red and green. The computer teams fight each other too, and tend to go after whoever is winning.'],
   ['points'],
   ['p', 'Build turns go round the teams: each team gets one every 20 seconds. Pick an element, then build a turret where you stand (it claims ground) or send a titan. A dial beside the clock counts down to the next turn. No building in the last 15 seconds.'],
+  ['p', 'You can build on enemy ground too, but the land there stays theirs until the enemy turrets holding it are destroyed. Land always stays with whoever holds it while their towers still surround it.'],
+  ['p', 'The computer builds the same way: one of its wizards walks to the spot first (a dashed ring shows where), and if it can’t get there in time it sends a titan.'],
   ['p', 'Top left: your health, your mana and the match clock. Top right: the map (each side’s share of the ground is written on it), then your score, your kill tally and the build clock. The eclipse clock waits faintly at the top in the middle.'],
   ['p', 'The eclipse clock has a ring for each element. When an element’s mark reaches 12 o’clock it is eclipsed and doesn’t work for 30 seconds. See “Eclipses” below.'],
   ['p', 'Around the casting star: FOLLOW / SPREAD (top left) keeps your army with you or lets it push; FIRE (top right) sends a loaded attack; ARMY (bottom left) opens your army commands; tilt and sound are bottom right.'],
@@ -8016,7 +8152,7 @@ const HOWTO = [
   ['h', 'Wizards, titans, turrets'],
   ['p', 'Wizards: two per side, shooting from range. They retreat to heal when hurt and come back 12 seconds after falling.'],
   ['p', 'Titans: big, slow walkers whose slam hits everything near the target. They march on enemy turrets.'],
-  ['p', 'Turrets: shoot anything that comes close and claim ground. The lines between your towers mark your land.'],
+  ['p', 'Turrets: shoot anything that comes close and claim ground (on enemy ground, once the enemy turrets there fall). The lines between your towers mark your land.'],
   ['p', 'Sigils: each side has one, walled in for 15 seconds after it appears. Breaking the enemy’s is worth 65 and a bonus build.'],
   ['h', 'Scoring in detail'],
   ['p', 'Kills fill a tally (shown under your score): a minion adds 1, a titan 5, a wizard 10. Every 5 on the tally is a point. If your hero falls to the computer, it adds 10 to that team’s tally.'],
