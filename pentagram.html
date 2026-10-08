@@ -803,6 +803,28 @@ function showBanner(text, sub, life) {
 }
 // news from the battle itself, for your screen whoever's spell caused it
 function hostBanner(text, sub, life) { banner = { text, sub, life, max: life }; }
+// What happened, worded for one player: `team` and `by` are as they see them
+// (their own team is blue). Null when it isn't news to them.
+function newsText(kind, team, by, elem) {
+  const lc = t => TEAM_NAME[t].toLowerCase(), pts = UNITS.sigil.pts, vs = elem ? `Strong vs ${ELEM_NAME[elemBeats(elem)]}` : '';
+  switch (kind) {
+    case 'sigil': return [by === 'blue' ? `You broke the ${lc(team)} sigil! +${pts}`
+                          : team === 'blue' ? `${by ? TEAM_NAME[by] : 'Someone'} broke your sigil!${by ? ` +${pts} to ${lc(by)}` : ''}`
+                          : `${by ? TEAM_NAME[by] : 'Someone'} broke the ${lc(team)} sigil`,
+                          by ? 'Bonus build turn for ' + (by === 'blue' ? 'you!' : lc(by)) : ''];
+    case 'turret': return [team === 'blue' ? 'Your turret has fallen!' : `${TEAM_NAME[team]} turret destroyed!`, 'That ground is open again'];
+    case 'built': return [team === 'blue' ? `Your ${ELEM_NAME[elem]} turret is up!` : `${TEAM_NAME[team]} built a ${ELEM_NAME[elem]} turret`, vs];
+    case 'titan': return [team === 'blue' ? `Your ${ELEM_NAME[elem]} titan marches out!` : `${TEAM_NAME[team]} sends a ${ELEM_NAME[elem]} titan!`, vs];
+    case 'newsigil': return team === 'blue' ? ['Your sigil appeared', 'Its wall falls in 15s: defend it!'] : null;
+  }
+  return null;
+}
+// news for your screen now, and for your friends' (each worded from their side)
+function news(kind, team, by, elem, life) {
+  const N = newsText(kind, team, by, elem);
+  if (N) hostBanner(N[0], N[1], life);
+  if (net.role === 'host') netEvents.push(['news', kind, team, by || '', elem || '', life]);
+}
 function castMessage(text, color) {
   if (player !== hostP) { if (player.heroId) tellHero(player.heroId, ['msg', text, color]); return; }
   castMsg = { text, color, life: 1.6 };
@@ -1556,9 +1578,13 @@ function castWoven(sp) {
   }
 }
 
+// Each player has up to three helpers (friends on one team keep their own);
+// the computer's wizards share three per team.
+const helperOf = (a, p) => (p.isMage ? !!(a.owner && a.owner.isMage) : (a.owner || hostP) === p);
 function makeRoom() {
-  while (allies.length >= MAX_HELPERS) {
-    const old = allies.shift();
+  for (let mine = allies.filter(a => helperOf(a, player)); mine.length >= MAX_HELPERS; mine.shift()) {
+    const old = mine[0];
+    allies.splice(allies.indexOf(old), 1);
     burst(old.x, old.y, '#aaa', 12, 140);
     castMessage('Your oldest helper fades', '#aaa');
   }
@@ -1568,7 +1594,7 @@ function summonCritter(sp) {
   makeRoom();
   const C = CRITTER[sp.elem], a = rnd(0, TAU);
   const tough = sp.finish === 'E' ? 1.5 : 1; // Armoured
-  allies.push({ kind: 'critter', elem: sp.elem, spec: sp, x: player.x + Math.cos(a) * 40, y: player.y + Math.sin(a) * 40,
+  allies.push({ kind: 'critter', elem: sp.elem, spec: sp, owner: player, x: player.x + Math.cos(a) * 40, y: player.y + Math.sin(a) * 40,
                 life: 25 * sp.dur, max: 25 * sp.dur, hp: C.hp * sp.size * tough, maxHp: C.hp * sp.size * tough, cd: 0.6, ang: a,
                 r: 10 * Math.sqrt(sp.size), taunt: !!C.taunt, healT: 2 });
   burst(player.x + Math.cos(a) * 40, player.y + Math.sin(a) * 40, TYPE_COLOR[sp.elem], 24, 220);
@@ -1607,7 +1633,7 @@ function updateCritter(a, dt) {
 function summon(kind) {
   makeRoom();
   const a = rnd(0, TAU);
-  allies.push({ kind, x: player.x + Math.cos(a) * 40, y: player.y + Math.sin(a) * 40,
+  allies.push({ kind, owner: player, x: player.x + Math.cos(a) * 40, y: player.y + Math.sin(a) * 40,
                 life: ALLY_LIFE[kind], max: ALLY_LIFE[kind], cd: 0.4, ang: a, r: ALLY_R[kind], hp: ALLY_HP[kind] || 0 });
   burst(player.x + Math.cos(a) * 40, player.y + Math.sin(a) * 40, kind === 'dragon' ? '#ff5a2a' : '#fff', kind === 'dragon' ? 50 : 16, 260);
 }
@@ -1756,7 +1782,8 @@ function shootArrow(wx, wy) {
     const dx = wx - player.x, dy = wy - player.y, d = Math.hypot(dx, dy) || 1;
     player.face = { x: dx / d, y: dy / d };
     SFX.arrow();
-    net.send({ t: 'arrow', x: -wx, y: wy });
+    const w = V(wx, wy);
+    net.send({ t: 'arrow', x: w.x, y: w.y });
     return;
   }
   SFX.arrow();
@@ -2021,35 +2048,42 @@ function updateShots(dt) {
   enemyShots = enemyShots.filter(s => s.life > 0);
 }
 
-function updateAllies(dt) {
-  for (const a of allies) {
-    potency = a.pot || 1;
-    a.life -= dt; a.cd -= dt;
-    if (a.kind === 'wisp') {
-      // circles you and slowly heals you
-      a.ang += 2.2 * dt;
-      moveToward(a, player.x + Math.cos(a.ang) * 42, player.y + Math.sin(a.ang) * 42, 400, dt, 0);
-      if (a.cd <= 0) {
-        a.cd = 1;
-        if (player.hp < player.maxHp) { healPlayer(0.8); fx.push({ kind: 'bolt', pts: [{ x: a.x, y: a.y }, { x: player.x, y: player.y }], life: 0.2, max: 0.2, color: '#9f9' }); }
-      }
-    } else if (a.kind === 'imp') {
-      // runs ahead of you and draws enemies to it
-      moveToward(a, player.x + player.face.x * 110, player.y + player.face.y * 110, 200, dt, 4);
-      pushOut(a, a.r);
-    } else if (a.kind === 'golem') {
-      // plants itself between you and the nearest enemy; soaks bites and shots
-      const t = nearestFoe(player.x, player.y, 400);
-      const tx = t ? player.x + (t.x - player.x) * 0.45 : player.x + 50, ty = t ? player.y + (t.y - player.y) * 0.45 : player.y;
-      moveToward(a, tx, ty, 120, dt, 4);
-      pushOut(a, a.r);
-    } else if (a.kind === 'critter') {
-      updateCritter(a, dt);
-    } else if (a.kind === 'dragon') {
-      a.ang += 1.1 * dt;
-      moveToward(a, player.x + Math.cos(a.ang) * 90, player.y + Math.sin(a.ang) * 60 - 40, 260, dt, 0);
-      if (!player.loaded || player.loaded.key !== 'FFSAFF') a.life = Math.min(a.life, 1.5); // out of breath: flies off
+// one helper's moment: it follows and helps whoever is "player" (its summoner)
+function stepAlly(a, dt) {
+  potency = a.pot || 1;
+  a.life -= dt; a.cd -= dt;
+  if (a.kind === 'wisp') {
+    // circles you and slowly heals you
+    a.ang += 2.2 * dt;
+    moveToward(a, player.x + Math.cos(a.ang) * 42, player.y + Math.sin(a.ang) * 42, 400, dt, 0);
+    if (a.cd <= 0) {
+      a.cd = 1;
+      if (player.hp < player.maxHp) { healPlayer(0.8); fx.push({ kind: 'bolt', pts: [{ x: a.x, y: a.y }, { x: player.x, y: player.y }], life: 0.2, max: 0.2, color: '#9f9' }); }
     }
+  } else if (a.kind === 'imp') {
+    // runs ahead of you and draws enemies to it
+    moveToward(a, player.x + player.face.x * 110, player.y + player.face.y * 110, 200, dt, 4);
+    pushOut(a, a.r);
+  } else if (a.kind === 'golem') {
+    // plants itself between you and the nearest enemy; soaks bites and shots
+    const t = nearestFoe(player.x, player.y, 400);
+    const tx = t ? player.x + (t.x - player.x) * 0.45 : player.x + 50, ty = t ? player.y + (t.y - player.y) * 0.45 : player.y;
+    moveToward(a, tx, ty, 120, dt, 4);
+    pushOut(a, a.r);
+  } else if (a.kind === 'critter') {
+    updateCritter(a, dt);
+  } else if (a.kind === 'dragon') {
+    a.ang += 1.1 * dt;
+    moveToward(a, player.x + Math.cos(a.ang) * 90, player.y + Math.sin(a.ang) * 60 - 40, 260, dt, 0);
+    if (!player.loaded || player.loaded.key !== 'FFSAFF') a.life = Math.min(a.life, 1.5); // out of breath: flies off
+  }
+}
+function updateAllies(dt) {
+  const me = player;
+  for (const a of allies) {
+    // a helper sticks with (and heals) whoever summoned it
+    player = a.owner || me;
+    try { stepAlly(a, dt); } finally { player = me; }
   }
   allies = allies.filter(a => {
     if (a.life > 0) return true;
@@ -2466,6 +2500,9 @@ const MATCH_TIME = 300, BUILD_EVERY = 10, SIGIL_WALL = 15, GROUND_BONUS = 140, B
 const FRONT_X = WORLD * 0.32; // the line (±) behind which each side holds 30% of the oval at the start
 const TEAM_COLOR = { blue: '#4aa8ff', red: '#ff4a5a', green: '#47d98b' };
 const TEAM_NAME = { blue: 'Blue', red: 'Red', green: 'Green' };
+const TEAM_LIGHT = { blue: '#8cc8ff', red: '#ff8a96', green: '#8af0b8' }; // for text on dark
+const TEAM_DARK = { blue: '#24466e', red: '#6e2430', green: '#1f5a3c' };
+const teamLabel = team => (team === 'blue' ? 'You' : TEAM_NAME[team]);
 const TERR_FILL = [null, 'rgba(74,168,255,0.11)', 'rgba(255,74,90,0.11)', 'rgba(71,217,139,0.11)'];
 const TERR_MAP = [null, 'rgba(74,168,255,0.45)', 'rgba(255,74,90,0.45)', 'rgba(71,217,139,0.45)'];
 const UNITS = {
@@ -2753,14 +2790,14 @@ function buildTurret(team, x, y, elem) {
   ring(x, y, 120, TEAM_COLOR[team], 0.8);
   burst(x, y, TEAM_COLOR[team], 30, 260);
   SFX.summon();
-  hostBanner(`${team === 'blue' ? 'Your' : TEAM_NAME[team] + ' built a'} ${ELEM_NAME[elem]} turret${team === 'blue' ? ' is up!' : ''}`, `Strong vs ${ELEM_NAME[elemBeats(elem)]}`, 2.5);
+  news('built', team, null, elem, 2.5);
 }
 function buildTitan(team, elem) {
   { const S = stats(team); if (S) S.titan[elem] = (S.titan[elem] || 0) + 1; }
   const p = homePt(team, 120, rnd(-60, 60)), u = addUnit(team, 'titan', p.x, p.y, elem);
   u.laneY = rnd(-200, 200); u.lane = rnd(-1, 1);
   SFX.awaken();
-  hostBanner(team === 'blue' ? `Your ${ELEM_NAME[elem]} titan marches out!` : `${TEAM_NAME[team]} sends a ${ELEM_NAME[elem]} titan!`, `Strong vs ${ELEM_NAME[elemBeats(elem)]}`, 2.5);
+  news('titan', team, null, elem, 2.5);
 }
 
 // A computer team's build turn: a turret on the open spot that adds the most
@@ -2806,7 +2843,7 @@ function placeSigil(team) {
   const s = addUnit(team, 'sigil', c.x + rnd(-25, 25), c.y + rnd(-25, 25));
   s.wall = SIGIL_WALL;
   ring(s.x, s.y, 60, TEAM_COLOR[team], 0.8);
-  if (team === 'blue') hostBanner('Your sigil appeared', 'Its wall falls in 15s: defend it!', 3);
+  news('newsigil', team, null, null, 3);
 }
 
 function evenMix() { return Object.fromEntries(MINION_KINDS.map(k => [k, 1 / MINION_KINDS.length])); }
@@ -3044,11 +3081,7 @@ function unitFell(u) {
     teams[u.team].sigilT = 3;
     shake = Math.max(shake, 10);
     SFX.bossDown();
-    const lc = t => TEAM_NAME[t].toLowerCase();
-    hostBanner(by === 'blue' ? `You broke the ${lc(u.team)} sigil! +${u.def.pts}`
-             : u.team === 'blue' ? `${by ? TEAM_NAME[by] : 'Someone'} broke your sigil!${by ? ` +${u.def.pts} to ${lc(by)}` : ''}`
-             : `${by ? TEAM_NAME[by] : 'Someone'} broke the ${lc(u.team)} sigil`,
-               by ? 'Bonus build turn for ' + (by === 'blue' ? 'you!' : lc(by)) : '', 3);
+    news('sigil', u.team, by, null, 3);
     if (by) teams.bonus[by] = (teams.bonus[by] || 0) + 1;
   }
   if (u.kind === 'nexus') { battleOver(u.team, by); return; }
@@ -3056,7 +3089,7 @@ function unitFell(u) {
     shake = Math.max(shake, 12);
     SFX.explode(true);
     computeTerritory();
-    hostBanner(u.team === 'blue' ? 'Your turret has fallen!' : `${TEAM_NAME[u.team]} turret destroyed!`, 'That ground is open again', 3);
+    news('turret', u.team, by, null, 3);
   }
 }
 
@@ -3771,6 +3804,7 @@ function giveBuildTurn(team, bonus) {
 }
 // a friend choosing their build right now (for the build clock)
 function otherPending() {
+  if (net.role === 'guest') return (teams && teams.pendingO) || null;
   if (!teams || !teams.pendingG) return null;
   for (const id in teams.pendingG) { const h = heroById(id); if (h) return { t: teams.pendingG[id].t, team: h.team }; }
   return null;
@@ -3787,13 +3821,13 @@ function buildButtons() {
 function buildChoice(key) {
   if (!teams || !teams.pending || state !== 'play' || teams.time <= BUILD_CLOSE) return false;
   if (net.role === 'guest') {
-    if (key === 'turret' && !canBuildAt(player.x, player.y)) { castMessage('Can’t build here: not in red ground or on a tree, rock or tower', '#ccc'); return true; }
+    if (key === 'turret' && !canBuildAt(player.x, player.y)) { castMessage('Can’t build here: not in enemy ground, or on a tree, rock or tower', '#ccc'); return true; }
     // the turn ends when the host confirms it (if the spot is refused, you can still try again)
     net.send({ t: 'build', key, elem: teams.buildElem });
     return true;
   }
   if (key === 'turret') {
-    if (!canBuildAt(player.x, player.y)) { castMessage('Can’t build here: not in red ground or on a tree, rock or tower', '#ccc'); return true; }
+    if (!canBuildAt(player.x, player.y)) { castMessage('Can’t build here: not in enemy ground, or on a tree, rock or tower', '#ccc'); return true; }
     buildTurret('blue', player.x, player.y, teams.buildElem);
   } else buildTitan('blue', teams.buildElem);
   teams.pending = null;
@@ -3837,7 +3871,6 @@ const net = { role: null, send: () => {}, sendT: 0, posT: 0, mixT: 0 };
 let curSide = 'blue';                       // whose spells are being run right now (host)
 let dmgBy = null;                           // the team a hit counts for, when it isn't the current side's
 let rivalP = null;                          // (a duel) your friend's wizard
-let otherHero = null;                       // guest: the host's wizard, to draw
 let unitSeq = 0;
 let netEvents = [];                         // host → guests: visual effects and messages to replay
 // a message for one friend's screen only
@@ -3847,6 +3880,11 @@ function tellHero(id, ev) { if (net.role === 'host') netEvents.push(['to', id, .
 let heroes = [];
 const heroById = id => heroes.find(h => h.id === id);
 const humansOn = team => heroes.filter(h => h.team === team && !h.gone);
+// the other players' wizards that are up, for the map
+function otherHeroes() {
+  if (net.role === 'guest') return guestOthers.filter(o => !o.dead);
+  return heroes.filter(h => h.p !== hostP && !h.gone && !h.p.dead).map(h => h.p);
+}
 const HERO_LOOK = { blue: ['#2d4a7a', '#3a7bc0'], red: ['#7a2d2d', '#c03a3a'], green: ['#2d6a4a', '#3ac07a'] };
 function addHero(id, team, skin) {
   const keep = player;
@@ -3856,7 +3894,7 @@ function addHero(id, team, skin) {
   player = keep;
   const fp = fountainPos(team), d = teamDir(team);
   Object.assign(p, { heroId: id, team, x: fp.x, y: fp.y, face: { x: -d.x, y: -d.y }, tp: 0, robe: HERO_LOOK[team][0], hat: HERO_LOOK[team][1], book: new Set(), seq: [] });
-  if (skin) p.skin = skin;
+  if (skin) p.look = skin;
   const h = { id, team, p, proxy: heroProxy(id, team) };
   heroes.push(h);
   return h;
@@ -3911,13 +3949,41 @@ function withSide(side, fn, caster) {
   }
 }
 
-function startVersusHost(send) {
-  net.role = 'host'; net.send = send; versus = true;
-  startBattle('easy', ['blue', 'red'], [{ id: 'g1', team: 'red' }]);
+// A friend's name as you'd say it ("Friend 1"), or the host
+const heroName = id => (id === 'host' ? 'The host' : 'Friend ' + String(id).slice(1));
+const DIFF_NAME = { easy: 'Easy', medium: 'Medium', hard: 'Hard', vhard: 'Very Hard' };
+// Who plays on which team, as one player sees it: their own team is blue,
+// and the team that's blue for the host takes their team's colour.
+function rosterLines(meId, list, players, diff) {
+  const me = players.find(p => p.id === meId), mine = me ? me.team : 'blue';
+  const lab = t => (t === mine ? 'blue' : t === 'blue' ? mine : t);
+  const who = id => (id === meId ? 'you' : id === 'host' ? 'the host' : heroName(id));
+  return list.map(t => {
+    const ps = players.filter(p => p.team === t).map(p => who(p.id));
+    return { team: lab(t), mine: t === mine, text: ps.length ? ps.join(' & ') : `the computer (${DIFF_NAME[diff] || 'Medium'})` };
+  }).sort((a, b) => TEAM_CODE[a.team] - TEAM_CODE[b.team]);
+}
+
+// The host starts the battle for everyone who joined (see the lobby below).
+function startHostedBattle() {
+  const L = lobby, list = L.three ? ['blue', 'red', 'green'] : ['blue', 'red'];
+  if (!L.links.length) return;
+  for (const l of L.links) if (!list.includes(l.team)) l.team = 'red';
+  net.role = 'host'; versus = true; net.sendT = 0;
+  net.send = m => { for (const l of lobby.links) l.send(m); };
+  L.started = true;
+  startBattle(L.diff, list, L.links.map(l => ({ id: l.id, team: l.team, skin: l.skin })));
+  netEvents = []; // (the opening news is in each player's own start banner)
   unitSeq = 0; for (const t of TEAMS) for (const u of units[t]) if (!u.proxyOf) u.id = ++unitSeq;
-  rivalP = heroById('g1').p;
-  showBanner('Duel! Universes collide', 'Your friend leads the red universe', 4);
-  net.send({ t: 'start' });
+  for (const h of heroes) if (h.p !== hostP && h.team !== 'blue' && h.p.look) teams.skins[h.team] = h.p.look;
+  rivalP = (heroById('g1') || {}).p || null;
+  const players = heroes.map(h => ({ id: h.id, team: h.team }));
+  for (const l of L.links) l.send({ t: 'start', id: l.id, team: l.team, list, diff: L.diff, players });
+  const box = document.getElementById('lobby');
+  if (box) box.style.display = 'none';
+  const lines = rosterLines('host', list, players, L.diff).filter(x => !x.mine);
+  showBanner(players.every(p => p.team === 'blue') ? 'Together against the computer' : three() ? 'Three universes collide!' : 'Duel! Universes collide',
+             lines.map(x => `${TEAM_NAME[x.team]}: ${x.text}`).join(' · '), 4.5);
 }
 
 // a friend's wizard fell: back at their fountain in 5 seconds
@@ -3930,7 +3996,7 @@ function heroDown(p) {
   burst(p.x, p.y, TEAM_COLOR[h.team], 30, 260);
   const by = killerOf(p, h.team);
   if (by) scoreKill(by, 'hero', p.x, p.y - 30);
-  if (by === 'blue' && h.team !== 'blue') showBanner(TEAMS.length === 2 ? 'You defeated your friend’s wizard! +10' : `You defeated the ${TEAM_NAME[h.team].toLowerCase()} wizard! +10`, '', 2.5);
+  if (by === 'blue' && h.team !== 'blue') showBanner(`You defeated ${heroName(h.id)}’s wizard! +10`, '', 2.5);
   tellHero(h.id, ['you-fell']);
 }
 
@@ -3953,46 +4019,70 @@ function updateHeroes(dt) {
   syncProxies();
 }
 
-// your friend's actions arrive here (positions are in the host's coordinates)
-function hostReceive(m) {
-  if (!versus || !rivalP) return;
-  const h = heroById('g1'), team = h.team, TT = teams[team];
-  const R = fn => withSide(team, fn, rivalP);
+// A friend's actions arrive here, tagged with who sent them (positions are in
+// the host's coordinates).
+function hostReceive(m, id) {
+  const h = heroById(id);
+  if (!versus || !h || h.gone || !m) return;
+  const p = h.p, team = h.team, TT = teams[team], own = team === 'blue';
+  const R = fn => withSide(team, fn, p);
+  const num = v => (typeof v === 'number' && isFinite(v) ? v : null);
   switch (m.t) {
     case 'pos':
-      if (!rivalP.dead && !rivalP.charging && m.tp === rivalP.tp) { rivalP.x = m.x; rivalP.y = m.y; rivalP.face = { x: m.fx, y: m.fy }; }
-      break;
-    case 'cast': if (!rivalP.dead && /^[SWFEA]{1,7}$/.test(m.k)) R(() => { seq = m.k.split(''); castSequence(); }); break;
-    case 'fire': if (!rivalP.dead) R(fireLoaded); break;
-    case 'arrow': if (!rivalP.dead) R(() => shootArrow(m.x, m.y)); break;
-    case 'build':
-      if (teams.pendingG.g1 && !rivalP.dead && teams.time > BUILD_CLOSE) {
-        TT.buildElem = ELEM_CYCLE.includes(m.elem) ? m.elem : 'fire';
-        if (m.key === 'turret') {
-          if (canBuildAt(rivalP.x, rivalP.y, team)) { buildTurret(team, rivalP.x, rivalP.y, TT.buildElem); delete teams.pendingG.g1; }
-          else tellHero('g1', ['msg', 'Can’t build here: not in enemy ground or on a tree, rock or tower', '#ccc']);
-        } else { buildTitan(team, TT.buildElem); delete teams.pendingG.g1; }
+      if (!p.dead && !p.charging && m.tp === p.tp && num(m.x) !== null && num(m.y) !== null) {
+        p.x = m.x; p.y = m.y; clampArena(p, PLAYER_R);
+        const fx = num(m.fx) || 0, fy = num(m.fy) || 0, fl = Math.hypot(fx, fy);
+        if (fl > 0.01) p.face = { x: fx / fl, y: fy / fl };
       }
       break;
-    case 'mix': if (m.mix) TT.mix = Object.fromEntries(MINION_KINDS.map(k => [k, Math.max(0, +m.mix[k] || 0)])); break;
-    case 'order': TT.order = m.v === 'follow' ? 'follow' : 'spread'; TT.leader = 'g1'; break;
-    case 'orders': if (m.grp === 'minion' || m.grp === 'titan') TT.orders[m.grp] = m.v; break;
-    case 'skin': teams.skins[team] = rivalP.skin = m.v === 'space' ? 'space' : 'wizard'; break;
-    case 'bye': friendLeft(); break;
+    case 'cast': if (!p.dead && /^[SWFEA]{1,7}$/.test(m.k)) R(() => { seq = m.k.split(''); castSequence(); }); break;
+    case 'fire': if (!p.dead) R(fireLoaded); break;
+    case 'arrow': if (!p.dead && num(m.x) !== null && num(m.y) !== null) R(() => shootArrow(m.x, m.y)); break;
+    case 'build':
+      if (teams.pendingG[id] && !p.dead && teams.time > BUILD_CLOSE) {
+        const elem = ELEM_CYCLE.includes(m.elem) ? m.elem : 'fire';
+        if (m.key === 'turret') {
+          if (canBuildAt(p.x, p.y, team)) { buildTurret(team, p.x, p.y, elem); delete teams.pendingG[id]; }
+          else tellHero(id, ['msg', 'Can’t build here: not in enemy ground, or on a tree, rock or tower', '#ccc']);
+        } else { buildTitan(team, elem); delete teams.pendingG[id]; }
+      }
+      break;
+    case 'mix':
+      if (m.mix && typeof m.mix === 'object') { TT.mix = Object.fromEntries(MINION_KINDS.map(k => [k, Math.max(0, num(m.mix[k]) || 0)])); TT.dot = null; }
+      break;
+    case 'order': { const v = m.v === 'follow' ? 'follow' : 'spread'; if (own) teams.order = v; else TT.order = v; TT.leader = id; break; }
+    case 'orders': if ((m.grp === 'minion' || m.grp === 'titan') && ORDER_OPTS.some(o => o[0] === m.v)) (own ? teams.orders : TT.orders)[m.grp] = m.v; break;
+    case 'skin': p.look = m.v === 'space' ? 'space' : 'wizard'; if (!own) teams.skins[team] = p.look; break;
+    case 'bye': friendLeft(id); break;
   }
 }
 
-function friendLeft() {
-  if (!versus) return;
-  setTimeout(hangUp, 0);
-  showBanner('Your friend left', 'The red side carries on without them', 3);
-  if (net.role === 'host') {
-    const h = heroById('g1');
-    if (h) { h.gone = true; h.proxy.dead = true; h.p.dead = true; h.p.respawnT = 1e9; }
-    if (teams) delete teams.pendingG.g1;
+// Someone left. On the host: a friend (the computer takes over their team if
+// nobody else is on it). On a friend's phone: the host, which ends the battle.
+function friendLeft(id) {
+  if (net.role === 'host' || lobby.role === 'host') {
+    const l = lobby.links.find(x => x.id === id);
+    if (l) { lobby.links = lobby.links.filter(x => x !== l); try { l.close(); } catch (_) {} }
+    if (!lobby.started) { renderRoom(); sendRoom(); return; }
+    const h = heroById(id);
+    if (!h || h.gone) return;
+    h.gone = true; h.proxy.dead = true; h.p.dead = true; h.p.respawnT = 1e9;
+    if (teams) delete teams.pendingG[id];
+    if (state === 'won' || state === 'lost') return;
+    const left = humansOn(h.team).length;
+    showBanner(`${heroName(id)} left`, left ? 'The rest of their team carries on' : `The computer takes over ${TEAM_NAME[h.team].toLowerCase()}`, 3);
+    return;
+  }
+  // the host is gone
+  const playing = versus, over = state === 'won' || state === 'lost';
+  leaveOnline(true);
+  if (playing) {
+    // (after the end, the report stays up; mid-battle, back to the menu with word of why)
+    if (!over) { state = 'title'; menuPage = 'main'; openLobby(); lobbyStatus('The host left, so the battle ended.'); }
   } else {
-    mirrorArena(false); versus = false; net.role = null; otherHero = null;
-    if (state === 'play' || state === 'dead') state = 'title';
+    hangUp();
+    lobbyStatus('The host closed the game.');
+    renderRoom();
   }
 }
 
@@ -4000,30 +4090,39 @@ function friendLeft() {
 const UNIT_KINDS = Object.keys(UNITS);
 const STATUS_KEYS = ['freeze', 'stun', 'stone', 'hex', 'fear', 'confuse', 'root', 'burn', 'poison', 'slow'];
 const r1 = v => Math.round((v || 0) * 10) / 10;
-function packHero(p, disc) {
+function packHero(p) {
+  const host = p === hostP;
   return {
     x: Math.round(p.x), y: Math.round(p.y), hp: r1(p.hp), mhp: p.maxHp, mana: r1(p.mana), mm: p.maxMana,
     fx: r1(p.face.x), fy: r1(p.face.y), inv: r1(p.invuln),
     b: ['skin', 'haste', 'empower', 'ward', 'mirror', 'sanct', 'regen', 'phoenix', 'omni'].map(k => r1(p[k])),
     ch: p.charging ? [p.charging.key, r1(p.charging.t), p.charging.max] : null,
     ld: p.loaded ? [p.loaded.key, p.loaded.left] : null,
-    dead: !!p.dead, rt: r1(p.respawnT), tp: p.tp || 0, disc,
+    dead: host ? state === 'dead' : !!p.dead, rt: host ? r1(Math.max(0, 5 - overlayT)) : r1(p.respawnT), tp: p.tp || 0,
   };
 }
+// The whole battle, for every friend's phone (each picks out its own wizard and
+// turns the picture round so its own team is blue).
 function makeSnapshot() {
-  const T = teams, all = k => TEAMS.flatMap(t => fxOf(t)[k]), pg = T.pendingG.g1;
+  const T = teams, all = k => TEAMS.flatMap(t => fxOf(t)[k]), over = state === 'won' || state === 'lost';
+  const pend = Object.entries(T.pendingG).map(([id, p]) => [id, r1(p.t)]);
+  if (T.pending) pend.push(['host', r1(T.pending.t)]);
+  // status effects as [which, seconds, …] pairs (most units have none)
+  const st = u => { const v = []; STATUS_KEYS.forEach((k, i) => { if (u[k] > 0) v.push(i, r1(u[k])); }); return v.length ? v : 0; };
+  // things that change slowly go in every fifth picture
+  const full = (net.snapN = (net.snapN || 0) + 1) % 5 === 1, r2 = v => Math.round(v * 100) / 100;
   return {
-    t: 'snap', sk: mySkin,
-    st: state, res: T.result, bd: state === 'won' || state === 'lost' ? T.breakdown || null : null,
-    ss: state === 'won' || state === 'lost' ? T.stats || null : null, eb: T.endedBy || null, bf: T.baseFell || null, gt: T.groundTo || null,
-    sc: [T.blue.score, T.red.score], time: r1(T.time), tl: [T.tally.blue || 0, T.tally.red || 0], rs: T.res || null, ec: T.eclipse || null,
-    bt: [T.build.team, r1(T.build.t)], pr: pg ? r1(pg.t) : null,
-    me: packHero(rivalP, rivalP.book ? rivalP.book.size : 0), host: packHero(hostP, discovered.size),
+    t: 'snap', tm: TEAMS, over,
+    sc: TEAMS.map(t => T[t].score), time: r1(T.time), tl: TEAMS.map(t => T.tally[t] || 0),
+    rs: full && T.res ? Object.fromEntries(TEAMS.map(t => [t, Object.fromEntries(Object.entries(T.res[t] || {}).map(([e, v]) => [e, r2(v)]))])) : undefined,
+    ec: full ? T.eclipse : undefined,
+    bt: [T.build.team, r1(T.build.t)], pg: pend,
+    od: full ? TEAMS.map(t => t === 'blue' ? [T.order, T.orders.minion, T.orders.titan] : [T[t].order, T[t].orders.minion, T[t].orders.titan]) : undefined,
+    hs: heroes.map(h => [h.id, h.team, h.gone ? 1 : 0, h.p === hostP ? mySkin : (h.p.look || ''), packHero(h.p)]),
     u: TEAMS.flatMap(t => units[t]).filter(u => !u.dead && !u.proxyOf).map(u => [
-      u.id, TEAM_CODE[u.team] - 1, UNIT_KINDS.indexOf(u.kind), Math.round(u.x), Math.round(u.y), r1(u.hp), r1(u.maxHp),
-      u.elem ? ELEM_CYCLE.indexOf(u.elem) : -1, r1(u.wall), Math.round(u.walk || 0), r1(u.slamT), u.face || 1, r1(u.fireFlash),
-      u.retreat ? 1 : 0, r1(Math.max(0, u.cd || 0) / (u.def.cd || 1)),
-      STATUS_KEYS.map(k => r1(u[k] > 0 ? u[k] : 0)), r1(u.tired),
+      u.id, TEAM_CODE[u.team] - 1, UNIT_KINDS.indexOf(u.kind), Math.round(u.x), Math.round(u.y), r1(u.hp), u.maxHp === u.def.hp ? 0 : r1(u.maxHp),
+      u.elem ? ELEM_CYCLE.indexOf(u.elem) : -1, r1(u.wall), r1(u.slamT), u.face || 1, r1(u.fireFlash),
+      u.retreat ? 1 : 0, r1(Math.max(0, u.cd || 0) / (u.def.cd || 1)), st(u), r1(u.tired),
     ]),
     bs: bshots.map(s => [TEAM_CODE[s.team] - 1, Math.round(s.x), Math.round(s.y), Math.round(s.vx), Math.round(s.vy), s.r, s.elem || '', s.arrow ? 1 : 0]),
     sh: all('shots').map(s => [Math.round(s.x), Math.round(s.y), Math.round(s.vx), Math.round(s.vy), r1(s.r), s.type]),
@@ -4034,41 +4133,70 @@ function makeSnapshot() {
     wv: all('waves').map(w => [Math.round(w.x), Math.round(w.y), Math.round(w.r), w.maxR]),
     mt: all('meteors').map(m => [Math.round(m.x), Math.round(m.y), r1(m.t), m.max]),
     ev: netEvents.slice(0, 160),
+    end: over ? { res: Object.fromEntries(TEAMS.map(t => [t, resultFor(t)])), bd: T.breakdown, ss: T.stats, eb: T.endedBy || null, bf: T.baseFell || null, bb: T.baseBy || null, gt: T.groundTo || null } : null,
   };
 }
 
-// ── the friend's side: a mirrored copy of the battle ──
-// Everything is flipped left↔right and blue↔red, so you're blue on the left.
+// ── a friend's phone: a copy of the battle, turned so their own team is blue ──
+// The picture is reflected across the line halfway between the friend's base
+// and blue's, so their base lands where blue's is; their team and blue swap
+// names and any third team keeps its own. (In a two-team battle on the red
+// side this is the old left-right mirror.) A reflection is its own inverse,
+// so the same turn takes positions back to the host.
 let guestUnits = new Map();
-let solidsMirrored = false;
-function mirrorArena(on) {
-  if (solidsMirrored === on) return;
-  for (const o of battleSolids) o.x = -o.x;
-  battleGrid.clear();
-  for (const [k, v] of buildGrid(battleSolids)) battleGrid.set(k, v);
-  solidsMirrored = on;
+let guestOthers = [];                       // the other players' wizards, to draw
+const view = { team: 'blue', on: false, ux: 0, uy: 1 };
+function viewFor(team, list) {
+  if (team === 'blue') return { team, on: false, ux: 0, uy: 1 };
+  const a = list.length === 3 ? TEAM_ANGLE3[team] : 0, axis = (a + Math.PI) / 2, tidy = v => Math.round(v * 1e9) / 1e9;
+  return { team, on: true, ux: tidy(Math.cos(axis)), uy: tidy(Math.sin(axis)) };
 }
-const flipTeam = t => (t === 'blue' ? 'red' : 'blue');
+function V(x, y) {
+  if (!view.on) return { x, y };
+  const d = 2 * (x * view.ux + y * view.uy);
+  return { x: d * view.ux - x, y: d * view.uy - y };
+}
+const relabel = t => (t === view.team ? 'blue' : t === 'blue' ? view.team : t);
+// the field's trees and rocks get the same turn (and are turned back afterwards)
+let arenaTurned = null;
+function turnArena(v) {
+  const flip = A => {
+    for (const o of A.list) { const d = 2 * (o.x * A.ux + o.y * A.uy); o.x = d * A.ux - o.x; o.y = d * A.uy - o.y; }
+    A.grid.clear();
+    for (const [k, g] of buildGrid(A.list)) A.grid.set(k, g);
+  };
+  if (arenaTurned) { flip(arenaTurned); arenaTurned = null; }
+  if (v && v.on) { arenaTurned = { ux: v.ux, uy: v.uy, list: arenaSolids, grid: arenaGrid }; flip(arenaTurned); }
+}
 
-function startVersusGuest(send) {
-  net.role = 'guest'; net.send = send; versus = true;
-  setMode('battle'); setArena(['blue', 'red']); mirrorArena(true);
-  difficulty = 'easy';
+function startGuestBattle(m) {
+  const list = Array.isArray(m.list) && (m.list.length === 2 || m.list.length === 3) ? m.list.slice() : ['blue', 'red'];
+  const myTeam = list.includes(m.team) ? m.team : 'red';
+  net.role = 'guest'; versus = true; net.myId = m.id; net.ordT = 0;
+  setMode('battle'); setArena(list);
+  Object.assign(view, viewFor(myTeam, list)); turnArena(view);
+  difficulty = m.diff || 'easy';
   units = { blue: [], red: [], green: [] }; unitsVer++; heroes = []; curSide = 'blue';
-  hostP.team = 'blue';
+  hostP.team = 'blue'; hostP.heroId = m.id;
   resetPlayer(); clearCombat();
   const fp = fountainPos(); player.x = fp.x; player.y = fp.y; player.face = { x: 1, y: 0 }; player.tp = 0;
   foes = []; friends = []; bshots = []; links = []; chests = []; scrolls = []; boat.x = boat.y = 1e6;
   discovered = new Set(); score = 0; elapsed = 0; kills = 0;
   teams = {
-    blue: { score: 0, cells: 0, minions: 10, mix: evenMix() }, red: { score: 0, cells: 0, mix: evenMix() },
-    time: MATCH_TIME, terrRecalc: 0, build: { team: 'blue', t: BUILD_EVERY }, pending: null, result: null,
-    order: 'spread', orders: { minion: 'attackTurrets', titan: 'attackTurrets' }, buildElem: 'water', skins: {},
+    time: MATCH_TIME, terrRecalc: 0, build: { team: 'blue', t: BUILD_EVERY }, pending: null, pendingO: null, result: null,
+    order: 'spread', orders: { minion: 'attackTurrets', titan: 'attackTurrets' }, buildElem: 'water', skins: {}, tally: {},
   };
-  guestUnits = new Map(); otherHero = null; eclipseSeen = {};
+  for (const t of TEAMS) teams[t] = { score: 0, cells: 0, minions: 10, mix: evenMix() };
+  guestUnits = new Map(); guestOthers = []; eclipseSeen = {};
+  banner = null; castMsg = null; seq = []; curNode = null;
+  const box = document.getElementById('lobby');
+  if (box) box.style.display = 'none';
   net.send({ t: 'skin', v: mySkin });
   state = 'play';
-  showBanner('Duel! Universes collide', 'Your universe is blue, on the left', 4);
+  const players = Array.isArray(m.players) ? m.players : [{ id: 'host', team: 'blue' }, { id: m.id, team: myTeam }];
+  const lines = rosterLines(m.id, list, players, m.diff), friendsWith = lines.find(x => x.mine);
+  showBanner(players.every(p => p.team === myTeam) ? 'Together against the computer' : list.length === 3 ? 'Three universes collide!' : 'Duel! Universes collide',
+             `Your universe is blue${friendsWith && friendsWith.text !== 'you' ? ' (' + friendsWith.text + ')' : ''} · ` + lines.filter(x => !x.mine).map(x => `${TEAM_NAME[x.team]}: ${x.text}`).join(' · '), 4.5);
 }
 
 function unpackHero(h, into) {
@@ -4083,73 +4211,107 @@ function unpackHero(h, into) {
 }
 
 function guestReceive(m) {
-  if (m.t === 'bye') { friendLeft(); return; }
-  if (m.t !== 'snap' || net.role !== 'guest') return;
-  const X = x => -x;
+  if (!m || m.t === 'bye') { friendLeft(); return; }
+  if (m.t !== 'snap' || net.role !== 'guest' || !teams || !Array.isArray(m.tm)) return;
+  const at = (x, y) => V(x, y), canon = i => CODE_TEAM[i + 1];
   // you
-  const me = m.me;
-  unpackHero(me, player);
-  if (me.tp !== player.tp || me.dead) { player.x = X(me.x); player.y = me.y; player.tp = me.tp; } // respawned or blinked
-  if (me.dead) { if (state === 'play') { state = 'dead'; } overlayT = 5 - me.rt; }
-  else if (state === 'dead') state = 'play';
-  teams.skins = { red: m.sk === 'space' ? 'space' : 'wizard' }; // the host's look is the red side's
-  // the host's wizard
-  otherHero = unpackHero(m.host, otherHero || { robe: '#7a2d2d', hat: '#c03a3a', team: 'red' });
-  otherHero.skin = teams.skins.red;
-  otherHero.x = X(m.host.x); otherHero.y = m.host.y; otherHero.face = { x: -m.host.fx, y: m.host.fy };
-  // scores and turns (flipped: you are "blue")
-  teams.blue.score = m.sc[1]; teams.red.score = m.sc[0]; teams.time = m.time;
-  if (m.tl) teams.tally = { blue: m.tl[1], red: m.tl[0] };
-  if (m.rs) teams.res = { blue: m.rs.red, red: m.rs.blue };
+  const mine = m.hs.find(h => h[0] === net.myId);
+  if (mine) {
+    const me = mine[4];
+    // your skin buffs, health and mana come from the host; Stoneskin is "skin", not your look
+    unpackHero(me, player);
+    if (me.tp !== player.tp || me.dead) { const q = at(me.x, me.y); player.x = q.x; player.y = q.y; player.tp = me.tp; } // respawned or blinked
+    if (me.dead) { if (state === 'play') { state = 'dead'; } overlayT = 5 - me.rt; }
+    else if (state === 'dead') state = 'play';
+  }
+  // the other players' wizards, and the looks of their teams
+  teams.skins = {};
+  const others = [];
+  for (const [id, team, gone, sk, pk] of m.hs) {
+    const t = relabel(team);
+    if (sk && t !== 'blue') teams.skins[t] = sk;
+    if (id === net.myId || gone) continue;
+    let o = guestOthers.find(g => g.heroId === id);
+    const q = at(pk.x, pk.y), f = at(pk.fx, pk.fy);
+    if (!o) o = { heroId: id, x: q.x, y: q.y };
+    unpackHero(pk, o);
+    Object.assign(o, { team: t, tx: q.x, ty: q.y, face: { x: f.x, y: f.y }, look: sk || 'wizard', robe: HERO_LOOK[t][0], hat: HERO_LOOK[t][1] });
+    if (Math.hypot(o.x - q.x, o.y - q.y) > 250 || pk.dead) { o.x = q.x; o.y = q.y; } // respawned or blinked
+    others.push(o);
+  }
+  guestOthers = others;
+  // scores, clocks and turns (your team is blue)
+  m.tm.forEach((t, i) => { const T = teams[relabel(t)]; if (T) T.score = m.sc[i]; });
+  teams.time = m.time;
+  teams.tally = {}; m.tm.forEach((t, i) => { teams.tally[relabel(t)] = m.tl[i] || 0; });
+  if (m.rs) { const r = {}; for (const t in m.rs) r[relabel(t)] = m.rs[t]; teams.res = r; }
   if (m.ec) teams.eclipse = m.ec;
-  teams.build = { team: flipTeam(m.bt[0]), t: m.bt[1] };
-  if (m.pr === null) teams.pending = null; else if (!teams.pending || teams.pending.t > m.pr + 0.5) teams.pending = { t: m.pr };
+  teams.build = { team: relabel(m.bt[0]), t: m.bt[1] };
+  const teamOf = id => { const h = m.hs.find(x => x[0] === id); return h ? h[1] : 'blue'; };
+  const myTurn = m.pg.find(p => p[0] === net.myId), theirs = m.pg.find(p => p[0] !== net.myId);
+  if (!myTurn) teams.pending = null; else if (!teams.pending || teams.pending.t > myTurn[1] + 0.5) teams.pending = { t: myTurn[1] };
+  teams.pendingO = theirs ? { team: relabel(teamOf(theirs[0])), t: theirs[1] } : null;
+  // your team's orders (a teammate may have changed them; yours win for a moment)
+  const oi = m.tm.indexOf(view.team);
+  if (m.od && m.od[oi] && performance.now() - (net.ordT || 0) > 1500) {
+    const [o, om, ot] = m.od[oi];
+    teams.order = o === 'follow' ? 'follow' : 'spread'; teams.orders.minion = om; teams.orders.titan = ot;
+  }
   // units: keep the same objects so they glide between pictures
-  const seen = new Set(), F = [], E = [];
+  const seen = new Set(), lists = { blue: [], red: [], green: [] };
   for (const a of m.u) {
-    const [id, team, ki, x, y, hp, mhp, ei, wall, walk, slam, face, ff, ret, cdf, st, tired] = a;
-    const kind = UNIT_KINDS[ki], def = UNITS[kind];
+    const [id, ti, ki, x, y, hp, mhp, ei, wall, slam, face, ff, ret, cdf, st, tired] = a;
+    const kind = UNIT_KINDS[ki], def = UNITS[kind], team = relabel(canon(ti)), q = at(x, y);
+    if (!def || !lists[team]) continue;
     let u = guestUnits.get(id);
-    if (!u) { u = { id, unit: true, kind, def, x: X(x), y, wob: rnd(0, TAU), slot: rnd(0, TAU), kx: 0, ky: 0, structure: !!def.structure, r: def.r }; guestUnits.set(id, u); }
-    Object.assign(u, { team: flipTeam(team ? 'red' : 'blue'), tx: X(x), ty: y, hp, maxHp: mhp, elem: ei >= 0 ? ELEM_CYCLE[ei] : null,
-                       wall, walk, slamT: slam, face: -face, fireFlash: ff, retreat: !!ret, cd: cdf * def.cd, tired: tired || 0, dead: false });
-    STATUS_KEYS.forEach((k, i) => u[k] = st[i]);
+    if (!u) { u = { id, unit: true, kind, def, x: q.x, y: q.y, wob: rnd(0, TAU), slot: rnd(0, TAU), kx: 0, ky: 0, structure: !!def.structure, r: def.r }; guestUnits.set(id, u); }
+    Object.assign(u, { team, tx: q.x, ty: q.y, hp, maxHp: mhp || def.hp, elem: ei >= 0 ? ELEM_CYCLE[ei] : null,
+                       wall, slamT: slam, face: view.on ? -face : face, fireFlash: ff, retreat: !!ret, cd: cdf * def.cd, tired: tired || 0, dead: false });
+    for (const k of STATUS_KEYS) u[k] = 0;
+    if (st) for (let i = 0; i + 1 < st.length; i += 2) u[STATUS_KEYS[st[i]]] = st[i + 1];
     seen.add(id);
-    (u.team === 'blue' ? F : E).push(u);
+    lists[team].push(u);
   }
   for (const id of guestUnits.keys()) if (!seen.has(id)) guestUnits.delete(id);
-  friends = F; foes = E;
-  units = { blue: F, red: E, green: [] }; unitsVer++;
-  bshots = m.bs.map(([t, x, y, vx, vy, r, el, ar]) => { const team = flipTeam(t ? 'red' : 'blue'); return { team, x: X(x), y, vx: -vx, vy, r, elem: el || null, arrow: !!ar, spin: rnd(0, TAU), color: TYPE_COLOR[el] || TEAM_COLOR[team], life: 2 }; });
-  shots = m.sh.map(([x, y, vx, vy, r, type]) => ({ x: X(x), y, vx: -vx, vy, r, type, color: TYPE_COLOR[type] || '#fff', life: 2 }));
-  zones = m.zn.map(([type, x, y, r, life, max, el, poison, charged]) => ({ type: type || undefined, x: X(x), y, r, life, max, charged, tick: 1,
-    spec: el ? { elem: el, fx: new Set(poison ? ['poison'] : []) } : undefined }));
-  traps = m.tr.map(([x, y, arming, el]) => ({ x: X(x), y, arm: arming ? 1 : 0, spec: el ? { elem: el } : undefined }));
-  tempSolids = m.ts.map(([x, y, r, life, el, solid]) => ({ x: X(x), y, r, life, elem: el || undefined, solid: !!solid }));
-  allies = m.al.map(([kind, x, y, life, el, r, hp, mhp, ang]) => ({ kind, x: X(x), y, life, max: life, elem: el || undefined, r, hp, maxHp: mhp, ang }));
-  waves = m.wv.map(([x, y, r, maxR]) => ({ x: X(x), y, r, maxR, speed: 0, hit: new Set() }));
-  meteors = m.mt.map(([x, y, t, max]) => ({ x: X(x), y, t, max }));
+  units = lists; unitsVer++;
+  friends = lists.blue; foes = TEAMS.filter(t => t !== 'blue').flatMap(t => lists[t]);
+  bshots = m.bs.map(([ti, x, y, vx, vy, r, el, ar]) => { const team = relabel(canon(ti)), q = at(x, y), v = at(vx, vy); return { team, x: q.x, y: q.y, vx: v.x, vy: v.y, r, elem: el || null, arrow: !!ar, spin: rnd(0, TAU), color: TYPE_COLOR[el] || TEAM_COLOR[team], life: 2 }; });
+  shots = m.sh.map(([x, y, vx, vy, r, type]) => { const q = at(x, y), v = at(vx, vy); return { x: q.x, y: q.y, vx: v.x, vy: v.y, r, type, color: TYPE_COLOR[type] || '#fff', life: 2 }; });
+  zones = m.zn.map(([type, x, y, r, life, max, el, poison, charged]) => { const q = at(x, y); return { type: type || undefined, x: q.x, y: q.y, r, life, max, charged, tick: 1,
+    spec: el ? { elem: el, fx: new Set(poison ? ['poison'] : []) } : undefined }; });
+  traps = m.tr.map(([x, y, arming, el]) => { const q = at(x, y); return { x: q.x, y: q.y, arm: arming ? 1 : 0, spec: el ? { elem: el } : undefined }; });
+  tempSolids = m.ts.map(([x, y, r, life, el, solid]) => { const q = at(x, y); return { x: q.x, y: q.y, r, life, elem: el || undefined, solid: !!solid }; });
+  allies = m.al.map(([kind, x, y, life, el, r, hp, mhp, ang]) => { const q = at(x, y); return { kind, x: q.x, y: q.y, life, max: life, elem: el || undefined, r, hp, maxHp: mhp, ang }; });
+  waves = m.wv.map(([x, y, r, maxR]) => { const q = at(x, y); return { x: q.x, y: q.y, r, maxR, speed: 0, hit: new Set() }; });
+  meteors = m.mt.map(([x, y, t, max]) => { const q = at(x, y); return { x: q.x, y: q.y, t, max }; });
   // effects and messages
-  for (const e of m.ev) {
+  const say = e => {
     switch (e[0]) {
-      case 'ft': floatText(X(e[1]), e[2], e[3], e[4], e[5]); break;
-      case 'ring': ring(X(e[1]), e[2], e[3], e[4], e[5]); break;
-      case 'eh': elemHit(e[1], X(e[2]), e[3], e[4]); break;
+      case 'ft': { const q = at(e[1], e[2]); floatText(q.x, q.y, e[3], e[4], e[5]); break; }
+      case 'ring': { const q = at(e[1], e[2]); ring(q.x, q.y, e[3], e[4], e[5]); break; }
+      case 'eh': { const q = at(e[2], e[3]); elemHit(e[1], q.x, q.y, e[4]); break; }
       case 'msg': castMessage(e[1], e[2]); break;
       case 'banner': showBanner(e[1], e[2], e[3]); break;
       case 'you-fell': SFX.death(); break;
-      case 'to': // meant for one player
-        if (e[1] === 'g1') { if (e[2] === 'banner') showBanner(e[3], e[4], e[5]); else if (e[2] === 'msg') castMessage(e[3], e[4]); else if (e[2] === 'you-fell') SFX.death(); }
-        break;
+      case 'news': { const N = newsText(e[1], relabel(e[2]), e[3] ? relabel(e[3]) : null, e[4] || null); if (N) showBanner(N[0], N[1], e[5]); break; }
     }
+  };
+  for (const e of m.ev) {
+    if (e[0] === 'to') { if (e[1] === net.myId) say(e.slice(2)); }
+    else say(e);
   }
   // the end (from your side)
-  if (m.st === 'won' || m.st === 'lost') {
-    if (m.bd) teams.breakdown = { blue: m.bd.red, red: m.bd.blue };
-    if (m.ss) teams.stats = { blue: m.ss.red, red: m.ss.blue, land: m.ss.land.map(([t, b, r]) => [t, r, b]) };
+  if (m.over && m.end) {
+    const E = m.end, rel = o => { const r = {}; for (const k in o || {}) r[TEAM_CODE[k] ? relabel(k) : k] = o[k]; return r; };
+    teams.breakdown = rel(E.bd);
+    if (E.ss) {
+      const S = rel(E.ss);
+      S.land = (E.ss.land || []).map(([t, ...c]) => [t, ...TEAMS.map(gt => c[m.tm.indexOf(relabel(gt))] || 0)]);
+      teams.stats = S;
+    }
     if (state !== 'won' && state !== 'lost') {
-      teams.result = m.res === 'win' ? 'lose' : m.res === 'lose' ? 'win' : 'draw';
-      teams.endedBy = m.eb; teams.baseFell = m.bf ? flipTeam(m.bf) : null; teams.groundTo = m.gt ? flipTeam(m.gt) : null;
+      teams.result = (E.res && E.res[view.team]) || 'lose';
+      teams.endedBy = E.eb; teams.baseFell = E.bf ? relabel(E.bf) : null; teams.baseBy = E.bb ? relabel(E.bb) : null; teams.groundTo = E.gt ? relabel(E.gt) : null;
       state = teams.result === 'win' ? 'won' : 'lost';
       overlayT = 0; flash = 1; endScroll = 0;
       teams.result === 'win' ? SFX.bossDown() : SFX.death();
@@ -4163,36 +4325,53 @@ function guestUpdate(dt) {
   if (state === 'play' && !player.dead) heroMove(dt);
   player.arrowCd = Math.max(0, (player.arrowCd || 0) - dt);
   const k = Math.min(1, dt * 12);
-  for (const u of friends.concat(foes)) { u.x += (u.tx - u.x) * k; u.y += (u.ty - u.y) * k; u.flash = Math.max(0, (u.flash || 0) - dt); }
+  for (const u of allUnits()) {
+    const ox = u.x, oy = u.y;
+    u.x += (u.tx - u.x) * k; u.y += (u.ty - u.y) * k; u.flash = Math.max(0, (u.flash || 0) - dt);
+    u.walk = (u.walk || 0) + Math.hypot(u.x - ox, u.y - oy);
+  }
+  for (const o of guestOthers) if (o.tx !== undefined) { const ox = o.x; o.x += (o.tx - o.x) * k; o.y += (o.ty - o.y) * k; o.moving = Math.abs(o.x - ox) + Math.abs(o.ty - o.y) > 0.3; }
   for (const s of bshots) { s.x += s.vx * dt; s.y += s.vy * dt; s.spin += dt * 9; if (s.elem && !s.arrow && Math.random() < 0.5) shotTrail(s); }
   for (const s of shots) { s.x += s.vx * dt; s.y += s.vy * dt; }
   if (teams.pending) teams.pending.t = Math.max(0, teams.pending.t - dt);
+  if (teams.pendingO) teams.pendingO.t = Math.max(0, teams.pendingO.t - dt);
   teams.time = Math.max(0, teams.time - dt);
   teams.terrRecalc -= dt;
   if (teams.terrRecalc <= 0) { teams.terrRecalc = 0.5; computeTerritory(); }
   decayVisuals(dt);
   // tell the host where you are (in their coordinates)
   net.posT -= dt;
-  if (net.posT <= 0 && state === 'play') { net.posT = 0.05; net.send({ t: 'pos', x: -player.x, y: player.y, fx: -player.face.x, fy: player.face.y, tp: player.tp }); }
+  if (net.posT <= 0 && state === 'play') {
+    net.posT = 0.05;
+    const q = V(player.x, player.y), f = V(player.face.x, player.face.y);
+    net.send({ t: 'pos', x: q.x, y: q.y, fx: f.x, fy: f.y, tp: player.tp });
+  }
 }
 
-function netReceive(m) { if (net.role === 'host') hostReceive(m); else if (net.role === 'guest') guestReceive(m); }
+function netReceive(m, from) { if (net.role === 'host') hostReceive(m, from); else if (net.role === 'guest') guestReceive(m); }
 
-function leaveDuel() {
-  if (!versus) return;
-  try { net.send({ t: 'bye' }); } catch (_) {}
-  if (net.role === 'guest') mirrorArena(false);
-  versus = false; net.role = null;
-  rivalP = null; otherHero = null;
-  setTimeout(hangUp, 300); // let the goodbye go out first
+// leave a game with friends (say goodbye first, unless they've gone already)
+function leaveOnline(quiet) {
+  if (!versus && !lobby.role) return;
+  if (!quiet) try { net.send({ t: 'bye' }); } catch (_) {}
+  if (net.role === 'guest') {
+    turnArena(null); Object.assign(view, { team: 'blue', on: false, ux: 0, uy: 1 });
+    // a friend's phone only shows the host's battle: leaving it means back to the menu
+    if (state === 'play' || state === 'dead' || state === 'reveal') { state = 'title'; menuPage = 'main'; }
+  }
+  versus = false; net.role = null; net.myId = null;
+  rivalP = null; guestOthers = [];
+  const tryId = lobby.try;
+  setTimeout(() => { if (lobby.try === tryId) hangUp(); }, quiet ? 0 : 300); // let the goodbye go out first
 }
 
-// ── lobby: host a duel or join one with a code ──
+// ── lobby: host a game or join one with a code ──
 // Two ways to find each other are tried side by side: PeerJS's free
 // matchmaking server, and Trystero, which meets through public Nostr relays.
-// If one is down the other still works. The friend who joins plays on
-// whichever opens first and says hello on it; the host plays on the one the
-// hello arrives on. After that the phones talk directly.
+// If one is down the other still works. A friend says hello on every path
+// that opens; the host answers the first hello from each friend with a
+// welcome (and their slot, Friend 1 or 2) on that path, and the friend plays
+// on the path the welcome came on. After that the phones talk directly.
 const PEER_PREFIX = 'pentagram-duel-';
 const PEERJS_URL = 'https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js';
 const TRYSTERO_URL = 'https://cdn.jsdelivr.net/npm/trystero@0.26.0/+esm';
@@ -4200,7 +4379,14 @@ const TRYSTERO_APP = 'pentagram-duel-v1';
 // relay servers for when two networks can't reach each other directly
 const TURN = [{ urls: ['turn:eu-0.turn.peerjs.com:3478', 'turn:us-0.turn.peerjs.com:3478'], username: 'peerjs', credential: 'peerjsp' }];
 const ICE_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }, ...TURN];
-const lobby = { role: null, code: null, paths: [], chosen: null, state: {}, try: null };
+const MAX_FRIENDS = 2;
+const NET_V = 2; // the lobby and pictures changed with three-player battles
+const OLD_COPY = 'You and the host have different versions of Space Wizard. Both of you reload the page, then try again.';
+// role/code: this phone's part; paths: the ways being tried; links (host): the
+// friends who joined; guestPath (friend): the path to the host; room (friend):
+// the host's latest setup; three/diff (host): the setup being chosen
+const lobby = { role: null, code: null, paths: [], links: [], guestPath: null, state: {}, try: null, started: false,
+                three: false, diff: 'medium', tok: null, myId: null, room: null };
 
 function loadPeer() {
   if (window.Peer) return Promise.resolve();
@@ -4213,40 +4399,77 @@ function loadPeer() {
 }
 function hangUp() {
   for (const p of lobby.paths) try { p.close(); } catch (_) {}
-  lobby.paths = []; lobby.chosen = null; lobby.role = null; lobby.state = {}; lobby.try = null;
+  Object.assign(lobby, { paths: [], links: [], guestPath: null, role: null, state: {}, try: null, started: false, myId: null, room: null });
 }
-// a path is one way of reaching the other phone: { name, send(m), close() }
-function pathData(path, m) {
-  if (lobby.chosen) { if (path === lobby.chosen) netReceive(m); return; }
-  if (lobby.role === 'host' && m && m.t === 'hello') choosePath(path);
+
+// the host: a message arrived from `key` (a connection or a peer id) on some path
+function hostData(m, key, send, close) {
+  if (!m || typeof m !== 'object' || lobby.role !== 'host') return;
+  const known = lobby.links.find(l => l.key === key);
+  if (known) {
+    if (m.t === 'bye') friendLeft(known.id);
+    else if (lobby.started) hostReceive(m, known.id);
+    else if (m.t === 'skin') known.skin = m.v === 'space' ? 'space' : 'wizard';
+    return;
+  }
+  if (m.t !== 'hello') return;
+  if (m.v !== NET_V || typeof m.tok !== 'string') { send({ t: 'version', v: NET_V }); return; }
+  if (lobby.links.some(l => l.tok === m.tok)) return; // already in (the hello came on the other path too)
+  if (lobby.started) { send({ t: 'started' }); return; }
+  const id = ['g1', 'g2'].find(g => !lobby.links.some(l => l.id === g));
+  if (!id) { send({ t: 'full' }); return; }
+  const link = { id, tok: m.tok, key, send, close, skin: m.sk === 'space' ? 'space' : 'wizard', team: id === 'g1' ? 'red' : lobby.three ? 'green' : 'blue' };
+  lobby.links.push(link);
+  send({ t: 'welcome', id });
+  SFX.discover();
+  renderRoom(); sendRoom();
 }
-function pathOpen(path) {
-  if (lobby.role !== 'guest' || lobby.chosen) return;
-  path.send({ t: 'hello' });
-  choosePath(path);
+// the host: a friend's connection closed
+function hostLost(key) { const l = lobby.links.find(x => x.key === key); if (l) friendLeft(l.id); }
+// the setup, for the friends' screens
+function roomInfo() { return { t: 'room', three: lobby.three, diff: lobby.diff, players: [{ id: 'host', team: 'blue' }, ...lobby.links.map(l => ({ id: l.id, team: l.team }))] }; }
+function sendRoom() { if (lobby.role === 'host' && !lobby.started) for (const l of lobby.links) l.send(roomInfo()); }
+
+// a friend: a message from the host
+function guestData(m, path) {
+  if (!m || typeof m !== 'object' || lobby.role !== 'guest') return;
+  if (!lobby.guestPath) {
+    if (m.t === 'welcome') {
+      lobby.guestPath = path;
+      for (const p of lobby.paths) if (p !== path) try { p.close(); } catch (_) {}
+      lobby.paths = [path];
+      lobby.myId = m.id;
+      net.send = x => path.send(x);
+      lobbyStatus('');
+      renderRoom();
+    } else if (m.t === 'full' || m.t === 'started' || m.t === 'version' || m.t === 'start') {
+      // ('start' before a welcome: a host with an old copy, which starts at once)
+      lobbyStatus(m.t === 'full' ? 'That game is full: three players already.' : m.t === 'started' ? 'That game has already started.' : OLD_COPY);
+      hangUp();
+    }
+    return;
+  }
+  if (path !== lobby.guestPath) return;
+  if (m.t === 'room') { lobby.room = m; renderRoom(); }
+  else if (m.t === 'start') { if (!versus) startGuestBattle(m); }
+  else if (versus) netReceive(m);
+  else if (m.t === 'bye') friendLeft();
 }
-function pathClosed(path) { if (path === lobby.chosen && versus) friendLeft(); }
-function choosePath(path) {
-  lobby.chosen = path;
-  for (const p of lobby.paths) if (p !== path) try { p.close(); } catch (_) {}
-  lobby.paths = [path];
-  const el = document.getElementById('lobby');
-  if (el) el.style.display = 'none';
-  const send = m => path.send(m);
-  if (lobby.role === 'host') startVersusHost(send); else startVersusGuest(send);
-}
+function guestPathClosed(path) { if (lobby.role === 'guest' && path === lobby.guestPath) friendLeft(); }
+const hello = () => ({ t: 'hello', v: NET_V, tok: lobby.tok, sk: mySkin });
+
 // how each path is doing, shown under the code
 function pathState(name, st) {
   lobby.state[name] = st;
-  if (lobby.chosen || !lobby.role) return;
+  if (!lobby.role || lobby.guestPath || lobby.started) return;
   const S = lobby.state, mark = v => v === 'ok' ? '✓' : v === 'down' ? '✗' : '…';
-  const line = `<br><small style="color:#888">server ${mark(S.peerjs)} · relays ${mark(S.nostr)}</small>`;
+  const line = `<small style="color:#888">server ${mark(S.peerjs)} · relays ${mark(S.nostr)}</small>`;
   if (S.peerjs === 'down' && S.nostr === 'down') {
-    lobbyStatus('Couldn’t reach either connection service. Check your internet, or try another network (mobile data or Wi-Fi).' + line);
+    lobbyStatus('Couldn’t reach either connection service. Check your internet, or try another network (mobile data or Wi-Fi).<br>' + line);
     return;
   }
-  if (lobby.role === 'host') lobbyStatus(`Your code<br><span class="code">${lobby.code}</span><br>Waiting for your friend to join…` + line);
-  else lobbyStatus(`Looking for game ${lobby.code}…` + line);
+  if (lobby.role === 'host') lobbyStatus(line);
+  else lobbyStatus(`Looking for game ${lobby.code}…<br>` + line);
 }
 
 async function viaPeerJS(code, role, tryId) {
@@ -4258,24 +4481,23 @@ async function viaPeerJS(code, role, tryId) {
     send: m => { const c = path.conn; try { if (c && c.open) c.send(m); } catch (_) {} },
     close: () => { try { peer.destroy(); } catch (_) {} } };
   lobby.paths.push(path);
-  const wire = conn => {
-    conn.on('data', m => {
-      if (role === 'host' && !lobby.chosen && m && m.t === 'hello') path.conn = conn;
-      if (conn === path.conn) pathData(path, m);
-    });
-    conn.on('close', () => { if (conn === path.conn) pathClosed(path); });
-  };
   peer.on('open', () => {
     pathState('peerjs', 'ok');
     if (role !== 'guest') return;
     const conn = peer.connect(PEER_PREFIX + code, { reliable: true, serialization: 'json' });
     path.conn = conn;
-    wire(conn);
-    conn.on('open', () => pathOpen(path));
+    conn.on('open', () => { if (!lobby.guestPath) path.send(hello()); });
+    conn.on('data', m => guestData(m, path));
+    conn.on('close', () => guestPathClosed(path));
   });
-  if (role === 'host') peer.on('connection', wire);
+  // the host: each friend has their own connection
+  if (role === 'host') peer.on('connection', conn => {
+    const send = m => { try { if (conn.open) conn.send(m); } catch (_) {} };
+    conn.on('data', m => hostData(m, conn, send, () => { try { conn.close(); } catch (_) {} }));
+    conn.on('close', () => hostLost(conn));
+  });
   // once playing, a hiccup with the matchmaking server doesn't matter
-  peer.on('error', () => { if (lobby.try === tryId && !lobby.chosen) pathState('peerjs', 'down'); });
+  peer.on('error', () => { if (lobby.try === tryId && !lobby.guestPath && !lobby.links.length) pathState('peerjs', 'down'); });
 }
 
 async function viaTrystero(code, role, tryId) {
@@ -4287,32 +4509,37 @@ async function viaTrystero(code, role, tryId) {
     room = joinRoom(Object.assign({ appId: TRYSTERO_APP, turnConfig: TURN, relayConfig: { redundancy: 8, warnOnRelayFailure: false } }, window.TRYSTERO_OPTS), 'room-' + code);
   } catch (_) { pathState('nostr', 'down'); return; }
   const act = room.makeAction('m');
-  let other = null;
-  const path = { name: 'nostr',
-    send: m => { if (!other) return; try { const r = act.send(m, { target: other }); if (r && r.catch) r.catch(() => {}); } catch (_) {} },
+  const to = (m, peer) => { try { const r = act.send(m, { target: peer }); if (r && r.catch) r.catch(() => {}); } catch (_) {} };
+  // a friend's path leads to the host (whichever peer welcomed them)
+  const path = { name: 'nostr', host: null,
+    send: m => { if (path.host) to(m, path.host); },
     close: () => { try { room.leave(); } catch (_) {} } };
   lobby.paths.push(path);
   pathState('nostr', 'ok');
-  room.onPeerJoin = id => { if (role === 'guest' && !other) { other = id; pathOpen(path); } };
-  room.onPeerLeave = id => { if (id === other) pathClosed(path); };
+  // everyone in the room hears a friend's hello; only the host answers it
+  room.onPeerJoin = id => { if (role === 'guest' && !lobby.guestPath) to(hello(), id); };
+  room.onPeerLeave = id => { if (role === 'guest') { if (id === path.host) guestPathClosed(path); } else hostLost(id); };
   act.onMessage = (m, meta) => {
     const from = meta && meta.peerId;
-    if (role === 'host' && !lobby.chosen && m && m.t === 'hello') other = from;
-    if (from === other) pathData(path, m);
+    if (!from) return;
+    if (role === 'host') { hostData(m, from, x => to(x, from), () => {}); return; }
+    if (!lobby.guestPath && m && m.t === 'welcome') path.host = from;
+    if (from === path.host || (m && (m.t === 'full' || m.t === 'started' || m.t === 'version'))) guestData(m, path);
   };
 }
 
 function startLobby(role, code) {
   hangUp();
   const tryId = {};
-  lobby.role = role; lobby.code = code; lobby.try = tryId;
+  Object.assign(lobby, { role, code, try: tryId, tok: Math.random().toString(36).slice(2, 10) });
+  renderRoom();
   pathState('peerjs', 'wait');
   pathState('nostr', 'wait');
   viaPeerJS(code, role, tryId);
   viaTrystero(code, role, tryId);
   if (role === 'guest') setTimeout(() => {
-    if (lobby.try === tryId && !lobby.chosen)
-      lobbyStatus('No answer yet. Check the code, and that your friend is still on the host screen. Still trying…');
+    if (lobby.try === tryId && !lobby.guestPath)
+      lobbyStatus('No answer yet. Check the code, and that the host is still on the waiting screen. Still trying…');
   }, 20000);
 }
 function lobbyEl() {
@@ -4322,27 +4549,37 @@ function lobbyEl() {
   el.id = 'lobby';
   el.innerHTML = `
     <div class="card">
-      <h2>Play a friend</h2>
-      <p class="sub">One of you hosts and shares the code; the other joins with it.</p>
-      <button id="lb-host">Host a duel</button>
-      <div class="or">or</div>
-      <input id="lb-code" maxlength="6" placeholder="Enter code" autocomplete="off" autocapitalize="characters">
-      <button id="lb-join">Join</button>
+      <h2>Play with friends</h2>
+      <div id="lb-pick">
+        <p class="sub">Up to three players, each on their own phone. One hosts and shares the code; the others join with it.</p>
+        <button id="lb-host">Host a game</button>
+        <div class="or">or</div>
+        <input id="lb-code" maxlength="6" placeholder="Enter code" autocomplete="off" autocapitalize="characters">
+        <button id="lb-join">Join</button>
+      </div>
+      <div id="lb-room"></div>
       <p id="lb-status" class="status"></p>
       <button id="lb-cancel" class="ghost">Back</button>
     </div>`;
   const st = document.createElement('style');
   st.textContent = `
-    #lobby { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(5,3,10,0.75); z-index: 10; touch-action: auto; }
-    #lobby .card { width: min(340px, calc(100vw - 32px)); background: #141024; border: 2px solid #4aa8ff; border-radius: 16px; padding: 20px; color: #e6e0f0; font: 15px "Big Caslon", "Libre Caslon Text", Georgia, serif; text-align: center; }
+    #lobby { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(5,3,10,0.75); z-index: 10; touch-action: auto; overflow-y: auto; }
+    #lobby .card { width: min(360px, calc(100vw - 24px)); max-height: calc(100vh - 24px); overflow-y: auto; box-sizing: border-box; background: #141024; border: 2px solid #4aa8ff; border-radius: 16px; padding: 18px; color: #e6e0f0; font: 15px "Big Caslon", "Libre Caslon Text", Georgia, serif; text-align: center; }
     #lobby h2 { margin: 0 0 6px; font: bold 22px "Big Caslon", "Libre Caslon Display", "Libre Caslon Text", Georgia, serif; color: #c77dff; }
-    #lobby .sub { margin: 0 0 14px; color: #aaa; font-size: 13px; }
+    #lobby .sub { margin: 4px 0 10px; color: #aaa; font-size: 13px; }
     #lobby button { display: block; width: 100%; margin: 8px 0; padding: 12px; border-radius: 10px; border: 2px solid #4aa8ff; background: #1c2a44; color: #fff; font: bold 16px "Big Caslon", "Libre Caslon Text", Georgia, serif; }
+    #lobby button:disabled { opacity: 0.45; }
     #lobby button.ghost { border-color: #555; background: transparent; color: #bbb; font-weight: normal; }
     #lobby input { width: 100%; box-sizing: border-box; padding: 12px; border-radius: 10px; border: 2px solid #555; background: #0b0a12; color: #fff; font: bold 22px "Big Caslon", "Libre Caslon Text", Georgia, serif; letter-spacing: 4px; text-align: center; text-transform: uppercase; }
     #lobby .or { margin: 6px 0; color: #777; font-size: 12px; }
-    #lobby .status { min-height: 22px; margin: 10px 0 4px; color: #ffd24a; }
-    #lobby .code { font: bold 34px "Big Caslon", "Libre Caslon Text", Georgia, serif; letter-spacing: 6px; color: #fff; }`;
+    #lobby .status { min-height: 18px; margin: 8px 0 2px; color: #ffd24a; }
+    #lobby .code { font: bold 34px "Big Caslon", "Libre Caslon Text", Georgia, serif; letter-spacing: 6px; color: #fff; }
+    #lobby .row { display: flex; align-items: center; gap: 8px; margin: 8px 0; text-align: left; }
+    #lobby .row > span { flex: 0 0 74px; font-weight: bold; font-size: 14px; }
+    #lobby .chips { flex: 1; display: flex; gap: 5px; }
+    #lobby .chips .fixed { flex: 1; color: #ccc; font-size: 14px; }
+    #lobby button.chip { flex: 1; width: auto; margin: 0; padding: 8px 2px; border: 2px solid #3a3550; background: transparent; color: #aaa; font: 13px "Big Caslon", "Libre Caslon Text", Georgia, serif; }
+    #lobby button.chip.on { background: #262040; color: #fff; font-weight: bold; }`;
   document.head.appendChild(st);
   document.body.appendChild(el);
   // taps inside the lobby must reach its buttons and input, not the game
@@ -4352,12 +4589,68 @@ function lobbyEl() {
   el.querySelector('#lb-join').onclick = () => joinLobby(el.querySelector('#lb-code').value);
   return el;
 }
+// the waiting room: the host picks the teams; friends see who's where
+function renderRoom() {
+  const box = document.getElementById('lb-room'), pick = document.getElementById('lb-pick');
+  if (!box) return;
+  const L = lobby, inRoom = L.role === 'host' || (L.role === 'guest' && L.myId);
+  if (pick) pick.style.display = inRoom ? 'none' : '';
+  if (!inRoom) { box.innerHTML = ''; return; }
+  const chip = (on, label, act, color) => `<button class="chip${on ? ' on' : ''}" data-act="${act}"${on ? ` style="border-color:${color}"` : ''}>${label}</button>`;
+  const row = (label, color, inner) => `<div class="row"><span style="color:${color}">${label}</span><div class="chips">${inner}</div></div>`;
+  let h;
+  if (L.role === 'host') {
+    const list = L.three ? ['blue', 'red', 'green'] : ['blue', 'red'];
+    for (const l of L.links) if (!list.includes(l.team)) l.team = 'red';
+    h = `<p class="sub">Your code: friends type it in on their phones</p><div class="code">${L.code}</div>`;
+    h += row('Teams', '#c77dff', chip(!L.three, 'Two', 'teams:2', '#c77dff') + chip(L.three, 'Three', 'teams:3', '#c77dff'));
+    h += row('You', TEAM_COLOR.blue, `<span class="fixed">Blue team</span>`);
+    for (const id of ['g1', 'g2']) {
+      const l = L.links.find(x => x.id === id);
+      h += row(heroName(id), l ? TEAM_COLOR[l.team] : '#888', l ? list.map(t => chip(l.team === t, t === 'blue' ? 'With you' : TEAM_NAME[t], `team:${id}:${t}`, TEAM_COLOR[t])).join('')
+                                                       : `<span class="fixed">waiting to join…</span>`);
+    }
+    const ai = list.filter(t => !(t === 'blue' || L.links.some(l => l.team === t)));
+    if (ai.length) {
+      h += row('Computer', '#ffd24a', ['easy', 'medium', 'hard', 'vhard'].map(d => chip(L.diff === d, d === 'vhard' ? 'V. Hard' : DIFF_NAME[d], `diff:${d}`, '#ffd24a')).join(''));
+      h += `<p class="sub">The computer plays ${ai.map(t => TEAM_NAME[t].toLowerCase()).join(' and ')}.</p>`;
+    } else h += `<p class="sub">No computer team: it’s just you and your friends.</p>`;
+    h += `<button id="lb-go"${L.links.length ? '' : ' disabled'}>${L.links.length ? 'Start the battle' : 'Waiting for a friend…'}</button>`;
+  } else {
+    const R = L.room;
+    h = `<p class="sub">You joined game</p><div class="code">${L.code}</div>`;
+    if (R && Array.isArray(R.players)) {
+      const lines = rosterLines(L.myId, R.three ? ['blue', 'red', 'green'] : ['blue', 'red'], R.players, R.diff);
+      h += lines.map(x => row(x.mine ? 'Your team' : TEAM_NAME[x.team], TEAM_COLOR[x.team], `<span class="fixed">${x.text}</span>`)).join('');
+      h += `<p class="sub">In the battle your team is blue, with your base on the left.</p>`;
+    }
+    h += `<p class="sub" style="color:#ffd24a">Waiting for the host to start…</p>`;
+  }
+  box.innerHTML = h;
+  box.querySelectorAll('[data-act]').forEach(b => b.onclick = () => roomAct(b.dataset.act));
+  const go = box.querySelector('#lb-go');
+  if (go) go.onclick = () => startHostedBattle();
+}
+function roomAct(act) {
+  const [k, a, b] = act.split(':');
+  if (k === 'teams') lobby.three = a === '3';
+  else if (k === 'team') { const l = lobby.links.find(x => x.id === a); if (l && ['blue', 'red', 'green'].includes(b)) l.team = b; }
+  else if (k === 'diff' && DIFF_NAME[a]) lobby.diff = a;
+  SFX.buff();
+  renderRoom(); sendRoom();
+}
 function lobbyStatus(html) { const s = document.getElementById('lb-status'); if (s) s.innerHTML = html; }
-function openLobby() { lobbyEl().style.display = 'flex'; lobbyStatus(''); }
+function openLobby() { lobbyEl().style.display = 'flex'; lobbyStatus(''); renderRoom(); }
 function closeLobby() {
   const el = document.getElementById('lobby');
   if (el) el.style.display = 'none';
-  if (!versus) { hangUp(); lobby.code = null; }
+  if (!versus) {
+    // say goodbye to whoever is in the room
+    if (lobby.role === 'host') for (const l of lobby.links) l.send({ t: 'bye' });
+    else if (lobby.guestPath) lobby.guestPath.send({ t: 'bye' });
+    const done = () => { hangUp(); lobby.code = null; renderRoom(); };
+    if (lobby.links.length || lobby.guestPath) setTimeout(done, 200); else done();
+  }
 }
 function hostLobby() {
   const code = Array.from({ length: 4 }, () => 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[Math.floor(Math.random() * 32)]).join('');
@@ -4365,7 +4658,7 @@ function hostLobby() {
 }
 function joinLobby(raw) {
   const code = String(raw || '').trim().toUpperCase();
-  if (code.length < 4) { lobbyStatus('Type the 4-letter code your friend sees.'); return; }
+  if (code.length < 4) { lobbyStatus('Type the 4-letter code the host sees.'); return; }
   startLobby('guest', code);
 }
 
@@ -4530,7 +4823,7 @@ const ORDER_OPTS = [
   ['protectTurrets', 'Protect turrets'], ['protectBase', 'Protect base'],
 ];
 function ordersPanel() {
-  const w = Math.min(360, W - 24), h = 570, x = W / 2 - w / 2, y = clamp((H - h) / 2, 10, 60);
+  const w = Math.min(360, W - 24), h = 532 + TEAMS.length * 19, x = W / 2 - w / 2, y = clamp((H - h) / 2, 10, 60);
   const bw = (w - 38) / 2, at = (i, y0) => ({ x: x + 14 + (i % 2) * (bw + 10), y: y0 + Math.floor(i / 2) * 38, w: bw, h: 32 });
   const move = [['follow', 'Follow me'], ['spread', 'Spread out']].map(([key, label], i) => ({ grp: 'move', key, label, ...at(i, y + 66) }));
   const rows = ['minion', 'titan'].map((grp, gi) => ORDER_OPTS.map(([key, label], i) => ({ grp, key, label, ...at(i, y + 150 + gi * 94) })));
@@ -4549,7 +4842,7 @@ function ordersHit(x, y) {
   if (o && o.grp === 'move') { if (teams.order !== o.key) toggleOrder(); }
   else if (o) {
     teams.orders[o.grp] = o.key;
-    if (net.role === 'guest') net.send({ t: 'orders', grp: o.grp, v: o.key });
+    if (net.role === 'guest') { net.ordT = performance.now(); net.send({ t: 'orders', grp: o.grp, v: o.key }); }
     castMessage(`${o.grp === 'minion' ? 'Minions' : 'Titans'}: ${o.label.toLowerCase()}`, TEAM_COLOR.blue);
     SFX.buff();
   }
@@ -4601,12 +4894,12 @@ function drawOrders() {
   ctx.textAlign = 'left'; ctx.font = `italic 10px ${SERIF}`; ctx.fillStyle = '#999';
   ctx.fillText(`${teams.blue.minions} minions a wave`, lx, ly + 22);
   // both sides' team powers, read live from what each army is made of
-  head('Team powers', P.y + 524, 'from what each army is made of');
+  head('Team powers', P.y + 524, three() ? 'from each army (Water slows all your rivals)' : 'from what each army is made of');
   const cw = (P.w - 70) / 5;
-  ['blue', 'red'].forEach((team, row) => {
+  TEAMS.forEach((team, row) => {
     const r = resOf(team), yy = P.y + 546 + row * 19;
     ctx.textAlign = 'left'; ctx.font = `bold 11px ${SERIF}`; ctx.fillStyle = TEAM_COLOR[team];
-    ctx.fillText(team === 'blue' ? 'You' : 'Red', P.x + 14, yy);
+    ctx.fillText(teamLabel(team), P.x + 14, yy);
     CHARGE_TYPES.forEach((e, i) => {
       const v = Math.round(r[e] * 100), gx = P.x + 56 + cw * i;
       ctx.globalAlpha = v ? 1 : 0.35;
@@ -4652,8 +4945,8 @@ function tapOverlay(x, y) {
     return true;
   }
   if (state === 'dead')  { if (overlayT > (mode === 'battle' ? 5 : 0.8)) respawn(); return true; }
-  if (state === 'won')   { if (overlayT > 1.0) { leaveDuel(); state = mode === 'battle' ? 'title' : 'play'; menuPage = 'main'; } return true; }
-  if (state === 'lost')  { if (overlayT > 1.0) { leaveDuel(); state = 'title'; menuPage = 'main'; } return true; }
+  if (state === 'won')   { if (overlayT > 1.0) { leaveOnline(); state = mode === 'battle' ? 'title' : 'play'; menuPage = 'main'; } return true; }
+  if (state === 'lost')  { if (overlayT > 1.0) { leaveOnline(); state = 'title'; menuPage = 'main'; } return true; }
   if (state === 'reveal') { if (reveal.t > 1.2) closeReveal(); return true; }
   return false;
 }
@@ -5599,7 +5892,7 @@ function skinOf(team) {
 }
 function heroSkin(p) {
   if (mode !== 'battle' || p === hostP) return mySkin;
-  return p.skin || skinOf(p.team || 'blue');
+  return p.look || skinOf(p.team || 'blue');
 }
 
 // a spacefarer in a white suit; accent is the team colour, gun glows with the next spell
@@ -5827,7 +6120,7 @@ function drawUnit(u) {
   } else if (u.kind === 'wizard') {
     circle(3, 12, 12, 'rgba(0,0,0,0.3)');
     ctx.beginPath(); ctx.moveTo(-14, 14); ctx.lineTo(0, -8); ctx.lineTo(14, 14); ctx.closePath();
-    ctx.fillStyle = u.team === 'blue' ? '#24466e' : '#6e2430'; ctx.fill();
+    ctx.fillStyle = TEAM_DARK[u.team] || '#333'; ctx.fill();
     circle(0, -6, 7, '#f1d2b0');
     ctx.beginPath(); ctx.moveTo(-12, -10); ctx.lineTo(0, -30); ctx.lineTo(12, -10); ctx.closePath(); ctx.fillStyle = c; ctx.fill();
     ctx.strokeStyle = '#8a5a2a'; ctx.lineWidth = 3;
@@ -6780,14 +7073,21 @@ function drawWorld() {
   drawPlayer();
   // the other sides' helpers and spells, and your friends' wizards
   for (const side of others) withSide(side, () => { for (const a of allies) drawAlly(a); drawSideFx(); }, casterFor(side));
-  if (net.role === 'host') { for (const h of heroes) if (h.p !== hostP && !h.gone) drawPlayer(h.p); }
-  else if (otherHero) drawPlayer(otherHero);
+  if (net.role === 'host') { for (const h of heroes) if (h.p !== hostP && !h.gone) { drawPlayer(h.p); drawHeroTag(h.p, h.id); } }
+  else for (const o of guestOthers) { drawPlayer(o); drawHeroTag(o, o.heroId); }
   drawSideFx();
   drawSharedFx();
   drawMotes(camX, camY);
   ctx.restore();
 }
 
+// a friend's name over their wizard, in their team's colour
+function drawHeroTag(p, id) {
+  if (p.dead || !id) return;
+  const t = id === 'host' ? 'Host' : heroName(id);
+  ctx.font = `bold 11px ${SERIF}`; ctx.textAlign = 'center'; ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.75)';
+  ctx.strokeText(t, p.x, p.y - 46); ctx.fillStyle = TEAM_LIGHT[p.team] || '#fff'; ctx.fillText(t, p.x, p.y - 46);
+}
 function drawTraps() {
   for (const t of traps) {
     const on = t.arm <= 0, c = t.spec ? TYPE_COLOR[t.spec.elem] : '#ff8a3a';
@@ -6810,7 +7110,7 @@ function bar(x, y, w, h, frac, color, label) {
 function drawHUD() {
   const w = Math.min(180, mode === 'battle' ? W / 2 - 48 : W * 0.42); // battle leaves the top middle to the eclipse clock
   bar(14, 14, w, 16, player.hp / player.maxHp, '#d33', `HP ${Math.ceil(player.hp)}/${player.maxHp}`);
-  bar(14, 36, w, 16, player.mana / player.maxMana, '#3a7bff', `Mana ${Math.floor(player.mana)}/${player.maxMana}${mode === 'battle' && cellOwner(player.x, player.y) === 2 ? '  · slow in enemy ground' : ''}`);
+  bar(14, 36, w, 16, player.mana / player.maxMana, '#3a7bff', `Mana ${Math.floor(player.mana)}/${player.maxMana}${mode === 'battle' && cellOwner(player.x, player.y) > TEAM_CODE.blue ? '  · slow in enemy ground' : ''}`);
 
   ctx.font = '12px "Big Caslon", "Libre Caslon Text", Georgia, serif';
   ctx.fillStyle = '#ccc';
@@ -6961,11 +7261,14 @@ function drawMatchClock(left, y) {
 function drawBattleRight() {
   const st = rightStack(), R = W - 12;
   const outlined = (t, x, y, c) => { ctx.strokeStyle = 'rgba(0,0,0,0.6)'; ctx.lineWidth = 3; ctx.strokeText(t, x, y); ctx.fillStyle = c; ctx.fillText(t, x, y); };
-  ctx.textAlign = 'right'; ctx.font = `bold 16px ${SERIF}`;
-  const rt = `Red ${teams.red.score}`, rw = ctx.measureText(rt).width;
-  outlined(rt, R, st.scoreY, TEAM_COLOR.red);
-  outlined('·', R - rw - 7, st.scoreY, '#aaa');
-  outlined(`You ${teams.blue.score}`, R - rw - 19, st.scoreY, TEAM_COLOR.blue);
+  ctx.textAlign = 'right'; ctx.font = `bold ${three() ? 15 : 16}px ${SERIF}`;
+  let xr = R; // right to left: you read it as You · Red · Green
+  TEAMS.slice().reverse().forEach((team, i) => {
+    const t = `${teamLabel(team)} ${teams[team].score}`;
+    outlined(t, xr, st.scoreY, TEAM_COLOR[team]);
+    xr -= ctx.measureText(t).width;
+    if (i < TEAMS.length - 1) { outlined('·', xr - 6, st.scoreY, '#aaa'); xr -= 17; }
+  });
   const tl = (teams.tally && teams.tally.blue) || 0;
   ctx.font = `11px ${SERIF}`;
   outlined(`Kill tally ${tl % 5}/5`, R, st.tallyY, '#ddd');
@@ -7134,7 +7437,8 @@ function orderHit(x, y) {
 }
 function toggleOrder() {
   teams.order = teams.order === 'follow' ? 'spread' : 'follow';
-  if (net.role === 'guest') net.send({ t: 'order', v: teams.order });
+  if (net.role === 'guest') { net.ordT = performance.now(); net.send({ t: 'order', v: teams.order }); }
+  else if (teams.blue) teams.blue.leader = 'host';
   castMessage(teams.order === 'follow' ? 'Army: follow me!' : 'Army: spread out!', TEAM_COLOR.blue);
   SFX.buff();
 }
@@ -7256,8 +7560,8 @@ function drawBattleMap() {
   }
   ctx.strokeStyle = 'rgba(199,125,255,0.6)'; ctx.lineWidth = 1;
   ctx.beginPath(); ctx.ellipse(x + w / 2, y + h / 2, w / 2, h / 2, 0, 0, TAU); ctx.stroke();
-  for (const list of [friends, foes]) for (const u of list) {
-    if (u.dead || u.proxyOf) continue;
+  for (const u of allUnits()) {
+    if (u.dead || u.proxyOf || !TEAM_COLOR[u.team]) continue;
     const c = TEAM_COLOR[u.team];
     if (u.kind === 'sigil') {
       // a bright diamond (white rim while walled), pulsing so you can find it
@@ -7268,19 +7572,22 @@ function drawBattleMap() {
     } else if (u.structure) { ctx.fillStyle = c; const s = u.kind === 'nexus' ? 7 : 4; ctx.fillRect(mx(u.x) - s / 2, my(u.y) - s / 2, s, s); }
     else circle(mx(u.x), my(u.y), u.kind === 'titan' ? 2.8 : u.kind === 'wizard' ? 2 : 1, c);
   }
-  const rival = net.role === 'host' ? rivalP : otherHero;
-  if (versus && rival && !rival.dead) circle(mx(rival.x), my(rival.y), 3, '#ffb3b3', TEAM_COLOR.red, 1.5);
+  for (const o of otherHeroes()) circle(mx(o.x), my(o.y), 3, TEAM_LIGHT[o.team] || '#fff', TEAM_COLOR[o.team] || '#fff', 1.5);
   circle(mx(player.x), my(player.y), 2.5, '#fff');
   if (teams) {
     const g = groundLeader();
     ctx.font = `bold 15px ${SERIF}`; ctx.textAlign = 'center'; ctx.lineWidth = 3.5; ctx.strokeStyle = 'rgba(0,0,0,0.85)';
-    [['blue', 0.24], ['red', 0.76]].forEach(([team, f]) => {
-      const t = `${Math.round(teams[team].cells / FIELD_CELLS * 100)}%`, tx = x + w * f, ty = y + h / 2 + 5;
+    if (three()) ctx.font = `bold 13px ${SERIF}`;
+    const big = ctx.font;
+    for (const team of TEAMS) {
+      // each team's share, written over its own end of the field
+      const hp = three() ? homePt(team, baseDist() * 0.42) : null;
+      const t = `${Math.round(teams[team].cells / FIELD_CELLS * 100)}%`, tx = hp ? mx(hp.x) : x + w * (team === 'blue' ? 0.24 : 0.76), ty = hp ? my(hp.y) + 5 : y + h / 2 + 5;
       const tw = ctx.measureText(t).width;
       roundRect(tx - tw / 2 - 4, ty - 14, tw + 8, 18, 5); ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fill();
-      ctx.strokeText(t, tx, ty); ctx.fillStyle = team === 'blue' ? '#8cc8ff' : '#ff8a96'; ctx.fillText(t, tx, ty);
-      if (g === team) { ctx.font = `bold 9px ${SERIF}`; ctx.strokeText(`+${GROUND_BONUS}`, tx, ty + 12); ctx.fillStyle = '#ffd24a'; ctx.fillText(`+${GROUND_BONUS}`, tx, ty + 12); ctx.font = `bold 15px ${SERIF}`; }
-    });
+      ctx.strokeText(t, tx, ty); ctx.fillStyle = TEAM_LIGHT[team]; ctx.fillText(t, tx, ty);
+      if (g === team) { ctx.font = `bold 9px ${SERIF}`; ctx.strokeText(`+${GROUND_BONUS}`, tx, ty + 12); ctx.fillStyle = '#ffd24a'; ctx.fillText(`+${GROUND_BONUS}`, tx, ty + 12); ctx.font = big; }
+    }
   }
   return h;
 }
@@ -7450,12 +7757,17 @@ function dim(a) { ctx.fillStyle = `rgba(5,3,10,${a})`; ctx.fillRect(0, 0, W, H);
 
 // ── menus ──
 // Main: the title, your hero showing off on the left with Wizard / Space on
-// the right, then Adventure and Battle. Battle opens its own page: Easy,
-// Hard, Very Hard, Battle a Friend, and Back.
+// the right, then Adventure and Battle. Battle opens its own page: one rival
+// or two, Easy, Medium, Hard, Very Hard, Play with Friends, and Back.
 const SERIF = '"Big Caslon", "Libre Caslon Text", Georgia, serif';
 const SERIF_BIG = '"Big Caslon", "Libre Caslon Display", "Libre Caslon Text", Georgia, serif';
 let menuPage = 'main';
 let menuFx = [], menuT = 0, menuCast = 0;
+// Battle against one computer universe, or two at once (three teams on a round field)
+let rivals = 1;
+try { if (localStorage.getItem('pentagram-rivals') === '2') rivals = 2; } catch (_) {}
+function setRivals(n) { rivals = n; try { localStorage.setItem('pentagram-rivals', String(n)); } catch (_) {} SFX.buff(); }
+const soloTeams = () => (rivals === 2 ? ['blue', 'red', 'green'] : ['blue', 'red']);
 function goMenu(page) { menuPage = page; SFX.buff(); }
 
 // a menu button: just the word, in capitals, filling its row top to bottom;
@@ -7545,14 +7857,19 @@ const HOWTO = [
   ['p', 'Defeat the five guardians. Each can only be hurt by certain elements, so find its weakness.'],
   ['h', 'Battle'],
   ['p', 'Your base is on the left, red’s is on the right. Most points after 5 minutes wins.'],
+  ['p', 'Pick 1 rival or 2 on the Battle page. With 2 rivals, three universes fight on a round field: you (blue), red and green. The computer teams fight each other too, and tend to go after whoever is winning.'],
   ['points'],
-  ['p', 'Every 10 seconds someone gets a build turn. Pick an element, then build a turret where you stand (it claims ground) or send a titan. A dial beside the clock counts down to the next turn. No building in the last 15 seconds.'],
+  ['p', 'Build turns go round the teams: each team gets one every 20 seconds. Pick an element, then build a turret where you stand (it claims ground) or send a titan. A dial beside the clock counts down to the next turn. No building in the last 15 seconds.'],
   ['p', 'Top left: your health, your mana and the match clock. Top right: the map (each side’s share of the ground is written on it), then your score, your kill tally and the build clock. The eclipse clock waits faintly at the top in the middle.'],
   ['p', 'The eclipse clock has a ring for each element. When an element’s mark reaches 12 o’clock it is eclipsed and doesn’t work for 30 seconds. See “Eclipses” below.'],
   ['p', 'Around the casting star: FOLLOW / SPREAD (top left) keeps your army with you or lets it push; FIRE (top right) sends a loaded attack; ARMY (bottom left) opens your army commands; tilt and sound are bottom right.'],
-  ['p', 'Army commands: follow or spread, what your minions and titans attack or protect when spread out, the minion mix (drag the dot to choose which minions you send) and both teams’ powers.'],
+  ['p', 'Army commands: follow or spread, what your minions and titans attack or protect when spread out, the minion mix (drag the dot to choose which minions you send) and every team’s powers.'],
+  ['h', 'Play with friends'],
+  ['p', 'Up to three people can play a battle together, each on their own phone. One hosts and gets a code; the others type it in to join.'],
+  ['p', 'The host picks two or three teams and who plays on which: all of you on one team against the computer, two of you against the computer, or each of you against the others. The computer plays every team nobody is on.'],
+  ['p', 'Friends on the same team share its army, its build turns (taking them in turn) and its points. Each of you sees your own team as blue, with your base on the left.'],
   ['h', 'Pausing'],
-  ['p', 'Leave the game (another app, tab or screen) and it pauses: an adventure or a battle against red waits for you. Tap to carry on. A duel with a friend never pauses.'],
+  ['p', 'Leave the game (another app, tab or screen) and it pauses: an adventure or a battle against the computer waits for you. Tap to carry on. A game with friends never pauses.'],
   ['h', 'Tips'],
   ['p', 'Try every pair of elements first. Two-rune spells are quick and cheap.'],
   ['p', 'A whisper: “Fire, then fire again…”'],
@@ -7567,7 +7884,7 @@ const HOWTO = [
   ['p', 'What your army is made of gives the whole team a power. It is read live from your units on the field: a minion counts 1, a turret 3, a titan 4.'],
   ['res'],
   ['p', 'Each power grows with that element’s share of your army, with diminishing returns: the first part of a mix gives the most. A one-element army also gets countered easily. Mixing pays, and leaning into a favourite is fine too.'],
-  ['p', 'The Army commands panel shows both sides’ powers (you, then red).'],
+  ['p', 'The Army commands panel shows every team’s powers (you first). With three teams, each rival’s Water slows you, and for Spirit it’s the team you are fighting that counts.'],
   ['h', 'Eclipses'],
   ['p', 'The eclipse clock (top middle) has five rings, one for each element, each with a mark turning at its own steady pace. It stays faint, behind everything, until an eclipse is close; then it comes to the front.'],
   ['p', 'When a mark reaches 12 o’clock, that element is eclipsed for 30 seconds: spells made of it can’t be cast, and minions, turrets, titans and wizards of that element stop fighting. It counts for both sides.'],
@@ -7583,8 +7900,8 @@ const HOWTO = [
   ['p', 'Turrets: shoot anything that comes close and claim ground. The lines between your towers mark your land.'],
   ['p', 'Sigils: each side has one, walled in for 15 seconds after it appears. Breaking the enemy’s is worth 65 and a bonus build.'],
   ['h', 'Scoring in detail'],
-  ['p', 'Kills fill a tally (shown under your score): a minion adds 1, a titan 5, a wizard 10. Every 5 on the tally is a point. If your hero falls, it adds 10 to red’s tally.'],
-  ['p', 'A turret is worth 5 points. A friend’s wizard in a duel is worth 10. The enemy base is worth 100 and ends the match. Most ground at the end is worth 140.'],
+  ['p', 'Kills fill a tally (shown under your score): a minion adds 1, a titan 5, a wizard 10. Every 5 on the tally is a point. If your hero falls to the computer, it adds 10 to that team’s tally.'],
+  ['p', 'A turret is worth 5 points. A friend’s wizard on another team is worth 10. An enemy base is worth 100 and ends the match. Most ground at the end is worth 140 (nobody gets it if the top is shared). Points go to the team that dealt the final blow.'],
   ['h', 'Magic in battle'],
   ['p', 'Your mana refills slowly in enemy ground and fastest at your fountain.'],
   ['h', 'Spell power'],
@@ -7700,7 +8017,7 @@ function drawHowTo(y, bx, bw) {
       yy += 4;
     } else if (kind === 'points') {
       // a little table of what scores
-      const rows = [['Every 5 on your kill tally', '1'], ['   a minion adds 1, a titan 5, a wizard 10', ''], ['Enemy turret', '5'], ['A friend’s wizard in a duel', '10'], ['Enemy sigil (+ a bonus build)', '65'], ['Enemy base (ends the match)', '100'], ['Most ground at the end', '140']];
+      const rows = [['Every 5 on your kill tally', '1'], ['   a minion adds 1, a titan 5, a wizard 10', ''], ['Enemy turret', '5'], ['A friend’s wizard (another team’s)', '10'], ['Enemy sigil (+ a bonus build)', '65'], ['Enemy base (ends the match)', '100'], ['Most ground at the end', '140']];
       ctx.font = `14px ${SERIF}`;
       for (const [what, pts] of rows) {
         ctx.textAlign = 'left'; ctx.fillStyle = '#efe9f8'; ctx.fillText(what, L + 18, yy + 14);
@@ -7744,15 +8061,20 @@ function drawTitle() {
   if (menuPage === 'howto') { drawHowTo(y, bx, bw); return; }
   if (menuPage === 'battle') {
     y += 6;
-    const bh = Math.min(78, Math.max(46, (H - y - 76) / 5 - gap));
+    const bh = Math.min(78, Math.max(42, (H - y - 76) / 5.6 - gap));
+    // how many computer universes to fight
+    const th = Math.max(26, bh * 0.55), half = (bw - gap) / 2;
+    const pick = [1, 2].map((n, i) => ({ title: n === 1 ? '1 rival' : '2 rivals', color: rivals === n ? '#ffd24a' : '#5a5470', selected: rivals === n,
+      x: bx + i * (half + gap), y, w: half, h: th, go: () => setRivals(n) }));
+    y += th + gap + 4;
     const opts = [
-      { title: 'Easy', color: TEAM_COLOR.blue, go: () => startBattle('easy') },
-      { title: 'Medium', color: '#5ad1a8', go: () => startBattle('medium') },
-      { title: 'Hard', color: TEAM_COLOR.red, go: () => startBattle('hard') },
-      { title: 'Very Hard', color: '#ff2a8a', go: () => startBattle('vhard') },
-      { title: 'Battle a Friend', color: '#ffd166', go: openLobby },
+      { title: 'Easy', color: TEAM_COLOR.blue, go: () => startBattle('easy', soloTeams()) },
+      { title: 'Medium', color: '#5ad1a8', go: () => startBattle('medium', soloTeams()) },
+      { title: 'Hard', color: TEAM_COLOR.red, go: () => startBattle('hard', soloTeams()) },
+      { title: 'Very Hard', color: '#ff2a8a', go: () => startBattle('vhard', soloTeams()) },
+      { title: 'Play with Friends', color: '#ffd166', go: openLobby },
     ];
-    titleButtons = opts.map((o, i) => ({ ...o, x: bx, y: y + i * (bh + gap), w: bw, h: bh }));
+    titleButtons = opts.map((o, i) => ({ ...o, x: bx, y: y + i * (bh + gap), w: bw, h: bh })).concat(pick);
     y += opts.length * (bh + gap) + 6;
     titleButtons.push({ title: 'Back', color: '#8a8498', x: bx + bw / 2 - 70, y, w: 140, h: 40, go: () => goMenu('main') });
     for (const b of titleButtons) menuButton(b);
@@ -7866,18 +8188,20 @@ function drawDead() {
 
 // how each side's points were made
 function drawScoreTable(y) {
-  const B = teams.breakdown || { blue: {}, red: {} };
-  const rows = SCORE_CATS.filter(c => B.blue[c] || B.red[c]);
+  const B = teams.breakdown || {}, of = (t, c) => B[t] && B[t][c];
+  const rows = SCORE_CATS.filter(c => TEAMS.some(t => of(t, c)));
   const w = Math.min(W - 32, 360), x = W / 2 - w / 2, rh = 21;
   const h = (rows.length + 2) * rh + 12;
   roundRect(x, y, w, h, 10); ctx.fillStyle = 'rgba(10,8,20,0.88)'; ctx.fill();
   ctx.strokeStyle = 'rgba(199,125,255,0.4)'; ctx.lineWidth = 1; ctx.stroke();
-  const cBlue = x + w * 0.66, cRed = x + w - 14;
+  // a column per team, the last against the right edge
+  const col = {}, step = three() ? w * 0.22 : w * 0.34 - 14;
+  TEAMS.forEach((t, i) => col[t] = x + w - 14 - (TEAMS.length - 1 - i) * step);
   let ry = y + 20;
   ctx.font = 'bold 12px "Big Caslon", "Libre Caslon Text", Georgia, serif';
   ctx.textAlign = 'left'; ctx.fillStyle = '#aaa'; ctx.fillText('HOW IT WAS SCORED', x + 12, ry);
-  ctx.textAlign = 'right'; ctx.fillStyle = TEAM_COLOR.blue; ctx.fillText('You', cBlue, ry);
-  ctx.fillStyle = TEAM_COLOR.red; ctx.fillText('Red', cRed, ry);
+  ctx.textAlign = 'right';
+  for (const t of TEAMS) { ctx.fillStyle = TEAM_COLOR[t]; ctx.fillText(teamLabel(t), col[t], ry); }
   const cell = (e, cx, col) => {
     ctx.textAlign = 'right';
     if (!e) { ctx.fillStyle = '#555'; ctx.fillText('–', cx, ry); return; }
@@ -7889,15 +8213,15 @@ function drawScoreTable(y) {
     ry += rh;
     ctx.textAlign = 'left'; ctx.fillStyle = '#ddd'; ctx.font = '13px "Big Caslon", "Libre Caslon Text", Georgia, serif';
     ctx.fillText(c, x + 12, ry);
-    cell(B.blue[c], cBlue, '#cfe6ff'); cell(B.red[c], cRed, '#ffd0d4');
+    for (const t of TEAMS) cell(of(t, c), col[t], TEAM_LIGHT[t]);
   }
   if (!rows.length) { ry += rh; ctx.textAlign = 'left'; ctx.fillStyle = '#888'; ctx.font = '13px "Big Caslon", "Libre Caslon Text", Georgia, serif'; ctx.fillText('No points scored', x + 12, ry); }
   ry += rh + 2;
   ctx.strokeStyle = 'rgba(255,255,255,0.2)'; ctx.beginPath(); ctx.moveTo(x + 10, ry - 15); ctx.lineTo(x + w - 10, ry - 15); ctx.stroke();
   ctx.font = 'bold 14px "Big Caslon", "Libre Caslon Text", Georgia, serif';
   ctx.textAlign = 'left'; ctx.fillStyle = '#fff'; ctx.fillText('Total', x + 12, ry);
-  ctx.textAlign = 'right'; ctx.fillStyle = TEAM_COLOR.blue; ctx.fillText(String(teams.blue.score), cBlue, ry);
-  ctx.fillStyle = TEAM_COLOR.red; ctx.fillText(String(teams.red.score), cRed, ry);
+  ctx.textAlign = 'right';
+  for (const t of TEAMS) { ctx.fillStyle = TEAM_COLOR[t]; ctx.fillText(String(teams[t].score), col[t], ry); }
   ctx.textAlign = 'center';
   return y + h;
 }
@@ -7909,14 +8233,23 @@ function endHeading(text, L, w, y) {
   ctx.strokeStyle = 'rgba(255,210,74,0.35)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(L, y + 25); ctx.lineTo(L + w, y + 25); ctx.stroke();
   return y + 34;
 }
-// "You 12 · Red 4" on one line
-function endPair(label, a, b, L, w, y) {
-  ctx.font = `14px ${SERIF}`;
+// a figure for each team on one line ("You 12 · Red 4"), in TEAMS order
+const endColW = () => (three() ? 46 : 56);
+function endRow(label, vals, L, w, y) {
+  const room = w - endColW() * TEAMS.length - 4;
+  let fs = 14;
+  ctx.font = `${fs}px ${SERIF}`;
+  while (fs > 10 && ctx.measureText(label).width > room) ctx.font = `${fs -= 0.5}px ${SERIF}`; // long labels shrink to fit
   ctx.textAlign = 'left'; ctx.fillStyle = '#efe9f8'; ctx.fillText(label, L, y + 14);
-  ctx.textAlign = 'right';
-  ctx.fillStyle = TEAM_COLOR.red; ctx.fillText(String(b), L + w, y + 14);
-  ctx.fillStyle = TEAM_COLOR.blue; ctx.fillText(String(a), L + w - 56, y + 14);
+  ctx.font = `14px ${SERIF}`; ctx.textAlign = 'right';
+  TEAMS.forEach((t, i) => { ctx.fillStyle = TEAM_COLOR[t]; ctx.fillText(String(vals[i]), L + w - (TEAMS.length - 1 - i) * endColW(), y + 14); });
   return y + 21;
+}
+// the column heads over a block of endRows
+function endHeads(L, w, y) {
+  ctx.textAlign = 'right'; ctx.font = `bold 12px ${SERIF}`;
+  TEAMS.forEach((t, i) => { ctx.fillStyle = TEAM_COLOR[t]; ctx.fillText(teamLabel(t), L + w - (TEAMS.length - 1 - i) * endColW(), y + 10); });
+  return y + 14;
 }
 // a bar split into coloured shares, with the percentage written in each
 function endShares(label, counts, colorOf, L, w, y) {
@@ -7949,8 +8282,8 @@ function endKey(items, L, w, y) {
 // land held over the match: two lines, and a marker wherever the lead changed hands
 function endLandGraph(land, L, w, y) {
   const h = 110, gx = L + 28, gw = w - 30, gy = y + 4;
-  const pts = land.map(([t, b, r]) => [t, b / FIELD_CELLS * 100, r / FIELD_CELLS * 100]);
-  const tMax = Math.max(60, ...pts.map(p => p[0])), top = Math.max(50, Math.ceil((Math.max(...pts.map(p => Math.max(p[1], p[2])), 0) + 5) / 10) * 10);
+  const pts = land.map(([t, ...c]) => [t, ...c.map(v => v / FIELD_CELLS * 100)]);
+  const tMax = Math.max(60, ...pts.map(p => p[0])), top = Math.max(50, Math.ceil((Math.max(...pts.map(p => Math.max(...p.slice(1))), 0) + 5) / 10) * 10);
   const X = t => gx + t / tMax * gw, Y = v => gy + h - v / top * h;
   ctx.fillStyle = 'rgba(255,255,255,0.05)'; ctx.fillRect(gx, gy, gw, h);
   ctx.strokeStyle = 'rgba(255,255,255,0.12)'; ctx.lineWidth = 1; ctx.font = `10px ${SERIF}`; ctx.fillStyle = '#999'; ctx.textAlign = 'right';
@@ -7958,19 +8291,20 @@ function endLandGraph(land, L, w, y) {
   ctx.textAlign = 'center';
   for (const t of [0, tMax / 2, tMax]) ctx.fillText(clockText(t), X(t), gy + h + 13);
   // where the lead switched
-  let lead = null, switches = 0;
-  for (const [t, b, r] of pts) {
-    const now = b > r ? 'blue' : r > b ? 'red' : lead;
+  let lead = null, switches = 0, lastLabel = -1e9;
+  for (const [t, ...v] of pts) {
+    const hi = Math.max(...v), tops = TEAMS.filter((_, i) => v[i] === hi);
+    const now = tops.length === 1 ? tops[0] : lead;
     if (lead && now && now !== lead) {
       switches++;
       ctx.strokeStyle = TEAM_COLOR[now]; ctx.setLineDash([3, 3]); ctx.lineWidth = 1.5;
       ctx.beginPath(); ctx.moveTo(X(t), gy); ctx.lineTo(X(t), gy + h); ctx.stroke(); ctx.setLineDash([]);
       ctx.fillStyle = TEAM_COLOR[now]; ctx.font = `bold 10px ${SERIF}`;
-      ctx.fillText(now === 'blue' ? 'you lead' : 'red leads', clamp(X(t), gx + 24, gx + gw - 24), gy - 3);
+      if (X(t) - lastLabel > 62) { ctx.fillText(now === 'blue' ? 'you lead' : `${TEAM_NAME[now].toLowerCase()} leads`, clamp(X(t), gx + 24, gx + gw - 24), gy - 3); lastLabel = X(t); }
     }
     lead = now;
   }
-  for (const [team, i] of [['blue', 1], ['red', 2]]) {
+  for (const [team, i] of TEAMS.map((t, k) => [t, k + 1])) {
     ctx.strokeStyle = TEAM_COLOR[team]; ctx.lineWidth = 2.5; ctx.lineJoin = 'round';
     ctx.beginPath(); pts.forEach((p, k) => k ? ctx.lineTo(X(p[0]), Y(p[i])) : ctx.moveTo(X(p[0]), Y(p[i]))); ctx.stroke();
   }
@@ -7983,27 +8317,34 @@ function drawBattleEnd(win) {
   ctx.textAlign = 'center';
   ctx.fillStyle = draw ? '#ccc' : win ? '#ffd24a' : '#ff4a5a';
   ctx.font = `italic 14px ${SERIF}`;
-  ctx.fillText(draw ? 'The two universes stay locked together…' : win ? 'Your universe is preserved!' : 'Your universe is being overwritten…', W / 2, 26);
+  ctx.fillText(draw ? (three() ? 'The universes stay locked together…' : 'The two universes stay locked together…') : win ? 'Your universe is preserved!' : 'Your universe is being overwritten…', W / 2, 26);
   ctx.font = `${Math.min(48, W / 8)}px ${SERIF_BIG}`;
   ctx.fillText(draw ? 'DRAW' : win ? 'VICTORY' : 'DEFEAT', W / 2, 70);
-  ctx.font = `bold 20px ${SERIF}`;
-  ctx.fillStyle = TEAM_COLOR.blue; ctx.fillText(`You ${teams.blue.score}`, W / 2 - 70, 100);
-  ctx.fillStyle = TEAM_COLOR.red; ctx.fillText(`Red ${teams.red.score}`, W / 2 + 70, 100);
+  ctx.font = `bold ${three() ? 18 : 20}px ${SERIF}`;
+  const gap = three() ? Math.min(118, W * 0.3) : 140;
+  TEAMS.forEach((t, i) => { ctx.fillStyle = TEAM_COLOR[t]; ctx.fillText(`${teamLabel(t)} ${teams[t].score}`, W / 2 + (i - (TEAMS.length - 1) / 2) * gap, 100); });
   ctx.fillStyle = '#ccc'; ctx.font = `13px ${SERIF}`;
-  ctx.fillText(teams.endedBy === 'base' ? (teams.baseFell === 'red' ? `You destroyed the red base! (+${BASE_BONUS})` : `Red destroyed your base (+${BASE_BONUS} to red)`) : 'Time’s up.', W / 2, 120);
+  const fell = teams.baseFell, by = teams.baseBy, lc = t => TEAM_NAME[t].toLowerCase();
+  ctx.fillText(teams.endedBy !== 'base' || !fell ? 'Time’s up.'
+    : by === 'blue' ? `You destroyed the ${lc(fell)} base! (+${BASE_BONUS})`
+    : !by ? `The ${lc(fell)} base fell`
+    : fell === 'blue' ? `${TEAM_NAME[by]} destroyed your base (+${BASE_BONUS} to ${lc(by)})`
+    : `${TEAM_NAME[by]} destroyed the ${lc(fell)} base (+${BASE_BONUS} to ${lc(by)})`, W / 2, 120);
 
   // the report scrolls
   const top = 132, bottom = H - 62;
   ctx.save(); ctx.beginPath(); ctx.rect(0, top, W, bottom - top); ctx.clip();
   roundRect(L - 6, top, bw + 12, bottom - top, 12); ctx.fillStyle = 'rgba(10,8,30,0.7)'; ctx.fill();
   let y = top + 8 - endScroll;
-  const S = teams.stats || newStats(), B = S.blue, R = S.red;
+  const S = teams.stats || newStats(), SS = TEAMS.map(t => S[t] || newStats()[t]), B = SS[0];
+  const each = f => SS.map(f), RL = L + 6, RW = bw - 12;
   y = drawScoreTable(y) + 12;
   // land
-  y = endHeading('Land', L + 6, bw - 12, y);
-  const last = S.land[S.land.length - 1] || [0, teams.blue.cells, teams.red.cells];
-  y = endPair('Ground held at the end', Math.round(last[1] / FIELD_CELLS * 100) + '%', Math.round(last[2] / FIELD_CELLS * 100) + '%', L + 6, bw - 12, y);
-  y = endPair('Points from land', teams.groundTo === 'blue' ? GROUND_BONUS : 0, teams.groundTo === 'red' ? GROUND_BONUS : 0, L + 6, bw - 12, y);
+  y = endHeading('Land', RL, RW, y);
+  y = endHeads(RL, RW, y);
+  const last = S.land[S.land.length - 1] || [0, ...TEAMS.map(t => teams[t].cells)];
+  y = endRow('Ground held at the end', TEAMS.map((t, i) => Math.round(last[i + 1] / FIELD_CELLS * 100) + '%'), RL, RW, y);
+  y = endRow('Points from land', TEAMS.map(t => teams.groundTo === t ? GROUND_BONUS : 0), RL, RW, y);
   if (S.land.length > 1) {
     const g = endLandGraph(S.land, L + 6, bw - 12, y + 12);
     y = g.y;
@@ -8012,28 +8353,26 @@ function drawBattleEnd(win) {
     y += 14;
   }
   // sigils and kills
-  y = endHeading('Sigils and kills', L + 6, bw - 12, y + 8);
-  ctx.textAlign = 'right'; ctx.font = `bold 12px ${SERIF}`; ctx.fillStyle = TEAM_COLOR.blue; ctx.fillText('You', L + bw - 62, y + 10); ctx.fillStyle = TEAM_COLOR.red; ctx.fillText('Red', L + bw - 6, y + 10); y += 14;
-  y = endPair('Sigils broken', B.sigils, R.sigils, L + 6, bw - 12, y);
+  y = endHeading('Sigils and kills', RL, RW, y + 8);
+  y = endHeads(RL, RW, y);
+  y = endRow('Sigils broken', each(X => X.sigils || 0), RL, RW, y);
   const K = (S, k) => (S.killed && S.killed[k]) || 0;
-  y = endPair('Minions killed (1 each on the tally)', K(B, 'minion'), K(R, 'minion'), L + 6, bw - 12, y);
-  y = endPair('Titans killed (5 each)', K(B, 'titan'), K(R, 'titan'), L + 6, bw - 12, y);
-  y = endPair('Wizards and heroes killed (10 each)', K(B, 'wizard') + K(B, 'hero'), K(R, 'wizard') + K(R, 'hero'), L + 6, bw - 12, y);
-  y = endPair('Kill tally (every 5 = 1 point)', B.tally || 0, R.tally || 0, L + 6, bw - 12, y);
-  y = endPair('Turrets destroyed (5 points each)', K(B, 'turret'), K(R, 'turret'), L + 6, bw - 12, y);
-  ctx.font = `bold 14px ${SERIF}`;
-  y = endPair('Points from kills', B.killPts, R.killPts, L + 6, bw - 12, y);
+  y = endRow('Minions killed (1 each on the tally)', each(X => K(X, 'minion')), RL, RW, y);
+  y = endRow('Titans killed (5 each)', each(X => K(X, 'titan')), RL, RW, y);
+  y = endRow('Wizards and heroes killed (10 each)', each(X => K(X, 'wizard') + K(X, 'hero')), RL, RW, y);
+  y = endRow('Kill tally (every 5 = 1 point)', each(X => X.tally || 0), RL, RW, y);
+  y = endRow('Turrets destroyed (5 points each)', each(X => K(X, 'turret')), RL, RW, y);
+  y = endRow('Points from kills', each(X => X.killPts || 0), RL, RW, y);
   // spells
-  y = endHeading('Spells cast', L + 6, bw - 12, y + 8);
-  ctx.textAlign = 'right'; ctx.font = `bold 12px ${SERIF}`; ctx.fillStyle = TEAM_COLOR.blue; ctx.fillText('You', L + bw - 62, y + 10); ctx.fillStyle = TEAM_COLOR.red; ctx.fillText('Red', L + bw - 6, y + 10); y += 14;
+  y = endHeading('Spells cast', RL, RW, y + 8);
+  y = endHeads(RL, RW, y);
   for (const el of CHARGE_TYPES) {
     drawGlyph(ELEM_GLYPH[el], L + 14, y + 10, 13, TYPE_COLOR[el]);
     ctx.textAlign = 'left'; ctx.fillStyle = TYPE_COLOR[el]; ctx.font = `14px ${SERIF}`; ctx.fillText(ELEM_NAME[el], L + 26, y + 14);
-    y = endPair('', B.spells[el] || 0, R.spells[el] || 0, L + 6, bw - 12, y);
+    y = endRow('', each(X => X.spells[el] || 0), RL, RW, y);
   }
-  const tot = o => Object.values(o).reduce((a, b) => a + b, 0);
-  ctx.font = `bold 14px ${SERIF}`;
-  y = endPair('Total', tot(B.spells), tot(R.spells), L + 6, bw - 12, y);
+  const tot = o => Object.values(o || {}).reduce((a, b) => a + b, 0);
+  y = endRow('Total', each(X => tot(X.spells)), RL, RW, y);
   for (const t of TEAMS) {
     const used = teams[t] && teams[t].used;
     if (!used || !used.size || t === 'blue') continue;
@@ -8041,30 +8380,29 @@ function drawBattleEnd(win) {
     ctx.fillText(`${TEAM_NAME[t]}’s wizards used ${used.size} different spells.`, L + 6, y + 12); y += 18;
   }
   // resonance
-  y = endHeading('Resonance (average)', L + 6, bw - 12, y + 8);
+  y = endHeading('Resonance (average)', RL, RW, y + 8);
+  y = endHeads(RL, RW, y);
   for (const el of CHARGE_TYPES) {
     const avg = S => S.resN ? Math.round(S.resSum[el] / S.resN * 100) + '%' : '–';
     drawGlyph(ELEM_GLYPH[el], L + 14, y + 10, 13, TYPE_COLOR[el]);
     ctx.textAlign = 'left'; ctx.fillStyle = TYPE_COLOR[el]; ctx.font = `13px ${SERIF}`; ctx.fillText(RES_TEXT[el], L + 26, y + 14);
-    y = endPair('', avg(B), avg(R), L + 6, bw - 12, y);
+    y = endRow('', each(avg), RL, RW, y);
   }
   // builds
   const elemCol = k => TYPE_COLOR[k];
-  y = endHeading('Turrets built', L + 6, bw - 12, y + 8);
-  y = endShares('You', B.turret, elemCol, L + 6, bw - 12, y);
-  y = endShares('Red', R.turret, elemCol, L + 6, bw - 12, y);
-  y = endHeading('Titans sent', L + 6, bw - 12, y + 4);
-  y = endShares('You', B.titan, elemCol, L + 6, bw - 12, y);
-  y = endShares('Red', R.titan, elemCol, L + 6, bw - 12, y);
+  y = endHeading('Turrets built', RL, RW, y + 8);
+  TEAMS.forEach((t, i) => y = endShares(teamLabel(t), SS[i].turret, elemCol, RL, RW, y));
+  y = endHeading('Titans sent', RL, RW, y + 4);
+  TEAMS.forEach((t, i) => y = endShares(teamLabel(t), SS[i].titan, elemCol, RL, RW, y));
   y = endKey(CHARGE_TYPES.map(e => [TYPE_COLOR[e], ELEM_NAME[e]]), L + 6, bw - 12, y);
   // minions
   y = endHeading('Minions sent', L + 6, bw - 12, y + 4);
   const kindCol = k => TYPE_COLOR[UNITS[k].elem];
-  y = endShares('You', B.minions, kindCol, L + 6, bw - 12, y);
-  y = endShares('Red', R.minions, kindCol, L + 6, bw - 12, y);
+  TEAMS.forEach((t, i) => y = endShares(teamLabel(t), SS[i].minions, kindCol, RL, RW, y));
   y = endKey(MINION_KINDS.map(k => [kindCol(k), `${UNITS[k].name} (${ELEM_NAME[UNITS[k].elem]})`]), L + 6, bw - 12, y);
   ctx.textAlign = 'left'; ctx.fillStyle = '#999'; ctx.font = `italic 12px ${SERIF}`;
-  ctx.fillText(`${tot(B.minions)} of yours and ${tot(R.minions)} of red’s took the field.`, L + 6, y + 6);
+  const theirs = TEAMS.slice(1).map((t, i) => `${tot(SS[i + 1].minions)} of ${TEAM_NAME[t].toLowerCase()}’s`);
+  ctx.fillText(`${tot(B.minions)} of yours${theirs.length > 1 ? ', ' + theirs.slice(0, -1).join(', ') : ''} and ${theirs[theirs.length - 1]} took the field.`, L + 6, y + 6);
   y += 20;
   endMax = Math.max(0, y + endScroll - bottom + 8);
   endScroll = clamp(endScroll, 0, endMax);
