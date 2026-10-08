@@ -4218,10 +4218,10 @@ function fireButtonHit(x, y) {
   return Math.hypot(x - b.x, y - b.y) < b.r + 8;
 }
 
-// battle's top-right column, under the map: score and kill tally, match clock, build clock
+// battle's top-right column, under the map: score and kill tally, then the build clock
 function rightStack() {
   const mapH = Math.min(160, W * 0.38) * ARENA_H / WORLD, scoreY = 12 + mapH + 20;
-  return { mapH, scoreY, tallyY: scoreY + 15, clockY: scoreY + 47, buildY: scoreY + 78 };
+  return { mapH, scoreY, tallyY: scoreY + 15, buildY: scoreY + 42 };
 }
 function soundButton() { const r = 19; return { x: W - 14 - r, y: H - 14 - r, r }; }
 function tiltButton() { const b = soundButton(); return { x: b.x, y: b.y - b.r * 2 - 8, r: b.r }; }
@@ -6505,7 +6505,7 @@ function drawHUD() {
   }
   ctx.fillStyle = '#ccc';
   ctx.font = '12px "Big Caslon", "Libre Caslon Text", Georgia, serif';
-  if (mode === 'battle' && teams) drawBattleRight();
+  if (mode === 'battle' && teams) { drawMatchClock(14, 85); drawBattleRight(); } // the time, under the health bars
   else { ctx.fillText(`Spells ${discovered.size}/${SPELL_COUNT}   Guardians ${bossesDown}/${BOSSES.length}`, 14, 90); drawHunt(14, 108); }
 
   const buffs = [];
@@ -6521,9 +6521,10 @@ function drawHUD() {
   if (timeStop > 0)       buffs.push([`Time Stop ${Math.ceil(timeStop)}`, '#fff']);
   else if (timeWarp > 0)  buffs.push([`Slow-mo ${Math.ceil(timeWarp)}`, '#9cf']);
   let bx = 14;
+  ctx.textAlign = 'left'; ctx.font = `12px ${SERIF}`;
   for (const [t, c] of buffs) {
     ctx.fillStyle = c;
-    ctx.fillText(t, bx, mode === 'battle' ? 72 : 140);
+    ctx.fillText(t, bx, mode === 'battle' ? 110 : 140);
     bx += ctx.measureText(t).width + 12;
   }
 
@@ -6612,12 +6613,12 @@ function drawBuildClock(cx, cy, right) {
   ctx.fillStyle = '#bbb'; ctx.font = `italic 11px ${SERIF}`;
   ctx.fillText(sub, lx, cy + 12);
 }
-function drawMatchClock(right, y) {
+function drawMatchClock(left, y) {
   const t = teams.time, late = t <= 30, end = t <= 10;
   const txt = clockText(Math.ceil(t));
   ctx.font = 'bold 26px "Big Caslon", "Libre Caslon Text", Georgia, serif';
   ctx.textAlign = 'left';
-  const tw = ctx.measureText(txt).width, x = right - 6 - tw;
+  const tw = ctx.measureText(txt).width, x = left + 6;
   roundRect(x - 6, y - 25, tw + 12, 32, 8);
   ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fill();
   ctx.strokeStyle = end ? '#ff4a5a' : late ? '#ffd24a' : 'rgba(255,255,255,0.25)'; ctx.lineWidth = 1.5; ctx.stroke();
@@ -6638,8 +6639,7 @@ function drawMatchClock(right, y) {
     ctx.globalAlpha = 1;
   }
 }
-// battle's top-right column under the map: the score, the kill tally, the
-// match clock and the build clock
+// battle's top-right column under the map: the score, the kill tally and the build clock
 function drawBattleRight() {
   const st = rightStack(), R = W - 12;
   const outlined = (t, x, y, c) => { ctx.strokeStyle = 'rgba(0,0,0,0.6)'; ctx.lineWidth = 3; ctx.strokeText(t, x, y); ctx.fillStyle = c; ctx.fillText(t, x, y); };
@@ -6651,7 +6651,6 @@ function drawBattleRight() {
   const tl = (teams.tally && teams.tally.blue) || 0;
   ctx.font = `11px ${SERIF}`;
   outlined(`Kill tally ${tl % 5}/5`, R, st.tallyY, '#ddd');
-  drawMatchClock(R, st.clockY);
   drawBuildClock(R - 16, st.buildY, true);
 }
 
@@ -7228,7 +7227,7 @@ const HOWTO = [
   ['p', 'Your base is on the left, red’s is on the right. Most points after 5 minutes wins.'],
   ['points'],
   ['p', 'Every 10 seconds someone gets a build turn. Pick an element, then build a turret where you stand (it claims ground) or send a titan. A dial beside the clock counts down to the next turn. No building in the last 15 seconds.'],
-  ['p', 'Top right: the map (each side’s share of the ground is written on it), then your score and kill tally, the match clock and the build clock. The eclipse clock waits faintly at the top in the middle.'],
+  ['p', 'Top left: your health, your mana and the match clock. Top right: the map (each side’s share of the ground is written on it), then your score, your kill tally and the build clock. The eclipse clock waits faintly at the top in the middle.'],
   ['p', 'The eclipse clock has a ring for each element. When an element’s mark reaches 12 o’clock it is eclipsed and doesn’t work for 30 seconds. See “Eclipses” below.'],
   ['p', 'Around the casting star: FOLLOW / SPREAD (top left) keeps your army with you or lets it push; FIRE (top right) sends a loaded attack; ARMY (bottom left) opens your army commands; tilt and sound are bottom right.'],
   ['p', 'Army commands: follow or spread, what your minions and titans attack or protect when spread out, the minion mix (drag the dot to choose which minions you send) and both teams’ powers.'],
