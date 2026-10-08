@@ -220,9 +220,9 @@ const SPELLS = {
   SA:      { name: 'Blink',           kind: 'move',    cost: 2,  cast() { blink(); } },
   // ── 3 · Adept: real spells ──
   AWA:     { name: 'Chain Lightning', kind: 'attack',  cost: 7,  cast() { chainLightning(3.5, 5); } },
-  FFA:     { name: 'Fireball',        kind: 'attack',  cost: 7,  cast() { shoot({ dmg: 3, type: 'fire', speed: 450, r: 11, fx: 'explode', boom: 3.5, boomR: 100, look: 'fireball' }); } },
+  FFA:     { name: 'Fireball',        kind: 'attack',  cost: 7,  cast() { shoot({ dmg: 4.5, type: 'fire', speed: 450, r: 11, fx: 'explode', boom: 1.6, boomR: 100, look: 'fireball' }); } },
   SSA:     { name: 'Spirit Lance',    kind: 'attack',  cost: 7,  cast() { shoot({ dmg: 4.5, type: 'spirit', speed: 760, r: 8, pierce: 3, look: 'lance' }); } },
-  FAF:     { name: 'Flame Wave',      kind: 'attack',  cost: 7,  cast() { cone(player.x, player.y, aimAngle(), 180, 0.6, 2.5, 'fire', 'burn'); } },
+  FAF:     { name: 'Flame Wave',      kind: 'attack',  cost: 7,  cast() { cone(player.x, player.y, aimAngle(), 180, 0.6, 1.8, 'fire', 'burn'); } },
   EWS:     { name: 'Plague Cloud',    kind: 'poison',  cost: 7,  cast() { plagueCloud(); } },
   WWA:     { name: 'Ice Lance',       kind: 'control', cost: 6,  cast() { shoot({ dmg: 2, type: 'water', speed: 650, r: 8, fx: 'freeze', pierce: 1, look: 'icelance' }); } },
   EEA:     { name: 'Earthquake',      kind: 'control', cost: 6,  cast() { quake(); } },
@@ -237,7 +237,7 @@ const SPELLS = {
   FSE:     { name: 'Decoy Imp',       kind: 'summon',  cost: 5,  cast() { summon('imp'); } },
   // ── 4 · Greater: way more than a 3 ──
   WWWA:    { name: 'Tidal Wave',      kind: 'attack',  cost: 11, cast() { tidalWave(); } },
-  AWAW:    { name: 'Thunderstorm',    kind: 'attack',  cost: 11, cast() { storms.push({ left: 10, t: 0 }); } },
+  AWAW:    { name: 'Thunderstorm',    kind: 'attack',  cost: 11, cast() { storms.push({ left: 10, t: 0, struck: new Set() }); } },
   AEEA:    { name: 'Vortex',          kind: 'control', cost: 10, cast() { const p = targetPoint(500, 200); zones.push({ x: p.x, y: p.y, r: 260, life: 2.8, max: 2.8, tick: 0, type: 'vortex' }); } },
   SWSW:    { name: 'Confusion',       kind: 'control', cost: 9,  cast() { areaCC(player.x, player.y, 300, 'confuse', 5, '#ff8ad8'); } },
   ASSA:    { name: 'Time Warp',       kind: 'time',    cost: 9,  cast() { if (versus) castMessage('Time magic is banned in duels', '#ccc'); else timeWarp = 6; } },
@@ -1028,7 +1028,7 @@ function chainLightning(dmg, jumps) {
   for (let i = 0; i < jumps && cur; i++) {
     hit.add(cur);
     pts.push({ x: cur.x, y: cur.y });
-    damageFoe(cur, dmg, 'lightning');
+    damageFoe(cur, dmg * 0.7 ** i, 'lightning'); // each jump spreads it thinner
     react('air', cur.x, cur.y, 30);
     cur = nearestFoe(cur.x, cur.y, 230, hit);
   }
@@ -1048,7 +1048,7 @@ function plagueCloud() {
 }
 
 function tidalWave() {
-  waves.push({ x: player.x, y: player.y, r: 20, maxR: 440, speed: 480, dmg: 8, type: 'water', hit: new Set() });
+  waves.push({ x: player.x, y: player.y, r: 20, maxR: 440, speed: 480, dmg: 4, type: 'water', hit: new Set() });
 }
 
 function meteor() {
@@ -1062,7 +1062,7 @@ function blizzard() {
   shake = Math.max(shake, 10);
   for (const f of foes) {
     if (f.dead || Math.hypot(f.x - player.x, f.y - player.y) > 460) continue;
-    damageFoe(f, 22, 'water');
+    damageFoe(f, 11, 'water');
     f.freeze = 4;
     f.slow = 8;
   }
@@ -1139,7 +1139,7 @@ function cone(x, y, ang, range, half, dmg, type, effect) {
     da = Math.atan2(Math.sin(da), Math.cos(da));
     if (Math.abs(da) > half + f.r / Math.max(d, 1)) continue;
     damageFoe(f, dmg, type);
-    if (effect === 'burn') { f.burn = Math.max(f.burn || 0, 3); }
+    if (effect === 'burn') setBurn(f, 3, true);
   }
   if (type === 'fire') {
     fx.push({ kind: 'flamewave', x, y, ang, range, half, life: 0.45, max: 0.45 });
@@ -1200,10 +1200,13 @@ function updateStorms(dt) {
     if (s.t > 0) continue;
     s.t = 0.2;
     s.left--;
-    const near = foes.filter(f => !f.dead && Math.hypot(f.x - player.x, f.y - player.y) < 480);
+    // a storm spreads out: it strikes each foe at most once
+    const struck = s.struck || (s.struck = new Set());
+    const near = foes.filter(f => !f.dead && !struck.has(f) && Math.hypot(f.x - player.x, f.y - player.y) < 480);
     if (!near.length) continue;
     const f = near[Math.floor(Math.random() * near.length)];
-    damageFoe(f, 7, 'lightning');
+    struck.add(f);
+    damageFoe(f, 4, 'lightning');
     react('air', f.x, f.y, 40);
     SFX.lightning();
     fx.push({ kind: 'bolt', pts: [{ x: f.x + rnd(-40, 40), y: f.y - 420 }, { x: f.x, y: f.y }], life: 0.25, max: 0.25 });
@@ -1367,16 +1370,31 @@ function wovenFinishHit(s, f) {
 // ── woven spells in action ──
 function solidTemps() { return tempSolids.filter(b => b.solid !== false); }
 
-function applyWovenFx(f, sp, dealt, src, inPool) {
+// Spread attacks (novas, waves, storms, blasts, pools: anything that hits
+// everything in an area) hit each enemy for about half of what a direct attack
+// of the same spell length does to its one target. Direct attacks stay the way
+// to hurt one tough target; spread ones are for crowds. SPREAD is that share,
+// and also the rate at which spread attacks set burns and poison going.
+const SPREAD = 0.5, DOT_DPS = 0.8;
+function setBurn(f, secs, spread) {
+  const dps = spread ? DOT_DPS * SPREAD : DOT_DPS;
+  f.burnDps = f.burn > 0 ? Math.max(f.burnDps || DOT_DPS, dps) : dps;
+  f.burn = Math.max(f.burn || 0, secs);
+}
+function setPoison(f, secs, dps) {
+  f.poisonDps = f.poison > 0 ? Math.max(f.poisonDps || 0, dps) : dps;
+  f.poison = Math.max(f.poison || 0, secs);
+}
+function applyWovenFx(f, sp, dealt, src, inPool, spreadHit) {
   if (!f || f.dead) return;
-  const fx = sp.fx;
-  if (fx.has('burn')) f.burn = Math.max(f.burn || 0, 2.5 * sp.dur);
+  const fx = sp.fx, spread = inPool || spreadHit;
+  if (fx.has('burn')) setBurn(f, 2.5 * sp.dur, spread);
   if (fx.has('slow')) f.slow = Math.max(f.slow || 0, 2.5 * sp.dur);
   if (fx.has('freeze') && !inPool) applyCC(f, 'freeze', 1.4 * sp.dur);
   if (fx.has('knock')) { if (inPool) applyCC(f, 'root', 0.6); else if (src) knock(f, src.x, src.y, 220 * sp.size); }
   if (fx.has('shock')) applyCC(f, 'stun', 0.35);
   if (fx.has('confuse')) applyCC(f, 'confuse', 2.5 * sp.dur);
-  if (fx.has('poison')) { f.poison = Math.max(f.poison || 0, 3); f.poisonDps = Math.max(f.poisonDps || 0, 0.8); }
+  if (fx.has('poison')) setPoison(f, 3, spread ? DOT_DPS * SPREAD : DOT_DPS);
   if (fx.has('drain') && dealt) healPlayer(dealt * 0.35 / potency); // dealt already carries the power
 }
 
@@ -1394,7 +1412,7 @@ function react(type, x, y, r) {
     } else if (el === 'fire' && poison) {
       z.life = 0;
       floatText(z.x, z.y - z.r - 8, 'IGNITED!', TYPE_COLOR.fire, 16);
-      aoe(z.x, z.y, z.r + 30, 5, 'fire', 220);
+      aoe(z.x, z.y, z.r + 30, 3, 'fire', 220);
       burst(z.x, z.y, '#ff8a3a', 40, 380);
       SFX.explode(false);
       shake = Math.max(shake, 8);
@@ -1410,7 +1428,7 @@ function wovenBurstAt(x, y, rad, dmg, sp) {
   for (const f of foes) {
     if (f.dead || Math.hypot(f.x - x, f.y - y) > rad + f.r) continue;
     const dealt = damageFoe(f, dmg, sp.elem);
-    applyWovenFx(f, sp, dealt, { x, y });
+    applyWovenFx(f, sp, dealt, { x, y }, false, true);
   }
   ring(x, y, rad, TYPE_COLOR[sp.elem], 0.45);
   fx.push({ kind: 'nova', elem: sp.elem, x, y, r: rad, life: 0.5, max: 0.5 });
@@ -1449,11 +1467,11 @@ function castWoven(sp) {
       return;
     }
     const rad = 150 * sp.size * (1 + 0.2 * (sp.count - 1));
-    wovenBurstAt(player.x, player.y, rad, 2 * sp.power, sp);
+    wovenBurstAt(player.x, player.y, rad, 1.2 * sp.power, sp); // half a bolt's 2.4: it hits everything around
     if (sp.finish === 'F') {
       // Echoing: a second pulse a moment later, on the caster's side
       const x = player.x, y = player.y, side = curSide, caster = player;
-      afterPlay(450, () => { if (state === 'play' || state === 'dead') withSide(side, () => wovenBurstAt(x, y, rad * 0.8, 1.2 * sp.power, sp), caster); });
+      afterPlay(450, () => { if (state === 'play' || state === 'dead') withSide(side, () => wovenBurstAt(x, y, rad * 0.8, 0.5 * sp.power, sp), caster); });
     }
     else if (sp.finish === 'W') zones.push({ type: 'woven', x: player.x, y: player.y, r: rad * 0.75, life: 2.5, max: 2.5, tick: 0, spec: sp, charged: 0, ringZone: true });
     else if (sp.finish === 'E') { for (const f of foes) if (!f.dead && !f.structure && Math.hypot(f.x - player.x, f.y - player.y) < rad + f.r) knock(f, player.x, player.y, 380); fx.push({ kind: 'cracks', ...crackLines(player.x, player.y, rad * 0.8, 7), life: 1.2, max: 1.2 }); }
@@ -1816,7 +1834,7 @@ function updateFoes(realDt) {
     if (f.burn > 0) {
       f.burn -= dt;
       f.burnTick = (f.burnTick || 0) - dt;
-      if (f.burnTick <= 0) { f.burnTick = 0.5; damageFoe(f, 0.4, 'fire'); }
+      if (f.burnTick <= 0) { f.burnTick = 0.5; damageFoe(f, (f.burnDps || DOT_DPS) * 0.5, 'fire'); }
       if (f.dead) continue;
     }
     for (const k of ['hex', 'fear', 'confuse', 'root']) if (f[k] > 0) f[k] -= dt;
@@ -1918,11 +1936,11 @@ function updateShots(dt) {
         if (s.fx === 'woven') { applyWovenFx(f, s.spec, dealt, s); react(s.type, s.x, s.y, 40); wovenFinishHit(s, f); }
         shotImpact(s, f);
         if (s.fx === 'slow') f.slow = 2.5;
-        if (s.fx === 'burn') f.burn = Math.max(f.burn || 0, 2);
+        if (s.fx === 'burn') setBurn(f, 2);
         if (s.fx === 'freeze') applyCC(f, 'freeze', 3);
         if (s.fx === 'hex') applyCC(f, 'hex', 6);
         if (s.fx === 'drain' && dealt) healPlayer(dealt * 0.6 / potency);
-        if (s.fx === 'poison') { f.poison = Math.max(f.poison, 3); f.poisonDps = Math.max(f.poisonDps, 0.6); }
+        if (s.fx === 'poison') setPoison(f, 3, 0.6);
         if (s.fx === 'explode') { SFX.explode(false); aoe(s.x, s.y, s.boomR, s.boom, s.type, 120); }
         else if (s.fx === 'woven') elemHit(ELEM_OF[s.type] || s.type, s.x, s.y, 0.8);
         if (s.pierce-- <= 0) s.life = 0;
@@ -2007,19 +2025,18 @@ function updateEffects(dt) {
       z.tick = 0.5;
       for (const f of foes) {
         if (f.dead || Math.hypot(f.x - z.x, f.y - z.y) > z.r + f.r) continue;
-        if (z.type === 'fire') { damageFoe(f, 1.5, 'fire'); continue; } // meteor crater
+        if (z.type === 'fire') { damageFoe(f, 0.4, 'fire'); continue; } // meteor crater
         if (z.type === 'mud') { applyCC(f, 'root', 0.7); continue; }
         if (z.type === 'vortex') { damageFoe(f, 0.5, 'air'); continue; }
         if (z.type === 'spring') continue;
         if (z.type === 'woven') {
-          const dealt = damageFoe(f, 0.5 * z.spec.power, z.spec.elem);
+          const dealt = damageFoe(f, 0.12 * z.spec.power, z.spec.elem);
           applyWovenFx(f, z.spec, dealt, z, true);
-          if (z.charged > 0) { damageFoe(f, 0.8, 'lightning'); applyCC(f, 'stun', 0.5); }
+          if (z.charged > 0) { damageFoe(f, 0.2, 'lightning'); applyCC(f, 'stun', 0.5); }
           continue;
         }
-        damageFoe(f, 0.6, 'poison');
-        f.poison = Math.max(f.poison, 2);
-        f.poisonDps = Math.max(f.poisonDps, 1);
+        damageFoe(f, 0.08, 'poison');
+        setPoison(f, 2, DOT_DPS * SPREAD);
       }
     }
   }
@@ -2063,7 +2080,7 @@ function updateEffects(dt) {
   for (const z of zones) if (z.life <= 0 && z.type === 'woven' && z.spec.finish === 'F' && z.r0 && !z.erupted) {
     // Erupting: the pool goes up in one last blast
     z.erupted = true; potency = z.pot || 1;
-    wovenBurstAt(z.x, z.y, z.r * 1.1, 3 * z.spec.power, z.spec);
+    wovenBurstAt(z.x, z.y, z.r * 1.1, 0.8 * z.spec.power, z.spec);
     puff(z.x, z.y, '#8a7a70', 3, 24, 40);
   }
   potency = 1;
@@ -2074,8 +2091,8 @@ function updateEffects(dt) {
     t.arm -= dt; t.life -= dt;
     if (t.arm > 0) continue;
     if (foes.some(f => !f.dead && Math.hypot(f.x - t.x, f.y - t.y) < f.r + 26)) {
-      if (t.spec) { wovenBurstAt(t.x, t.y, 85 * t.spec.size, 3.5 * t.spec.power, t.spec); SFX.explode(false); t.life = 0; continue; }
-      aoe(t.x, t.y, 75, 4, 'fire', 260);
+      if (t.spec) { wovenBurstAt(t.x, t.y, 85 * t.spec.size, 2.2 * t.spec.power, t.spec); SFX.explode(false); t.life = 0; continue; }
+      aoe(t.x, t.y, 75, 2.5, 'fire', 260);
       fx.push({ kind: 'nova', elem: 'fire', x: t.x, y: t.y, r: 75, life: 0.5, max: 0.5 });
       puff(t.x, t.y, '#8a7a70', 3, 20, 40);
       SFX.explode(false);
@@ -2131,7 +2148,14 @@ function updateEffects(dt) {
     potency = m.pot || 1;
     m.t -= dt;
     if (m.t <= 0) {
-      aoe(m.x, m.y, 200, 25, 'fire', 380);
+      // the meteor strikes its mark full on; the blast around it is spread thinner
+      for (const f of foes) {
+        if (f.dead) continue;
+        const d = Math.hypot(f.x - m.x, f.y - m.y);
+        if (d < 200 + f.r) { damageFoe(f, d < 40 + f.r ? 24 : 8, 'fire'); knock(f, m.x, m.y, 380); }
+      }
+      ring(m.x, m.y, 200, TYPE_COLOR.fire, 0.4);
+      react('fire', m.x, m.y, 200);
       SFX.explode(true);
       zones.push({ x: m.x, y: m.y, r: 140, life: 4, max: 4, tick: 0, type: 'fire', pot: potency });
       fx.push({ kind: 'cracks', ...crackLines(m.x, m.y, 220, 9), life: 2, max: 2 });
@@ -7270,6 +7294,7 @@ const HOWTO = [
   ['h', 'Spell power'],
   ['p', 'Length sets the tier: 2 Minor, 3 Adept, 4 Greater, 5 Monstrous, 6 Omni King, 7 Doomsday.'],
   ['p', 'Complexity adds power on top: using more different elements, and repeating them unevenly, raises it. You can see it beside the runes (like ×1.4).'],
+  ['p', 'Direct attacks (bolts, lances, spikes, darts) hit hardest. Attacks that spread out (novas, waves, storms, blasts, pools) hit each enemy for about half of what a direct attack of the same length does to its one target: direct attacks for one tough target, spread ones for crowds.'],
   ['h', 'Upgrades and finishes'],
   ['p', '3rd rune upgrades: Fire hits harder, Water lasts longer, Earth is bigger, Air adds shots, Spirit confuses or heals.'],
   ['p', '4th rune finishes, by shape. Bolt: Fire bursts, Water splashes, Earth shatters, Air chains, Spirit seeks. Wall: Fire explodes, Water endures, Earth towers, Air repels, Spirit soothes.'],
