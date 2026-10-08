@@ -4150,7 +4150,7 @@ function startTilt() {
         // "Allow motion" question. iPhones then keep saying no until the page is reopened.
         tilt.denied = true;
         tilt.denials = (tilt.denials || 0) + 1;
-        if (tilt.denials === 1) showBanner('Tilt was blocked', 'Tap “Tilt blocked” (top right) to be asked again · or drag to walk', 5);
+        if (tilt.denials === 1) showBanner('Tilt was blocked', 'Tap TILT (bottom right) to be asked again · or drag to walk', 5);
         else showBanner('Your phone is still blocking tilt', 'Close this page completely, open it again, and tap Allow when asked', 6);
       })
       .catch(() => { tilt.pending = false; tilt.asked = false; });
@@ -4201,9 +4201,16 @@ function liveTilt() {
   return { x: axis(tilt.raw.x - tilt.base.x), y: axis(tilt.raw.y - tilt.base.y) };
 }
 
+// Around the casting star: FIRE top right and FOLLOW/SPREAD top left (in the
+// gap between the rune slots and the star's side points), ARMY bottom left,
+// tilt and sound bottom right.
+function starTopY() {
+  const slotsBottom = PENT.slotY + PENT.slot / 2, sideTop = PENT.cy - PENT.R * 0.309 - PENT.S * 0.59;
+  return (slotsBottom + sideTop) / 2;
+}
 function fireButton() {
-  const r = Math.max(28, Math.min(36, W * 0.085));
-  return { x: mode === 'battle' ? 16 + r : W - 16 - r, y: H - 16 - r, r };
+  const r = Math.max(28, Math.min(34, W * 0.085));
+  return { x: W - 14 - r, y: starTopY(), r };
 }
 function fireButtonHit(x, y) {
   if (!player.loaded) return false;
@@ -4211,16 +4218,13 @@ function fireButtonHit(x, y) {
   return Math.hypot(x - b.x, y - b.y) < b.r + 8;
 }
 
-// battle's top-right column: map, clocks, eclipse clock, then the sound and tilt labels
+// battle's top-right column, under the map: score and kill tally, match clock, build clock
 function rightStack() {
-  const mapH = Math.min(160, W * 0.38) * ARENA_H / WORLD, clockY = 12 + mapH + 8, skyY = clockY + 40;
-  return { mapH, clockY, skyY, btnY: skyY + 82 };
+  const mapH = Math.min(160, W * 0.38) * ARENA_H / WORLD, scoreY = 12 + mapH + 20;
+  return { mapH, scoreY, tallyY: scoreY + 15, clockY: scoreY + 47, buildY: scoreY + 78 };
 }
-function soundRect() {
-  const s = Math.min(110, W * 0.26);
-  const y = mode === 'battle' && teams ? rightStack().btnY : 12 + s + 4;
-  return { x: W - s - 12, y: y + (isTouch ? 28 : 0), w: s, h: 24 };
-}
+function soundButton() { const r = 19; return { x: W - 14 - r, y: H - 14 - r, r }; }
+function tiltButton() { const b = soundButton(); return { x: b.x, y: b.y - b.r * 2 - 8, r: b.r }; }
 // battle orders panel, opened from a button under the sound label
 let ordersOpen = false;
 const ORDER_OPTS = [
@@ -4228,7 +4232,7 @@ const ORDER_OPTS = [
   ['protectTurrets', 'Protect turrets'], ['protectBase', 'Protect base'],
 ];
 function ordersPanel() {
-  const w = Math.min(360, W - 24), h = 510, x = W / 2 - w / 2, y = clamp((H - h) / 2, 10, 60);
+  const w = Math.min(360, W - 24), h = 570, x = W / 2 - w / 2, y = clamp((H - h) / 2, 10, 60);
   const bw = (w - 38) / 2, at = (i, y0) => ({ x: x + 14 + (i % 2) * (bw + 10), y: y0 + Math.floor(i / 2) * 38, w: bw, h: 32 });
   const move = [['follow', 'Follow me'], ['spread', 'Spread out']].map(([key, label], i) => ({ grp: 'move', key, label, ...at(i, y + 66) }));
   const rows = ['minion', 'titan'].map((grp, gi) => ORDER_OPTS.map(([key, label], i) => ({ grp, key, label, ...at(i, y + 150 + gi * 94) })));
@@ -4298,22 +4302,34 @@ function drawOrders() {
   }
   ctx.textAlign = 'left'; ctx.font = `italic 10px ${SERIF}`; ctx.fillStyle = '#999';
   ctx.fillText(`${teams.blue.minions} minions a wave`, lx, ly + 22);
+  // both sides' team powers, read live from what each army is made of
+  head('Team powers', P.y + 524, 'from what each army is made of');
+  const cw = (P.w - 70) / 5;
+  ['blue', 'red'].forEach((team, row) => {
+    const r = resOf(team), yy = P.y + 546 + row * 19;
+    ctx.textAlign = 'left'; ctx.font = `bold 11px ${SERIF}`; ctx.fillStyle = TEAM_COLOR[team];
+    ctx.fillText(team === 'blue' ? 'You' : 'Red', P.x + 14, yy);
+    CHARGE_TYPES.forEach((e, i) => {
+      const v = Math.round(r[e] * 100), gx = P.x + 56 + cw * i;
+      ctx.globalAlpha = v ? 1 : 0.35;
+      drawGlyph(ELEM_GLYPH[e], gx + 6, yy - 4, 11, TYPE_COLOR[e]);
+      ctx.textAlign = 'left'; ctx.fillStyle = '#eee'; ctx.font = `11px ${SERIF}`;
+      ctx.fillText(`${v}%`, gx + 15, yy);
+      ctx.globalAlpha = 1;
+    });
+  });
 }
 
 function soundHit(x, y) {
-  const r = soundRect();
-  return x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
+  const b = soundButton();
+  return Math.hypot(x - b.x, y - b.y) < b.r + 6;
 }
 
 const isTouch = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
-function tiltLabelRect() {
-  const s = Math.min(110, W * 0.26);
-  return { x: W - s - 12, y: mode === 'battle' && teams ? rightStack().btnY : 12 + s + 4, w: s, h: 24 };
-}
 function tiltLabelHit(x, y) {
   if (!isTouch) return false;
-  const r = tiltLabelRect();
-  return x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
+  const b = tiltButton();
+  return Math.hypot(x - b.x, y - b.y) < b.r + 6;
 }
 
 // ── input ─────────────────────────────────────────────────────────────────────
@@ -4375,6 +4391,7 @@ canvas.addEventListener('pointerdown', e => {
     return;
   }
   if (ordersHit(x, y)) return;
+  if (followHit(x, y)) { toggleOrder(); return; }
   const bb = buildButtonHit(x, y);
   if (bb) { if (bb.key === 'elem') teams.buildElem = bb.elem; else buildChoice(bb.key); return; }
   if (fireButtonHit(x, y)) { holdTilt(); fireLoaded(); tilt.pauseUntil = performance.now() + 400; return; }
@@ -6474,29 +6491,21 @@ function bar(x, y, w, h, frac, color, label) {
 }
 
 function drawHUD() {
-  const w = Math.min(180, W * 0.42);
+  const w = Math.min(180, mode === 'battle' ? W / 2 - 48 : W * 0.42); // battle leaves the top middle to the eclipse clock
   bar(14, 14, w, 16, player.hp / player.maxHp, '#d33', `HP ${Math.ceil(player.hp)}/${player.maxHp}`);
   bar(14, 36, w, 16, player.mana / player.maxMana, '#3a7bff', `Mana ${Math.floor(player.mana)}/${player.maxMana}${mode === 'battle' && cellOwner(player.x, player.y) === 2 ? '  · slow in enemy ground' : ''}`);
 
   ctx.font = '12px "Big Caslon", "Libre Caslon Text", Georgia, serif';
   ctx.fillStyle = '#ccc';
   ctx.textAlign = 'left';
-  if (mode === 'battle' && teams) {
-    ctx.font = 'bold 16px "Big Caslon", "Libre Caslon Text", Georgia, serif';
-    const g = groundLeader();
-    const bt = `You ${teams.blue.score}${g === 'blue' ? ` (+${GROUND_BONUS})` : ''}`, rt = `Red ${teams.red.score}${g === 'red' ? ` (+${GROUND_BONUS})` : ''}`;
-    ctx.fillStyle = TEAM_COLOR.blue; ctx.fillText(bt, 14, 72);
-    const bw = ctx.measureText(bt).width;
-    ctx.fillStyle = '#888'; ctx.fillText('·', 22 + bw, 72);
-    ctx.fillStyle = TEAM_COLOR.red; ctx.fillText(rt, 34 + bw, 72);
-  } else {
+  if (mode !== 'battle' || !teams) {
     ctx.fillStyle = '#ffd24a';
     ctx.font = 'bold 16px "Big Caslon", "Libre Caslon Text", Georgia, serif';
     ctx.fillText(`Score ${score.toLocaleString()}`, 14, 72);
   }
   ctx.fillStyle = '#ccc';
   ctx.font = '12px "Big Caslon", "Libre Caslon Text", Georgia, serif';
-  if (mode === 'battle' && teams) { drawMatchClock(W - 216, rightStack().clockY + 25); drawTally(14, 90); }
+  if (mode === 'battle' && teams) drawBattleRight();
   else { ctx.fillText(`Spells ${discovered.size}/${SPELL_COUNT}   Guardians ${bossesDown}/${BOSSES.length}`, 14, 90); drawHunt(14, 108); }
 
   const buffs = [];
@@ -6514,43 +6523,12 @@ function drawHUD() {
   let bx = 14;
   for (const [t, c] of buffs) {
     ctx.fillStyle = c;
-    ctx.fillText(t, bx, mode === 'battle' ? 162 : 140);
+    ctx.fillText(t, bx, mode === 'battle' ? 72 : 140);
     bx += ctx.measureText(t).width + 12;
   }
 
   drawMinimap();
   drawBuildButtons();
-  drawEclipseClock();
-  drawResonance();
-  {
-    const r = soundRect();
-    roundRect(r.x, r.y, r.w, r.h, 6);
-    ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fill();
-    ctx.strokeStyle = 'rgba(255,255,255,0.2)'; ctx.lineWidth = 1; ctx.stroke();
-    ctx.fillStyle = sfx.on ? '#ddd' : '#888';
-    ctx.font = '11px "Big Caslon", "Libre Caslon Text", Georgia, serif';
-    ctx.textAlign = 'center';
-    ctx.fillText(sfx.on ? '♪ Sound on' : '♪ Sound off', r.x + r.w / 2, r.y + 16);
-  }
-
-  if (isTouch) {
-    const r = tiltLabelRect();
-    const ok = !!tilt.raw;
-    const waiting = tilt.listening && !ok && performance.now() - tilt.startedAt < 1500;
-    roundRect(r.x, r.y, r.w, r.h, 6);
-    ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fill();
-    ctx.strokeStyle = ok ? 'rgba(125,255,74,0.6)' : 'rgba(255,255,255,0.2)'; ctx.lineWidth = 1; ctx.stroke();
-    ctx.fillStyle = ok ? '#bfffa0' : '#aaa';
-    ctx.font = '11px "Big Caslon", "Libre Caslon Text", Georgia, serif';
-    ctx.textAlign = 'center';
-    const quiet = tilt.raw && tiltStale();
-    ctx.fillText(quiet ? 'Tilt paused · drag' : ok ? 'Tilt on · level' : tilt.denied ? 'Tilt blocked' : waiting ? 'Tilt…' : 'Tilt off · retry', r.x + r.w / 2, r.y + 16);
-    if (tilt.listening && !ok && !waiting && !tilt.warned) {
-      tilt.warned = true;
-      showBanner('Tilt isn’t available here', 'Drag on the field to walk instead', 3.5);
-    }
-  }
-
   if (banner) {
     const a = Math.min(1, banner.life, (banner.max - banner.life) * 4);
     ctx.globalAlpha = Math.max(0, a);
@@ -6593,17 +6571,16 @@ function drawFireButton() {
   ctx.font = 'bold 11px "Big Caslon", "Libre Caslon Text", Georgia, serif';
   ctx.fillText(L ? `×${L.left}` : '', b.x, b.y + 14);
   ctx.fillStyle = col;
-  ctx.font = '11px "Big Caslon", "Libre Caslon Text", Georgia, serif';
-  const left = b.x < W / 2;
-  ctx.textAlign = left ? 'left' : 'right';
-  ctx.fillText(SPELLS[key].name, left ? 10 : W - 10, b.y - b.r - 12);
+  ctx.font = `bold 10px ${SERIF}`;
+  ctx.textAlign = 'center';
+  ctx.fillText(SPELLS[key].name, b.x, b.y - b.r - 6, b.r * 2 + 6);
 }
 
 // how much ground each side holds, and whose build turn is next
 // the match clock: big, and it warms up as time runs out
 function clockText(t) { return `${Math.floor(t / 60)}:${Math.floor(t % 60).toString().padStart(2, '0')}`; }
 // a dial counting down to the next build turn, beside the match clock
-function drawBuildClock(cx, cy) {
+function drawBuildClock(cx, cy, right) {
   const T = teams, r = 14;
   let frac, num, col, label, sub, now = false;
   if (T.time <= BUILD_CLOSE) { // the final stretch: no more building
@@ -6628,18 +6605,19 @@ function drawBuildClock(cx, cy) {
   ctx.beginPath(); ctx.arc(cx, cy, r - 1, -Math.PI / 2, -Math.PI / 2 + TAU * frac); ctx.stroke();
   ctx.fillStyle = col; ctx.textAlign = 'center'; ctx.font = `bold 14px ${SERIF}`;
   ctx.fillText(String(num), cx, cy + 5);
-  ctx.textAlign = 'left'; ctx.font = `bold 12px ${SERIF}`;
-  ctx.fillText(label, cx + r + 7, cy - 1);
+  const lx = right ? cx - r - 7 : cx + r + 7;
+  ctx.textAlign = right ? 'right' : 'left'; ctx.font = `bold 12px ${SERIF}`;
+  ctx.fillText(label, lx, cy - 1);
   ctx.globalAlpha = 1;
   ctx.fillStyle = '#bbb'; ctx.font = `italic 11px ${SERIF}`;
-  ctx.fillText(sub, cx + r + 7, cy + 12);
+  ctx.fillText(sub, lx, cy + 12);
 }
-function drawMatchClock(x, y) {
+function drawMatchClock(right, y) {
   const t = teams.time, late = t <= 30, end = t <= 10;
   const txt = clockText(Math.ceil(t));
   ctx.font = 'bold 26px "Big Caslon", "Libre Caslon Text", Georgia, serif';
   ctx.textAlign = 'left';
-  const tw = ctx.measureText(txt).width;
+  const tw = ctx.measureText(txt).width, x = right - 6 - tw;
   roundRect(x - 6, y - 25, tw + 12, 32, 8);
   ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fill();
   ctx.strokeStyle = end ? '#ff4a5a' : late ? '#ffd24a' : 'rgba(255,255,255,0.25)'; ctx.lineWidth = 1.5; ctx.stroke();
@@ -6648,7 +6626,6 @@ function drawMatchClock(x, y) {
   ctx.fillStyle = end ? '#ff6a6a' : late ? '#ffd24a' : '#fff';
   ctx.fillText(txt, x, y);
   ctx.globalAlpha = 1;
-  drawBuildClock(x + tw + 34, y - 9);
   // the last ten seconds count down in the middle of the field
   if (end && state === 'play') {
     ctx.textAlign = 'center';
@@ -6661,11 +6638,21 @@ function drawMatchClock(x, y) {
     ctx.globalAlpha = 1;
   }
 }
-// the kill tally, under the score
-function drawTally(x, y) {
+// battle's top-right column under the map: the score, the kill tally, the
+// match clock and the build clock
+function drawBattleRight() {
+  const st = rightStack(), R = W - 12;
+  const outlined = (t, x, y, c) => { ctx.strokeStyle = 'rgba(0,0,0,0.6)'; ctx.lineWidth = 3; ctx.strokeText(t, x, y); ctx.fillStyle = c; ctx.fillText(t, x, y); };
+  ctx.textAlign = 'right'; ctx.font = `bold 16px ${SERIF}`;
+  const rt = `Red ${teams.red.score}`, rw = ctx.measureText(rt).width;
+  outlined(rt, R, st.scoreY, TEAM_COLOR.red);
+  outlined('·', R - rw - 7, st.scoreY, '#aaa');
+  outlined(`You ${teams.blue.score}`, R - rw - 19, st.scoreY, TEAM_COLOR.blue);
   const tl = (teams.tally && teams.tally.blue) || 0;
-  ctx.font = `11px ${SERIF}`; ctx.textAlign = 'left'; ctx.fillStyle = '#ccc';
-  ctx.fillText(`Kill tally ${tl % 5}/5 · every 5 is a point`, x, y);
+  ctx.font = `11px ${SERIF}`;
+  outlined(`Kill tally ${tl % 5}/5`, R, st.tallyY, '#ddd');
+  drawMatchClock(R, st.clockY);
+  drawBuildClock(R - 16, st.buildY, true);
 }
 
 // The minion mix: a pentagon with one corner per element (laid out like the
@@ -6698,25 +6685,6 @@ function setMixAt(x, y) {
   teams.blue.dot = { x: dx, y: dy }; // kept relative to the pentagon
   if (net.role === 'guest') { const now = performance.now(); if (now - (net.mixT || 0) > 150) { net.mixT = now; net.send({ t: 'mix', mix: teams.blue.mix }); } }
 }
-// each side's resonance: the five powers and how strong they are right now
-function drawResonance() {
-  if (mode !== 'battle' || !teams || !teams.res) return;
-  const x0 = 14, w = Math.min(112, W * 0.3), cw = w / 5;
-  let y = 98;
-  roundRect(x0, y, w, 46, 6); ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fill();
-  ['blue', 'red'].forEach((team, row) => {
-    const r = resOf(team), yy = y + 4 + row * 21;
-    ctx.fillStyle = TEAM_COLOR[team]; ctx.fillRect(x0 + 2, yy + 2, 2, 15);
-    CHARGE_TYPES.forEach((e, i) => {
-      const v = Math.round(r[e] * 100), cx = x0 + 6 + cw * i + cw * 0.3;
-      ctx.globalAlpha = v ? 1 : 0.3;
-      drawGlyph(ELEM_GLYPH[e], cx, yy + 9, 10, TYPE_COLOR[e]);
-      ctx.fillStyle = "#eee"; ctx.font = `bold 10px ${SERIF}`; ctx.textAlign = "left";
-      if (v) ctx.fillText(String(v), cx + 6, yy + 13);
-      ctx.globalAlpha = 1;
-    });
-  });
-}
 // the field darkens while anything is eclipsed
 function drawEclipseTint() {
   if (mode !== 'battle' || !teams || !teams.eclipse) return;
@@ -6739,57 +6707,64 @@ function eclipseWatch(t) {
     else if (was === 'on') { castMessage(`${ELEM_NAME[e]} is back`, TYPE_COLOR[e]); SFX.unveil(); }
   });
 }
-// the eclipse clock: five rings, one per element, each with its mark turning.
-// A mark at 12 o'clock eclipses its element for 30 seconds. The clock stays
-// faint until an eclipse is near or on.
-function drawEclipseClock() {
-  if (mode !== 'battle' || !teams || !teams.eclipse) return;
+// where the eclipse clock stands this moment
+function eclipseView() {
+  if (mode !== 'battle' || !teams || !teams.eclipse) return null;
   const t = eclipseT();
-  eclipseWatch(t);
-  const st = rightStack(), bw = 160, bh = 76, x = W - 12 - bw, y = st.skyY, cx = x + 38, cy = y + 40, R0 = 6, dR = 6;
   const left = CHARGE_TYPES.map((e, i) => eclipseLeft(i, t));
   const soon = CHARGE_TYPES.map((e, i) => { const n = eclipseIn(i, t); return !left[i] && n <= ECLIPSE_WARN && t + n <= MATCH_TIME ? n : 0; });
-  const on = left.some(v => v), near = soon.filter(v => v), warnA = near.length ? 1 - Math.min(...near) / ECLIPSE_WARN : 0;
-  const vis = on ? 1 : near.length ? 0.5 + 0.5 * warnA : 0.3;
-  ctx.save(); ctx.globalAlpha = vis;
-  roundRect(x, y, bw, bh, 8); ctx.fillStyle = on ? 'rgba(8,4,20,0.75)' : 'rgba(0,0,0,0.45)'; ctx.fill();
-  if (on) { ctx.strokeStyle = 'rgba(199,125,255,0.6)'; ctx.lineWidth = 1.5; ctx.stroke(); }
+  const on = left.some(v => v), near = soon.filter(v => v);
+  return { t, left, soon, on, hot: on || near.length > 0, warnA: near.length ? 1 - Math.min(...near) / ECLIPSE_WARN : 0 };
+}
+// The eclipse clock: five rings, one per element, each with its mark turning.
+// A mark at 12 o'clock eclipses its element for 30 seconds. It sits at the top
+// middle, faint and behind everything, until an eclipse is near or on; then it
+// comes to the front. Drawn twice a frame, once for each place.
+function drawEclipseClock(front) {
+  const v = eclipseView();
+  if (!v) return;
+  if (!front) eclipseWatch(v.t); // announcements, once a frame
+  if (v.hot !== front) return;
+  const cx = W / 2, cy = 50, R0 = 6, dR = 5.5, Rout = R0 + 4 * dR;
+  ctx.save();
+  ctx.globalAlpha = front ? (v.on ? 1 : 0.6 + 0.4 * v.warnA) : 0.28;
+  if (front) circle(cx, cy, Rout + 8, 'rgba(8,4,20,0.8)', v.on ? 'rgba(199,125,255,0.75)' : 'rgba(255,255,255,0.3)', 1.5);
   // 12 o'clock: the eclipse line and its dark sun
-  const top = cy - R0 - 4 * dR - 6;
-  ctx.strokeStyle = 'rgba(255,240,200,0.35)'; ctx.lineWidth = 1;
+  const top = cy - Rout - 5;
+  ctx.strokeStyle = 'rgba(255,240,200,0.45)'; ctx.lineWidth = 1;
   ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx, top); ctx.stroke();
   ctx.shadowColor = '#ffe9b0'; ctx.shadowBlur = 6; circle(cx, top - 1, 3.5, '#0a0614', '#ffe9b0', 1.2); ctx.shadowBlur = 0;
   CHARGE_TYPES.forEach((e, i) => {
-    const r = R0 + i * dR, col = TYPE_COLOR[e], a = ringAngle(i, t);
-    if (left[i]) {
+    const r = R0 + i * dR, col = TYPE_COLOR[e], a = ringAngle(i, v.t), left = v.left[i], soon = v.soon[i];
+    if (left) {
       // eclipsed: a dark band, with the time left running down in colour
-      ctx.strokeStyle = 'rgba(0,0,0,0.7)'; ctx.lineWidth = 4;
+      ctx.strokeStyle = 'rgba(0,0,0,0.75)'; ctx.lineWidth = 4;
       ctx.beginPath(); ctx.arc(cx, cy, r, 0, TAU); ctx.stroke();
       ctx.strokeStyle = col; ctx.lineWidth = 2.5;
-      ctx.beginPath(); ctx.arc(cx, cy, r, -Math.PI / 2, -Math.PI / 2 + TAU * left[i] / ECLIPSE_LEN); ctx.stroke();
+      ctx.beginPath(); ctx.arc(cx, cy, r, -Math.PI / 2, -Math.PI / 2 + TAU * left / ECLIPSE_LEN); ctx.stroke();
     } else {
-      ctx.strokeStyle = soon[i] ? col : 'rgba(255,255,255,0.16)'; ctx.lineWidth = soon[i] ? 1.5 : 1;
+      ctx.strokeStyle = front && !soon ? 'rgba(255,255,255,0.18)' : col; ctx.lineWidth = soon ? 1.6 : 1;
       ctx.beginPath(); ctx.arc(cx, cy, r, 0, TAU); ctx.stroke();
     }
     const mx = cx + Math.sin(a) * r, my = cy - Math.cos(a) * r;
-    if (left[i]) circle(mx, my, 3.2, '#0a0614', col, 1.5);
-    else { if (soon[i]) { ctx.shadowColor = col; ctx.shadowBlur = 8; } circle(mx, my, 3.2, col, 'rgba(0,0,0,0.6)', 1); ctx.shadowBlur = 0; }
+    if (left) circle(mx, my, 3, '#0a0614', col, 1.5);
+    else { if (soon) { ctx.shadowColor = col; ctx.shadowBlur = 8; } circle(mx, my, 3, col, 'rgba(0,0,0,0.6)', 1); ctx.shadowBlur = 0; }
   });
-  // words
-  const tx = x + 78;
-  ctx.textAlign = 'left';
-  ctx.fillStyle = on ? '#e9d7ff' : '#cfc8e0'; ctx.font = `bold 10px ${SERIF}`;
-  ctx.fillText('ECLIPSE CLOCK', tx, y + 15);
-  const rows = [];
-  CHARGE_TYPES.forEach((e, i) => { if (left[i]) rows.push([e, `${Math.ceil(left[i])}s`]); });
-  CHARGE_TYPES.forEach((e, i) => { if (soon[i]) rows.push([e, `in ${Math.ceil(soon[i])}s`]); });
-  if (!rows.length) { ctx.fillStyle = '#999'; ctx.font = `italic 10px ${SERIF}`; ctx.fillText('all elements clear', tx, y + 31); }
-  rows.slice(0, 3).forEach(([e, txt], k) => {
-    const ry = y + 31 + k * 16;
-    drawGlyph(ELEM_GLYPH[e], tx + 5, ry - 4, 10, TYPE_COLOR[e]);
-    ctx.textAlign = 'left'; ctx.fillStyle = TYPE_COLOR[e]; ctx.font = `bold 11px ${SERIF}`; ctx.fillText(ELEM_NAME[e], tx + 14, ry);
-    ctx.fillStyle = '#ddd'; ctx.font = `10px ${SERIF}`; ctx.textAlign = 'right'; ctx.fillText(txt, x + bw - 6, ry);
-  });
+  if (front) {
+    // which element, and for how long
+    const rows = [];
+    CHARGE_TYPES.forEach((e, i) => { if (v.left[i]) rows.push([e, `${ELEM_NAME[e].toUpperCase()} ECLIPSED · ${Math.ceil(v.left[i])}s`, true]); });
+    CHARGE_TYPES.forEach((e, i) => { if (v.soon[i]) rows.push([e, `${ELEM_NAME[e]} eclipsed in ${Math.ceil(v.soon[i])}s`, false]); });
+    rows.slice(0, 3).forEach(([e, txt, out], k) => {
+      const y = cy + Rout + 26 + k * 19;
+      ctx.font = `${out ? 'bold ' : ''}11px ${SERIF}`;
+      const tw = ctx.measureText(txt).width + 14;
+      roundRect(cx - tw / 2 - 8, y - 12, tw + 16, 17, 8); ctx.fillStyle = 'rgba(8,4,20,0.78)'; ctx.fill();
+      drawGlyph(ELEM_GLYPH[e], cx - tw / 2 + 3, y - 4, 10, TYPE_COLOR[e]);
+      ctx.textAlign = 'left'; ctx.fillStyle = out ? TYPE_COLOR[e] : '#ddd';
+      ctx.fillText(txt, cx - tw / 2 + 14, y);
+    });
+  }
   ctx.restore();
 }
 function drawMixTri() {
@@ -6824,7 +6799,16 @@ function drawMixTri() {
 
 function orderButton() {
   const r = Math.max(26, Math.min(32, W * 0.075));
-  return { x: W - 16 - r, y: H - 16 - r, r };
+  return { x: 16 + r, y: H - 16 - r, r };
+}
+function followButton() {
+  const r = Math.max(24, Math.min(29, W * 0.07));
+  return { x: 14 + r, y: starTopY(), r };
+}
+function followHit(x, y) {
+  if (mode !== 'battle' || !teams) return false;
+  const b = followButton();
+  return Math.hypot(x - b.x, y - b.y) < b.r + 6;
 }
 function orderHit(x, y) {
   if (mode !== 'battle' || !teams) return false;
@@ -6846,7 +6830,39 @@ function drawOrderButton() {
   ctx.font = `bold 11px ${SERIF}`;
   ctx.fillText('ARMY', b.x, b.y - 1);
   ctx.font = `9px ${SERIF}`;
-  ctx.fillText(follow ? 'following' : 'spread out', b.x, b.y + 11);
+  ctx.fillText('commands', b.x, b.y + 11);
+}
+// follow me / spread out, one tap away
+function drawFollowButton() {
+  if (mode !== 'battle' || !teams) return;
+  const b = followButton(), follow = teams.order === 'follow';
+  circle(b.x, b.y, b.r, follow ? 'rgba(74,168,255,0.85)' : 'rgba(16,22,40,0.9)', TEAM_COLOR.blue, 2.5);
+  ctx.textAlign = 'center';
+  ctx.fillStyle = follow ? '#08111e' : '#cfe6ff';
+  ctx.font = `bold 10px ${SERIF}`;
+  ctx.fillText(follow ? 'FOLLOW' : 'SPREAD', b.x, b.y - 1);
+  ctx.font = `8px ${SERIF}`;
+  ctx.fillText(follow ? 'tap: spread' : 'tap: follow', b.x, b.y + 10);
+}
+// sound and tilt, bottom right of the casting star
+function drawSoundTilt() {
+  const s = soundButton();
+  circle(s.x, s.y, s.r, 'rgba(16,14,30,0.88)', sfx.on ? 'rgba(199,125,255,0.8)' : 'rgba(255,255,255,0.25)', 1.5);
+  ctx.textAlign = 'center'; ctx.fillStyle = sfx.on ? '#e9d7ff' : '#888';
+  ctx.font = `bold 13px ${SERIF}`; ctx.fillText('♪', s.x, s.y + 1);
+  ctx.font = `8px ${SERIF}`; ctx.fillText(sfx.on ? 'on' : 'off', s.x, s.y + 11);
+  if (!isTouch) return;
+  const b = tiltButton(), ok = !!tilt.raw, quiet = ok && tiltStale();
+  const waiting = tilt.listening && !ok && performance.now() - tilt.startedAt < 1500;
+  const live = ok && !quiet;
+  circle(b.x, b.y, b.r, 'rgba(16,14,30,0.88)', live ? 'rgba(125,255,74,0.75)' : tilt.denied ? 'rgba(255,106,106,0.8)' : 'rgba(255,255,255,0.25)', 1.5);
+  ctx.fillStyle = live ? '#bfffa0' : tilt.denied ? '#ff9a9a' : '#aaa';
+  ctx.font = `bold 9px ${SERIF}`; ctx.fillText('TILT', b.x, b.y);
+  ctx.font = `8px ${SERIF}`; ctx.fillText(quiet ? 'paused' : ok ? 'on' : tilt.denied ? 'blocked' : waiting ? '…' : 'retry', b.x, b.y + 10);
+  if (tilt.listening && !ok && !waiting && !tilt.warned) {
+    tilt.warned = true;
+    showBanner('Tilt isn’t available here', 'Drag on the field to walk instead', 3.5);
+  }
 }
 
 function drawBuildButtons() {
@@ -7190,7 +7206,7 @@ const HOWTO = [
   ['h', 'Move'],
   ['p', 'Tilt your phone to walk.'],
   ['p', 'No tilt? Hold your finger on the field and drag the way you want to go.'],
-  ['p', 'Says “Tilt blocked”? Tap it to be asked again, and tap Allow. If it stays blocked (a phone call can do this), close the page completely, open it again, and tap Allow.'],
+  ['p', 'The TILT button (bottom right) says “blocked”? Tap it to be asked again, and tap Allow. If it stays blocked (a phone call can do this), close the page completely, open it again, and tap Allow.'],
   ['p', 'Walk into the boat to sail across the lake.'],
   ['h', 'Shoot'],
   ['p', 'Tap the field to fire an arrow at that spot. Hold to keep firing.'],
@@ -7212,9 +7228,10 @@ const HOWTO = [
   ['p', 'Your base is on the left, red’s is on the right. Most points after 5 minutes wins.'],
   ['points'],
   ['p', 'Every 10 seconds someone gets a build turn. Pick an element, then build a turret where you stand (it claims ground) or send a titan. A dial beside the clock counts down to the next turn. No building in the last 15 seconds.'],
-  ['p', 'Top right: the map (with each side’s share of the ground written on it), the match clock, the build clock and the eclipse clock.'],
+  ['p', 'Top right: the map (each side’s share of the ground is written on it), then your score and kill tally, the match clock and the build clock. The eclipse clock waits faintly at the top in the middle.'],
   ['p', 'The eclipse clock has a ring for each element. When an element’s mark reaches 12 o’clock it is eclipsed and doesn’t work for 30 seconds. See “Eclipses” below.'],
-  ['p', 'ARMY (bottom right) opens your army commands: Follow me or Spread out, what your minions and titans attack or protect when spread out, and the minion mix (drag the dot to choose which minions you send). In battle the FIRE button is bottom left.'],
+  ['p', 'Around the casting star: FOLLOW / SPREAD (top left) keeps your army with you or lets it push; FIRE (top right) sends a loaded attack; ARMY (bottom left) opens your army commands; tilt and sound are bottom right.'],
+  ['p', 'Army commands: follow or spread, what your minions and titans attack or protect when spread out, the minion mix (drag the dot to choose which minions you send) and both teams’ powers.'],
   ['h', 'Pausing'],
   ['p', 'Leave the game (another app, tab or screen) and it pauses: an adventure or a battle against red waits for you. Tap to carry on. A duel with a friend never pauses.'],
   ['h', 'Tips'],
@@ -7231,9 +7248,9 @@ const HOWTO = [
   ['p', 'What your army is made of gives the whole team a power. It is read live from your units on the field: a minion counts 1, a turret 3, a titan 4.'],
   ['res'],
   ['p', 'Each power grows with that element’s share of your army, with diminishing returns: the first part of a mix gives the most. A one-element army also gets countered easily. Mixing pays, and leaning into a favourite is fine too.'],
-  ['p', 'The box under your score shows both sides’ powers (blue row is you, red row is them).'],
+  ['p', 'The Army commands panel shows both sides’ powers (you, then red).'],
   ['h', 'Eclipses'],
-  ['p', 'The eclipse clock (top right) has five rings, one for each element, each with a mark turning at its own steady pace. The clock stays faint until an eclipse is close.'],
+  ['p', 'The eclipse clock (top middle) has five rings, one for each element, each with a mark turning at its own steady pace. It stays faint, behind everything, until an eclipse is close; then it comes to the front.'],
   ['p', 'When a mark reaches 12 o’clock, that element is eclipsed for 30 seconds: spells made of it can’t be cast, and minions, turrets, titans and wizards of that element stop fighting. It counts for both sides.'],
   ['p', 'Marks can reach the top close together, so two eclipses can overlap. Most matches have one or two; some have more, and once in a while a whole match is an eclipse season with them spread all the way through.'],
   ['p', 'You get 8 seconds’ warning: the element’s ring lights up and its point on the casting star pulses. While eclipsed it is crossed out with the seconds left. Arrows always work.'],
@@ -7828,6 +7845,7 @@ function render() {
   drawWorld();
   drawAtmosphere();
   drawEclipseTint();
+  drawEclipseClock(false); // faint, behind everything
   if (flash > 0) { ctx.fillStyle = `rgba(255,246,176,${flash * 0.7})`; ctx.fillRect(0, 0, W, H); }
   if (state === 'play' && timeStop > 0) { ctx.fillStyle = 'rgba(200,200,220,0.28)'; ctx.fillRect(0, 0, W, H); }
   else if (state === 'play' && timeWarp > 0) { ctx.fillStyle = 'rgba(60,120,255,0.13)'; ctx.fillRect(0, 0, W, H); }
@@ -7835,7 +7853,10 @@ function render() {
   drawHUD();
   drawPentagram();
   drawFireButton();   // on top of the pentagram's backdrop
+  drawFollowButton();
   drawOrderButton();
+  drawSoundTilt();
+  drawEclipseClock(true); // an eclipse near or on: in front
   drawOrders();
   if (state === 'dead') drawDead();
   if (state === 'won') drawWon();
