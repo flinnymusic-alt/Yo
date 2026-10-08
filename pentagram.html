@@ -1716,7 +1716,7 @@ function castSequence() {
   if (!sp) {
     player.mana = Math.max(0, player.mana - 1);
     castMessage('…fizzle', '#888');
-    SFX.fizzle();
+    if (player === hostP) SFX.fizzle();
     burst(player.x, player.y, '#777', 10, 120);
     return;
   }
@@ -1735,12 +1735,10 @@ function castSequence() {
     const n = sp.shots || TIER_SHOTS[tier];
     player.loaded = { key, left: n };
     castMessage(`${sp.name} ×${n}${potTxt} · tap FIRE`, TIER_COLOR[tier]);
-    SFX.weave(key); SFX.loaded();
-    if (sp.fire) SFX.summon();
+    if (player === hostP) { SFX.weave(key); SFX.loaded(); if (sp.fire) SFX.summon(); } // (only your own casts chime)
   } else {
     if (tier >= 4) shake = Math.max(shake, (tier - 3) * 4);
-    SFX.weave(key);
-    (sp.kind === 'heal' ? SFX.heal : sp.kind === 'summon' ? SFX.summon : SFX.buff)();
+    if (player === hostP) { SFX.weave(key); (sp.kind === 'heal' ? SFX.heal : sp.kind === 'summon' ? SFX.summon : SFX.buff)(); }
     castWithPotency(key, () => sp.cast());
   }
   if (!discovered.has(key)) {
@@ -2670,10 +2668,12 @@ function addUnit(team, kind, x, y, elem) {
     kx: 0, ky: 0, slow: 0, poison: 0, poisonDps: 0, poisonTick: 0, flash: 0, hitCd: 0, txtCd: 0,
     wob: rnd(0, TAU), dead: false, boss: false, wall: 0, laserT: 0, slot: rnd(0, TAU), walk: 0, slamT: 0,
   };
-  // the computer's units: the same at every level, except Very Hard's tougher, harder-hitting army
+  // the computer's units: tuned per level (AI_UNIT), Very Hard's tougher and harder-hitting
+  // (VH_EDGE), and a bit tougher still against friends playing together (see crowdEdge)
   if (isAI(team) && !def.structure) {
-    u.power = vhEdge() ? VH_EDGE.power : 1;
-    if (vhEdge()) u.hp = u.maxHp = def.hp * VH_EDGE.hp;
+    const c = crowdEdge() * (AI_UNIT[difficulty] || 1);
+    u.power = (vhEdge() ? VH_EDGE.power : 1) * c;
+    if (vhEdge() || c !== 1) u.hp = u.maxHp = def.hp * (vhEdge() ? VH_EDGE.hp : 1) * c;
   }
   u.id = ++unitSeq;
   (units[team] || (units[team] = [])).push(u);
@@ -2867,7 +2867,7 @@ function startBattle(diff, list = ['blue', 'red'], guests = []) {
   banner = null; castMsg = null; reveal = null; wonShown = false;
   seq = []; curNode = null;
   // Every level starts with the same army; the commander is what changes (see aiBrain).
-  // Very Hard alone gives the computer more: see VH_EDGE.
+  // Very Hard gives the computer more (VH_EDGE); AI_UNIT tunes Hard and Very Hard.
   teams = {
     buildElem: 'fire', // the element of your next turret or titan
     order: 'spread', // your army: 'spread' pushes on its own, 'follow' sticks with you
@@ -3407,10 +3407,24 @@ const AI_SKILL = { easy: 0.25, medium: 0.5, hard: 1, vhard: 1 };
 // Hard and Very Hard: the computer's wizards cast real spells
 const redCasts = () => difficulty === 'hard' || difficulty === 'vhard';
 // Very Hard: the computer already plays as well as it can, so on top of that
-// it gets a bigger, tougher army and wizards that cast more often. Tuned in
+// it gets a bigger, tougher army, and wizards with more mana. Tuned in
 // simulated matches so Very Hard is about twice as hard as Hard: to fight it
 // to a draw your army needs about twice the fighting strength (damage × health) it needs on Hard.
 const VH_EDGE = { minions: 1.35, wizards: 2, hp: 1.275, power: 1.275, cast: 1.45 };
+// How long the computer's wizards wait between spells (×), and its units'
+// health and damage (×), per level. Their spells now burn, poison, freeze and
+// shove your whole army (and their walls stop your shots), so these were
+// re-tuned in simulated matches to keep Hard and Very Hard where they were.
+const AI_CAST_GAP = { hard: 1, vhard: 2.3 };
+const AI_UNIT = { hard: 0.8, vhard: 1 };
+// Friends playing together on one team: the computer's units get 20% more
+// health and damage for each player past the first on the biggest team.
+const CROWD_EDGE = 0.2;
+function crowdEdge() {
+  if (!teams || !heroes.length) return 1;
+  const most = Math.max(...TEAMS.map(t => humansOn(t).length));
+  return 1 + CROWD_EDGE * Math.max(0, most - 1);
+}
 const vhEdge = () => difficulty === 'vhard' && mode === 'battle';
 const aiSkill = () => AI_SKILL[difficulty] ?? 0.5;
 // a team nobody is playing is the computer's
@@ -3638,7 +3652,7 @@ function updateMages(team, dt) {
     }
     u.think = (u.think ?? rnd(1, 3)) - dt;
     if (u.think > 0) continue;
-    u.think = rnd(2.2, 3.4) / (vhEdge() ? VH_EDGE.cast : 1);
+    u.think = rnd(2.2, 3.4) * (AI_CAST_GAP[difficulty] || 1) / (vhEdge() ? VH_EDGE.cast : 1);
     const key = chooseSpell(u, m);
     if (key) aiCast(u, m, key);
   }
@@ -4579,7 +4593,12 @@ function lobbyEl() {
     #lobby .chips { flex: 1; display: flex; gap: 5px; }
     #lobby .chips .fixed { flex: 1; color: #ccc; font-size: 14px; }
     #lobby button.chip { flex: 1; width: auto; margin: 0; padding: 8px 2px; border: 2px solid #3a3550; background: transparent; color: #aaa; font: 13px "Big Caslon", "Libre Caslon Text", Georgia, serif; }
-    #lobby button.chip.on { background: #262040; color: #fff; font-weight: bold; }`;
+    #lobby button.chip.on { background: #262040; color: #fff; font-weight: bold; }
+    @media (max-width: 360px) {
+      #lobby .card { padding: 14px 12px; }
+      #lobby .row > span { flex-basis: 62px; font-size: 13px; }
+      #lobby button.chip { font-size: 11.5px; padding: 8px 0; letter-spacing: -0.2px; }
+    }`;
   document.head.appendChild(st);
   document.body.appendChild(el);
   // taps inside the lobby must reach its buttons and input, not the game
@@ -7868,6 +7887,7 @@ const HOWTO = [
   ['p', 'Up to three people can play a battle together, each on their own phone. One hosts and gets a code; the others type it in to join.'],
   ['p', 'The host picks two or three teams and who plays on which: all of you on one team against the computer, two of you against the computer, or each of you against the others. The computer plays every team nobody is on.'],
   ['p', 'Friends on the same team share its army, its build turns (taking them in turn) and its points. Each of you sees your own team as blue, with your base on the left.'],
+  ['p', 'When friends team up, the computer’s armies are a little tougher: 20% more health and damage for each extra player on the biggest team.'],
   ['h', 'Pausing'],
   ['p', 'Leave the game (another app, tab or screen) and it pauses: an adventure or a battle against the computer waits for you. Tap to carry on. A game with friends never pauses.'],
   ['h', 'Tips'],
@@ -7915,7 +7935,7 @@ const HOWTO = [
   ['p', 'Swap the last two runes and you get a different spell. A few special spells break the pattern; chests and scrolls teach them.'],
   ['h', 'Difficulty'],
   ['p', 'Red always plays to win. Easy and Medium differ in how well red plays: how often it rethinks, how good its targets and builds are, how well it masses, defends and focuses fire. Hard plays as well as red can, and its wizards cast real spells at you.'],
-  ['p', 'Very Hard is about twice as hard as Hard: on top of that, red’s waves are bigger (14 minions instead of 10), its units are tougher and hit harder, and its wizards cast more often.'],
+  ['p', 'Very Hard is about twice as hard as Hard: on top of that, red’s waves are bigger (14 minions instead of 10), its units are tougher and hit harder, and its wizards have more mana.'],
 ];
 function drawHowTo(y, bx, bw) {
   menuButton({ title: 'How to Play', color: '#ffd24a', x: bx, y, w: bw, h: 44 });
@@ -8454,7 +8474,7 @@ function drawPaused() {
     // where things stand: the score and the time left
     y += 32;
     ctx.font = `bold 15px ${SERIF}`;
-    const parts = [[`You ${teams.blue.score}`, TEAM_COLOR.blue], ['  ·  ', '#888'], [`Red ${teams.red.score}`, TEAM_COLOR.red], ['  ·  ', '#888'], [`${clockText(Math.ceil(teams.time))} left`, '#fff']];
+    const parts = TEAMS.flatMap(t => [[`${teamLabel(t)} ${teams[t].score}`, TEAM_COLOR[t]], ['  ·  ', '#888']]).concat([[`${clockText(Math.ceil(teams.time))} left`, '#fff']]);
     let x = W / 2 - parts.reduce((a, [p]) => a + ctx.measureText(p).width, 0) / 2;
     ctx.textAlign = 'left';
     for (const [p, c] of parts) { ctx.fillStyle = c; ctx.fillText(p, x, y); x += ctx.measureText(p).width; }
