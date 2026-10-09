@@ -4475,7 +4475,7 @@ function guestUpdate(dt) {
   // tell the host where you are (in their coordinates)
   net.posT -= dt;
   if (net.posT <= 0 && state === 'play') {
-    net.posT = 0.05;
+    net.posT = lobby.guestPath && lobby.guestPath.relay ? 0.1 : 0.05; // (half as often on the slower backup route)
     const q = V(player.x, player.y), f = V(player.face.x, player.face.y);
     net.send({ t: 'pos', x: q.x, y: q.y, fx: f.x, fy: f.y, tp: player.tp });
   }
@@ -4488,6 +4488,7 @@ function leaveOnline(quiet) {
   if (!versus && !lobby.role) return;
   if (!quiet) try { net.send({ t: 'bye' }); } catch (_) {}
   if (net.role === 'guest') {
+    if (lobby.role === 'guest') lobby.role = 'gone'; // (the paths close in a moment: nothing more from them)
     turnArena(null); Object.assign(view, { team: 'blue', on: false, ux: 0, uy: 1 }); hostTerr = null;
     // a friend's phone only shows the host's battle: leaving it means back to the menu
     if (state === 'play' || state === 'dead' || state === 'reveal') { state = 'title'; menuPage = 'main'; }
@@ -4499,33 +4500,46 @@ function leaveOnline(quiet) {
 }
 
 // ── lobby: host a game or join one with a code ──
-// Two ways to find each other are tried side by side: PeerJS's free
-// matchmaking server, and Trystero, which meets through public Nostr relays.
-// If one is down the other still works. A friend says hello on every path
-// that opens; the host answers the first hello from each friend with a
-// welcome (and their slot, Friend 1 or 2) on that path, and the friend plays
-// on the path the welcome came on. After that the phones talk directly.
+// Three ways to find each other are tried side by side. PeerJS's free
+// matchmaking server and Trystero (which meets through public Nostr relays)
+// connect the two phones directly. Some networks never allow that, so there's
+// a backup route too: public MQTT message servers pass the messages along,
+// which is a little slower. A friend says hello on every path that opens; the
+// host answers the first hello from each friend with a welcome (and their
+// slot, Friend 1 or 2) on that path, and the friend plays on the path the
+// welcome came on.
 const PEER_PREFIX = 'pentagram-duel-';
 const PEERJS_URL = 'https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js';
 const TRYSTERO_URL = 'https://cdn.jsdelivr.net/npm/trystero@0.26.0/+esm';
 const TRYSTERO_APP = 'pentagram-duel-v1';
-// relay servers for when two networks can't reach each other directly
-const TURN = [{ urls: ['turn:eu-0.turn.peerjs.com:3478', 'turn:us-0.turn.peerjs.com:3478'], username: 'peerjs', credential: 'peerjsp' }];
-const ICE_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }, ...TURN];
+// servers that pass the traffic on when two networks can't reach each other directly
+const TURN = [
+  { urls: ['turn:eu-0.turn.peerjs.com:3478', 'turn:us-0.turn.peerjs.com:3478'], username: 'peerjs', credential: 'peerjsp' },
+  { urls: ['turn:openrelay.metered.ca:80', 'turn:openrelay.metered.ca:443', 'turns:openrelay.metered.ca:443?transport=tcp'], username: 'openrelayproject', credential: 'openrelayproject' },
+];
+const ICE_SERVERS = [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302', 'stun:stun.cloudflare.com:3478'] }, ...TURN];
+// the backup route's message servers (any one that both phones reach will do)
+const RELAYS = ['wss://broker.emqx.io:8084/mqtt', 'wss://broker.hivemq.com:8884/mqtt', 'wss://test.mosquitto.org:8081/mqtt', 'wss://mqtt.eclipseprojects.io/mqtt'];
+const RELAY_TOPIC = 'space-wizard-duel/';
+const RELAY_AFTER = 8;  // seconds a friend waits for a direct connection before trying the backup route as well
+const RELAY_SNAP = 0.2; // seconds between battle pictures on the backup route
 const MAX_FRIENDS = 2;
 const NET_V = 2; // the lobby and pictures changed with three-player battles
 const OLD_COPY = 'You and the host have different versions of Space Wizard. Both of you reload the page, then try again.';
 const OLD_FRIEND = 'A friend tried to join with an older copy of Space Wizard. Ask them to reload the game page (or close it and open the link again), then join again.';
-const NO_DIRECT = 'Found the game, but the two phones couldn’t connect directly. Some networks block this (often mobile data, or school and work Wi-Fi): try both phones on the same Wi-Fi, or switch one between Wi-Fi and mobile data. Still trying…';
-const NO_DIRECT_HOST = 'A friend found your game, but your phones couldn’t connect directly. Some networks block this: try both phones on the same Wi-Fi, or switch one between Wi-Fi and mobile data.';
+const NO_DIRECT = 'Found the game, but these networks won’t let the two phones connect directly. Trying the backup route…';
+const NO_DIRECT_HOST = 'A friend found your game, but your networks won’t let the phones connect directly. They’ll come in by the backup route…';
 const GAME_URL = 'https://flinnymusic-alt.github.io/Yo/pentagram.html';
 // inside another page (like the Claude artifact viewer) the connection services may be blocked
 const embedded = (() => { try { return window.top !== window.self; } catch (_) { return true; } })();
 // role/code: this phone's part; paths: the ways being tried; links (host): the
 // friends who joined; guestPath (friend): the path to the host; room (friend):
-// the host's latest setup; three/diff (host): the setup being chosen
+// the host's latest setup; three/diff (host): the setup being chosen; note:
+// something to tell the players (soft: news, which a warning isn't covered by);
+// found (friend): the host's phone answered; relayOn: the backup route is open
 const lobby = { role: null, code: null, paths: [], links: [], guestPath: null, state: {}, try: null, started: false,
-                three: false, diff: 'medium', tok: null, myId: null, room: null, note: null, lastCode: null };
+                three: false, diff: 'medium', tok: null, myId: null, room: null, note: null, soft: false, lastCode: null,
+                found: false, relayOn: false };
 
 function loadPeer() {
   if (window.Peer) return Promise.resolve();
@@ -4538,7 +4552,8 @@ function loadPeer() {
 }
 function hangUp() {
   for (const p of lobby.paths) try { p.close(); } catch (_) {}
-  Object.assign(lobby, { paths: [], links: [], guestPath: null, role: null, state: {}, try: null, started: false, myId: null, room: null, note: null });
+  Object.assign(lobby, { paths: [], links: [], guestPath: null, role: null, state: {}, try: null, started: false, myId: null, room: null, note: null,
+                         soft: false, found: false, relayOn: false });
   keepAwake(false);
 }
 
@@ -4577,7 +4592,10 @@ async function checkForUpdate() {
   } catch (_) {}
 }
 // load the newest copy (a fresh address, so no old copy is served from the cache)
-function reloadFresh() { location.href = location.pathname + '?v=' + Date.now(); }
+function reloadFresh() {
+  const rejoin = (lobby.role === 'guest' || lobby.role === 'gone') && lobby.code ? '#join=' + lobby.code : ''; // (a friend joins the same game again)
+  location.href = location.pathname + '?v=' + Date.now() + rejoin;
+}
 
 // the host: a message arrived from `key` (a connection or a peer id) on some path
 function hostData(m, key, send, close) {
@@ -4585,6 +4603,8 @@ function hostData(m, key, send, close) {
   const known = lobby.links.find(l => l.key === key);
   if (known) {
     if (m.t === 'bye') friendLeft(known.id);
+    // (the welcome went missing: the backup route says hello again until one arrives)
+    else if (m.t === 'hello') { if (!lobby.started) { known.send({ t: 'welcome', id: known.id }); known.send(roomInfo()); } }
     else if (lobby.started) hostReceive(m, known.id);
     else if (m.t === 'skin') known.skin = m.v === 'space' ? 'space' : 'wizard';
     return;
@@ -4598,8 +4618,9 @@ function hostData(m, key, send, close) {
   const link = { id, tok: m.tok, key, send, close, skin: m.sk === 'space' ? 'space' : 'wizard', team: id === 'g1' ? 'red' : lobby.three ? 'green' : 'blue' };
   lobby.links.push(link);
   send({ t: 'welcome', id });
+  if (lobby.soft) { lobby.note = null; lobby.soft = false; } // (news of a friend connecting: here they are)
   SFX.discover();
-  renderRoom(); sendRoom();
+  renderRoom(); sendRoom(); pathState();
 }
 // the host: a friend's connection closed
 function hostLost(key) { const l = lobby.links.find(x => x.key === key); if (l) friendLeft(l.id); }
@@ -4643,22 +4664,31 @@ const hello = () => ({ t: 'hello', v: NET_V, tok: lobby.tok, sk: mySkin });
 function pathState(name, st) {
   if (name) lobby.state[name] = st;
   if ((lobby.role !== 'host' && lobby.role !== 'guest') || lobby.guestPath || lobby.started) return;
-  const S = lobby.state, mark = v => v === 'ok' ? '✓' : v === 'down' ? '✗' : '…';
-  const line = `<small style="color:#888">server ${mark(S.peerjs)} · relays ${mark(S.nostr)}</small>`;
+  const S = lobby.state, mark = v => v === 'ok' ? '✓' : v === 'down' ? '✗' : v === 'off' ? '–' : '…';
+  const mq = Object.keys(S).filter(k => k.startsWith('mq')).map(k => S[k]);
+  const backup = !mq.length ? 'off' : mq.includes('ok') ? 'ok' : mq.every(v => v === 'down') ? 'down' : 'wait';
+  const line = `<small style="color:#888">server ${mark(S.peerjs)} · relays ${mark(S.nostr)} · backup ${mark(backup)}</small>`;
   const note = lobby.note ? `<span style="color:#ffb3b3">${lobby.note}</span><br>` : '';
-  if (S.peerjs === 'down' && S.nostr === 'down') {
-    lobbyStatus(note + 'Couldn’t reach either connection service. Check your internet, or try another network (mobile data or Wi-Fi).<br>' + line);
+  const direct = S.peerjs === 'down' && S.nostr === 'down';
+  // (a friend who can't reach either direct way tries the backup route straight away)
+  if (direct && backup === 'off' && lobby.role === 'guest') { const t = lobby.try; setTimeout(() => startRelay(t), 0); }
+  if (direct && backup === 'down') {
+    lobbyStatus(note + 'Couldn’t reach any of the connection services. Check your internet, or try another network (mobile data or Wi-Fi).<br>' + line);
     return;
   }
   if (lobby.role === 'host') lobbyStatus(note + line);
   else lobbyStatus(note + `Looking for game ${lobby.code}…<br>` + line);
 }
-// something the players should know (stays above the connection line)
-function lobbyNote(text) { lobby.note = text; pathState(); }
+// something the players should know (stays above the connection line); soft
+// news (how it's going) never covers a warning
+function lobbyNote(text, soft) {
+  if (soft && lobby.note && !lobby.soft) return;
+  lobby.note = text; lobby.soft = !!soft; pathState();
+}
 
 async function viaPeerJS(code, role, tryId) {
   try { await loadPeer(); } catch (_) { pathState('peerjs', 'down'); return; }
-  if (lobby.try !== tryId) return; // gave up or started over meanwhile
+  if (lobby.try !== tryId || lobby.guestPath) return; // gave up, started over or got in meanwhile
   const peer = role === 'host' ? new Peer(PEER_PREFIX + code, Object.assign({ config: { iceServers: ICE_SERVERS } }, window.PEER_OPTS))
                                : new Peer(Object.assign({ config: { iceServers: ICE_SERVERS } }, window.PEER_OPTS));
   const path = { name: 'peerjs', conn: null,
@@ -4669,7 +4699,7 @@ async function viaPeerJS(code, role, tryId) {
   // a friend: call the host (and call again while the host isn't on the server)
   const call = () => {
     if (!live() || lobby.guestPath || peer.disconnected) return;
-    const conn = peer.connect(PEER_PREFIX + code, { reliable: true, serialization: 'json' });
+    const conn = peer.connect(PEER_PREFIX + code, { reliable: true, serialization: 'json', metadata: { tok: lobby.tok } });
     path.conn = conn;
     conn.on('open', () => { if (!lobby.guestPath && path.conn === conn) path.send(hello()); });
     conn.on('data', m => {
@@ -4678,7 +4708,14 @@ async function viaPeerJS(code, role, tryId) {
       if (path.conn === conn) guestData(m, path);
     });
     conn.on('close', () => { if (path.conn === conn) guestPathClosed(path); });
-    conn.on('iceStateChanged', st => { if (st === 'failed' && live() && !lobby.guestPath) lobbyNote(NO_DIRECT); });
+    // the host's phone answered (the phones start trying to reach each other) …
+    conn.on('iceStateChanged', st => {
+      if (st === 'checking' && live() && !lobby.guestPath && !lobby.found) { lobby.found = true; lobbyNote('Found the game. Connecting…', true); }
+      if (st === 'failed') failed();
+    });
+    // … or they can't (PeerJS closes the connection first, so this comes as an error): try the backup route now
+    const failed = () => { if (live() && !lobby.guestPath) { lobbyNote(NO_DIRECT, true); startRelay(tryId); } };
+    conn.on('error', e => { if (e && e.type === 'negotiation-failed') failed(); });
   };
   peer.on('open', () => {
     pathState('peerjs', 'ok');
@@ -4687,9 +4724,13 @@ async function viaPeerJS(code, role, tryId) {
   // the host: each friend has their own connection
   if (role === 'host') peer.on('connection', conn => {
     const send = m => { try { if (conn.open) conn.send(m); } catch (_) {} };
+    const tok = conn.metadata && conn.metadata.tok, inAlready = () => lobby.links.some(l => l.key === conn || (tok && l.tok === tok));
+    if (live() && !lobby.started && !inAlready()) lobbyNote('A friend is connecting…', true);
     conn.on('data', m => hostData(m, conn, send, () => { try { conn.close(); } catch (_) {} }));
     conn.on('close', () => hostLost(conn));
-    conn.on('iceStateChanged', st => { if (st === 'failed' && live() && !lobby.links.some(l => l.key === conn)) lobbyNote(NO_DIRECT_HOST); });
+    const failed = () => { if (live() && !lobby.started && !inAlready()) lobbyNote(NO_DIRECT_HOST, true); };
+    conn.on('iceStateChanged', st => { if (st === 'failed') failed(); });
+    conn.on('error', e => { if (e && e.type === 'negotiation-failed') failed(); });
   });
   // the link to the server dropped (the phone slept, or switched apps for a moment): get back on
   const back = () => { if (live() && peer.disconnected) try { peer.reconnect(); } catch (_) {} };
@@ -4717,7 +4758,7 @@ async function viaPeerJS(code, role, tryId) {
 async function viaTrystero(code, role, tryId) {
   let joinRoom, getRelaySockets;
   try { ({ joinRoom, getRelaySockets } = await import(TRYSTERO_URL)); } catch (_) { pathState('nostr', 'down'); return; }
-  if (lobby.try !== tryId) return;
+  if (lobby.try !== tryId || lobby.guestPath) return;
   let room;
   try {
     room = joinRoom(Object.assign({ appId: TRYSTERO_APP, turnConfig: TURN, relayConfig: { redundancy: 8, warnOnRelayFailure: false } }, window.TRYSTERO_OPTS), 'room-' + code);
@@ -4750,6 +4791,232 @@ async function viaTrystero(code, role, tryId) {
   };
 }
 
+// ── the backup route ──
+// A tiny MQTT client (MQTT 3.1.1 over a secure WebSocket, QoS 0 only): it
+// connects, subscribes, publishes and pings, and gets back on whenever the
+// link drops (a phone that slept, or switched apps for a moment).
+const utf8 = new TextEncoder(), unutf8 = new TextDecoder();
+function joinBytes(...parts) {
+  const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
+  let i = 0;
+  for (const p of parts) { out.set(p, i); i += p.length; }
+  return out;
+}
+function mqttClient(url, on) {
+  const str = s => { const b = utf8.encode(s); return joinBytes([b.length >> 8, b.length & 255], b); };
+  const packet = (head, ...parts) => {
+    const body = joinBytes(...parts), len = [];
+    let n = body.length;
+    do { let d = n % 128; n = Math.floor(n / 128); if (n) d |= 128; len.push(d); } while (n);
+    return joinBytes([head, ...len], body);
+  };
+  const c = { up: false, closed: false, fails: 0, subs: [] }, id = 'sw' + Math.random().toString(36).slice(2, 12);
+  let ws = null, buf = new Uint8Array(0), heard = 0, pinged = 0, retryT = null, pid = 0;
+  const raw = p => { try { if (ws && ws.readyState === 1) { ws.send(p); return true; } } catch (_) {} return false; };
+  const subscribe = topic => { pid = pid % 65535 + 1; raw(packet(0x82, [pid >> 8, pid & 255], str(topic), [0])); };
+  c.sub = topic => { if (!c.subs.includes(topic)) c.subs.push(topic); if (c.up) subscribe(topic); };
+  c.pub = (topic, payload) => c.up && raw(packet(0x30, str(topic), payload));
+  const report = () => { if (on.state) on.state(c.up ? 'ok' : c.fails >= 2 ? 'down' : 'wait'); };
+  // the link dropped (or never came up): try again in a moment, waiting longer each time
+  const lost = s => {
+    if (!s || s !== ws) return;
+    ws = null;
+    try { s.close(); } catch (_) {}
+    const was = c.up;
+    c.up = false;
+    if (c.closed) return;
+    c.fails++;
+    report();
+    if (was && on.down) on.down();
+    clearTimeout(retryT);
+    retryT = setTimeout(connect, Math.min(8000, 1000 * 2 ** Math.min(3, c.fails - 1)));
+  };
+  const handle = (head, body) => {
+    const type = head >> 4;
+    if (type === 2) { // CONNACK: in (or turned away)
+      if (body[1] !== 0) { lost(ws); return; }
+      c.up = true; c.fails = 0;
+      for (const t of c.subs) subscribe(t);
+      report();
+      if (on.up) on.up();
+    } else if (type === 3) { // PUBLISH: a message
+      const tl = (body[0] << 8) | body[1], qos = (head >> 1) & 3;
+      if (on.message) on.message(unutf8.decode(body.subarray(2, 2 + tl)), body.slice(2 + tl + (qos ? 2 : 0)));
+    }
+  };
+  // packets can arrive split up or several together
+  const read = bytes => {
+    buf = buf.length ? joinBytes(buf, bytes) : bytes;
+    while (buf.length >= 2) {
+      let len = 0, mul = 1, i = 1, d;
+      do { if (i >= buf.length) return; d = buf[i++]; len += (d & 127) * mul; mul *= 128; } while (d & 128 && i < 5);
+      if (buf.length < i + len) return;
+      const head = buf[0], body = buf.subarray(i, i + len);
+      buf = buf.subarray(i + len);
+      heard = performance.now();
+      handle(head, body);
+    }
+  };
+  const connect = () => {
+    if (c.closed || ws) return;
+    clearTimeout(retryT);
+    let s;
+    try { s = new WebSocket(url, 'mqtt'); } catch (_) { c.fails++; report(); retryT = setTimeout(connect, 15000); return; }
+    ws = s; buf = new Uint8Array(0); heard = pinged = performance.now();
+    s.binaryType = 'arraybuffer';
+    s.onopen = () => { if (ws === s) raw(packet(0x10, str('MQTT'), [4, 2, 0, 60], str(id))); }; // (clean session, 60 s keep-alive)
+    s.onmessage = e => { if (ws === s && e.data instanceof ArrayBuffer) read(new Uint8Array(e.data)); };
+    s.onclose = s.onerror = () => lost(s);
+  };
+  // pings keep the link up, and show when it has quietly died
+  const tick = setInterval(() => {
+    if (c.closed || !ws) return;
+    const now = performance.now();
+    if (!c.up ? now - heard > 10000 : now - heard > 75000 || (pinged > heard && now - pinged > 8000)) { lost(ws); return; }
+    if (c.up && now - pinged > 20000) { pinged = now; raw(Uint8Array.of(0xc0, 0)); }
+  }, 1000);
+  // back on the page: check the link now (a phone may have dropped it while away)
+  const onShow = () => {
+    if (document.hidden || c.closed) return;
+    if (!ws) { clearTimeout(retryT); connect(); }
+    else if (c.up) { pinged = performance.now(); raw(Uint8Array.of(0xc0, 0)); }
+  };
+  document.addEventListener('visibilitychange', onShow);
+  c.close = () => {
+    if (c.closed) return;
+    c.closed = true; c.up = false;
+    clearTimeout(retryT); clearInterval(tick);
+    document.removeEventListener('visibilitychange', onShow);
+    const s = ws;
+    ws = null;
+    if (s) try { if (s.readyState === 1) s.send(Uint8Array.of(0xe0, 0)); s.close(); } catch (_) {}
+  };
+  connect();
+  return c;
+}
+
+// the big messages (battle pictures) go zipped where both phones can do it
+const canZip = typeof CompressionStream === 'function' && typeof DecompressionStream === 'function';
+const zipText = async text => new Uint8Array(await new Response(new Blob([text]).stream().pipeThrough(new CompressionStream('deflate'))).arrayBuffer());
+const unzipText = bytes => new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate'))).text();
+// a battle picture skipped on the backup route: its news, and the slow-changing
+// parts it carried, go with the next one
+const SNAP_SOMETIMES = ['rs', 'ec', 'tg', 'od'];
+function holdSnap(held, m) {
+  const h = held || { ev: [] };
+  if (m.ev && m.ev.length) h.ev = h.ev.concat(m.ev);
+  for (const k of SNAP_SOMETIMES) if (m[k] !== undefined) h[k] = m[k];
+  return h;
+}
+function withHeld(h, m) {
+  const out = Object.assign({}, m, { ev: h.ev.concat(m.ev || []) });
+  for (const k of SNAP_SOMETIMES) if (out[k] === undefined && h[k] !== undefined) out[k] = h[k];
+  return out;
+}
+
+// One message server on the backup route. The host listens on <code>/h/+;
+// each friend listens on <code>/g/<their token> and sends on <code>/h/<their token>.
+// There's no connection between the phones to drop, so each side sends a
+// keep-alive every few seconds, and a friend who goes quiet for long has gone.
+function viaRelay(code, role, tryId, url, n) {
+  const name = 'mq' + n, base = RELAY_TOPIC + code + '/', tok = lobby.tok, live = () => lobby.try === tryId;
+  const friends = new Map(); // (host) each friend heard from on this server, by token
+  let heard = performance.now(), sent = 0, helloT = 0; // (friend) when the host was last heard from, and so on
+  // messages out to one topic, in order (big ones zipped if the other side can unzip them)
+  const outbox = (topic, zip) => {
+    let q = Promise.resolve();
+    return m => {
+      const text = JSON.stringify(m);
+      q = q.then(async () => {
+        let zipped = null;
+        if (zip && text.length > 500) try { zipped = joinBytes([1], await zipText(text)); } catch (_) {}
+        client.pub(topic, zipped || joinBytes([0], utf8.encode(text)));
+      }).catch(() => {});
+    };
+  };
+  // and messages in, in order
+  let inQ = Promise.resolve();
+  const inbox = (bytes, use) => {
+    inQ = inQ.then(async () => {
+      const m = JSON.parse(bytes[0] === 1 ? await unzipText(bytes.subarray(1)) : unutf8.decode(bytes.subarray(1)));
+      if (live() && m && typeof m === 'object') use(m);
+    }).catch(() => {});
+  };
+  const toHost = outbox(base + 'h/' + tok, false);
+  const sayHello = () => { helloT = performance.now(); toHost(Object.assign(hello(), { z: canZip ? 1 : 0 })); };
+  // (host) a friend's message
+  const fromFriend = (ft, m) => {
+    let f = friends.get(ft);
+    if (!f) {
+      if (m.t !== 'hello') return;
+      const post = outbox(base + 'g/' + ft, canZip && m.z === 1);
+      f = { key: { relay: name, tok: ft }, heard: 0, sent: 0, snapAt: 0, held: null };
+      f.send = x => {
+        const now = performance.now();
+        // battle pictures go half as often on this slower route
+        if (x && x.t === 'snap') {
+          if (!x.end && now - f.snapAt < RELAY_SNAP * 1000 - 50) { f.held = holdSnap(f.held, x); return; }
+          if (f.held) { x = withHeld(f.held, x); f.held = null; }
+          f.snapAt = now;
+        }
+        f.sent = now;
+        post(x);
+      };
+      friends.set(ft, f);
+    }
+    f.heard = performance.now();
+    if (m.t !== 'ka') hostData(m, f.key, f.send, () => friends.delete(ft));
+  };
+  // (friend) the host's message
+  const fromHost = m => { heard = performance.now(); if (m.t !== 'ka') guestData(m, path); };
+  const client = mqttClient(url, {
+    state: st => { if (live()) pathState(name, st); },
+    up: () => {
+      // (time spent offline doesn't count as anyone going quiet)
+      const now = performance.now();
+      heard = now;
+      for (const f of friends.values()) f.heard = now;
+      if (role === 'guest' && live() && !lobby.guestPath) sayHello();
+    },
+    message: (topic, bytes) => {
+      if (!live() || bytes.length < 2) return;
+      if (role === 'host') {
+        const ft = topic.slice(base.length + 2);
+        if (topic.startsWith(base + 'h/') && /^[a-z0-9]{1,16}$/.test(ft)) inbox(bytes, m => fromFriend(ft, m));
+      } else if (topic === base + 'g/' + tok) inbox(bytes, fromHost);
+    },
+  });
+  const path = { name, relay: true,
+    send: m => { sent = performance.now(); toHost(m); },
+    close: () => { clearInterval(beat); client.close(); } };
+  lobby.paths.push(path);
+  pathState(name, 'wait');
+  client.sub(role === 'host' ? base + 'h/+' : base + 'g/' + tok);
+  const beat = setInterval(() => {
+    if (!live()) { clearInterval(beat); return; }
+    if (!client.up) return;
+    const now = performance.now(), quiet = lobby.started || versus ? 45000 : 90000;
+    if (role === 'host') {
+      for (const [ft, f] of friends) {
+        if (!lobby.links.some(l => l.key === f.key)) { if (now - f.heard > 60000) friends.delete(ft); continue; }
+        if (now - f.heard > quiet) { friends.delete(ft); hostLost(f.key); continue; }
+        if (now - f.sent > 3000) f.send({ t: 'ka' });
+      }
+    } else if (lobby.guestPath === path) {
+      if (now - heard > quiet) { guestPathClosed(path); return; }
+      if (now - sent > 3000) path.send({ t: 'ka' });
+    } else if (!lobby.guestPath && now - helloT > 3000) sayHello(); // (until the host answers)
+  }, 1000);
+}
+// The host listens on the backup route from the start; a friend tries it as
+// well when no direct connection has come after a few seconds, or the direct
+// one failed.
+function startRelay(tryId) {
+  if (lobby.try !== tryId || lobby.relayOn || lobby.guestPath || typeof WebSocket !== 'function') return;
+  lobby.relayOn = true;
+  ((window.RELAY_OPTS || {}).urls || RELAYS).forEach((url, n) => viaRelay(lobby.code, lobby.role, tryId, url, n));
+}
+
 function startLobby(role, code) {
   hangUp();
   const tryId = {};
@@ -4760,9 +5027,12 @@ function startLobby(role, code) {
   pathState('nostr', 'wait');
   viaPeerJS(code, role, tryId);
   viaTrystero(code, role, tryId);
+  if (role === 'host') startRelay(tryId);
+  else setTimeout(() => startRelay(tryId), ((window.RELAY_OPTS || {}).after ?? RELAY_AFTER) * 1000);
   if (role === 'guest') setTimeout(() => {
-    if (lobby.try === tryId && !lobby.guestPath && !lobby.note)
-      lobbyNote('No answer yet. Check the code, and that the host still has the waiting screen open (with the screen on). Still trying…');
+    if (lobby.try !== tryId || lobby.guestPath) return;
+    lobbyNote(lobby.found ? 'Found the game, still connecting… If it doesn’t work, try both phones on the same Wi-Fi.'
+                          : 'No answer yet. Check the code, and that the host still has the waiting screen open (with the screen on). Still trying…', true);
   }, 20000);
 }
 function lobbyEl() {
@@ -4837,6 +5107,7 @@ function renderRoom() {
     const list = L.three ? ['blue', 'red', 'green'] : ['blue', 'red'];
     for (const l of L.links) if (!list.includes(l.team)) l.team = 'red';
     h = `<p class="sub">Your code: friends type it in on their phones</p><div class="code">${L.code}</div>`;
+    h += `<button id="lb-invite" class="ghost">Send friends an invite link</button>`;
     h += row('Teams', '#c77dff', chip(!L.three, 'Two', 'teams:2', '#c77dff') + chip(L.three, 'Three', 'teams:3', '#c77dff'));
     h += row('You', TEAM_COLOR.blue, `<span class="fixed">Blue team</span>`);
     for (const id of ['g1', 'g2']) {
@@ -4849,6 +5120,8 @@ function renderRoom() {
       h += row('Computer', '#ffd24a', ['easy', 'medium', 'hard', 'vhard'].map(d => chip(L.diff === d, d === 'vhard' ? 'V. Hard' : DIFF_NAME[d], `diff:${d}`, '#ffd24a')).join(''));
       h += `<p class="sub">The computer plays ${ai.map(t => TEAM_NAME[t].toLowerCase()).join(' and ')}.</p>`;
     } else h += `<p class="sub">No computer team: it’s just you and your friends.</p>`;
+    const slow = L.links.filter(l => l.key && l.key.relay);
+    if (slow.length) h += `<p class="sub">${slow.map(l => heroName(l.id)).join(' and ')} came in by the backup route, which is a little slower.</p>`;
     h += `<button id="lb-go"${L.links.length ? '' : ' disabled'}>${L.links.length ? 'Start the battle' : 'Waiting for a friend…'}</button>`;
   } else {
     const R = L.room;
@@ -4858,12 +5131,15 @@ function renderRoom() {
       h += lines.map(x => row(x.mine ? 'Your team' : TEAM_NAME[x.team], TEAM_COLOR[x.team], `<span class="fixed">${x.text}</span>`)).join('');
       h += `<p class="sub">In the battle your team is blue, with your base on the left.</p>`;
     }
+    if (L.guestPath && L.guestPath.relay) h += `<p class="sub">Connected by the backup route, which is a little slower.</p>`;
     h += `<p class="sub" style="color:#ffd24a">Waiting for the host to start…</p>`;
   }
   box.innerHTML = h;
   box.querySelectorAll('[data-act]').forEach(b => b.onclick = () => roomAct(b.dataset.act));
   const go = box.querySelector('#lb-go');
   if (go) go.onclick = () => startHostedBattle();
+  const inv = box.querySelector('#lb-invite');
+  if (inv) inv.onclick = shareInvite;
 }
 function roomAct(act) {
   const [k, a, b] = act.split(':');
@@ -4888,7 +5164,8 @@ function closeLobby() {
 }
 function hostLobby() {
   // the same code as last time (until the page is reloaded), so friends can rejoin with it
-  const code = lobby.lastCode || Array.from({ length: 4 }, () => 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[Math.floor(Math.random() * 32)]).join('');
+  // (no look-alikes such as S and 5, Z and 2, B and 8, O and 0, I, L and 1)
+  const code = lobby.lastCode || Array.from({ length: 4 }, () => CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)]).join('');
   lobby.lastCode = code;
   startLobby('host', code);
 }
@@ -4897,6 +5174,33 @@ function joinLobby(raw) {
   if (code.length < 4) { lobbyStatus('Type the 4-letter code the host sees.'); return; }
   startLobby('guest', code);
 }
+const CODE_CHARS = 'ACDEFGHJKMNPQRTUVWXY3479';
+// An invite link opens the game and joins the host's game: nothing to type.
+function inviteUrl(code) {
+  const here = /^https?:$/.test(location.protocol) && !embedded ? location.origin + location.pathname : GAME_URL;
+  return here + '#join=' + code;
+}
+async function shareInvite() {
+  const url = inviteUrl(lobby.code);
+  if (navigator.share) {
+    try { await navigator.share({ title: 'Space Wizard', text: `Join my Space Wizard game! (code ${lobby.code})`, url }); return; }
+    catch (e) { if (e && e.name === 'AbortError') return; } // (they changed their mind)
+  }
+  try { await navigator.clipboard.writeText(url); lobbyNote('Invite link copied: paste it to your friends.', true); return; } catch (_) {}
+  lobbyNote(`Send your friends this link: ${url}`, true);
+}
+// opened from an invite link (…pentagram.html#join=CODE): join that game
+function joinFromLink() {
+  const m = /^#join=([A-Za-z0-9]{4,6})$/.exec(location.hash || '');
+  if (!m || versus || lobby.role === 'host') return; // (not while hosting: that would close your own game)
+  if (lobby.role === 'guest' && lobby.code === m[1].toUpperCase()) return; // (already joining it)
+  try { history.replaceState(null, '', location.pathname + location.search); } catch (_) {}
+  openLobby();
+  const box = document.getElementById('lb-code');
+  if (box) box.value = m[1].toUpperCase();
+  joinLobby(m[1]);
+}
+window.addEventListener('hashchange', joinFromLink);
 
 // ── tilt steering ────────────────────────────────────────────────────────────
 // Walk by tilting the phone. Whatever angle you hold it at when tilt starts
@@ -8118,11 +8422,12 @@ const HOWTO = [
   ['p', 'Around the casting star: FOLLOW / SPREAD (top left) keeps your army with you or lets it push; FIRE (top right) sends a loaded attack; ARMY (bottom left) opens your army commands; tilt and sound are bottom right.'],
   ['p', 'Army commands: follow or spread, what your minions and titans attack or protect when spread out, the minion mix (drag the dot to choose which minions you send) and every team’s powers.'],
   ['h', 'Play with friends'],
-  ['p', 'Up to three people can play a battle together, each on their own phone. One hosts and gets a code; the others type it in to join.'],
+  ['p', 'Up to three people can play a battle together, each on their own phone. One hosts and gets a code; the others type it in to join, or the host sends them an invite link that joins straight in.'],
   ['p', 'The host picks two or three teams and who plays on which: all of you on one team against the computer, two of you against the computer, or each of you against the others. The computer plays every team nobody is on.'],
   ['p', 'Friends on the same team share its army, its build turns (taking them in turn) and its points. Each of you sees your own team as blue, with your base on the left.'],
   ['p', 'When friends team up, the computer’s armies are a little tougher: 20% more health and damage for each extra player on the biggest team.'],
-  ['p', 'If a friend can’t get in: everyone should open the game from the same link and reload it first (phones keep old copies open). The host keeps the waiting screen open with the screen on. If it says the phones found each other but couldn’t connect, try both on the same Wi-Fi, or switch one between Wi-Fi and mobile data. Hosting again keeps the same code.'],
+  ['p', 'Some networks won’t let two phones connect directly. Then the game goes by a backup route after a few seconds, through a public message server: a little slower, but it works.'],
+  ['p', 'If a friend can’t get in: everyone should open the game from the same link and reload it first (phones keep old copies open). The host keeps the waiting screen open with the screen on. If it still won’t connect, try both phones on the same Wi-Fi, or switch one between Wi-Fi and mobile data. Hosting again keeps the same code.'],
   ['h', 'Pausing'],
   ['p', 'Leave the game (another app, tab or screen) and it pauses: an adventure or a battle against the computer waits for you. Tap to carry on. A game with friends never pauses.'],
   ['h', 'Tips'],
@@ -8797,6 +9102,7 @@ function loop(now) {
   }
 }
 requestAnimationFrame(loop);
+joinFromLink();
 </script>
 </body>
 </html>
