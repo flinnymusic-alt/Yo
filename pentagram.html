@@ -6600,7 +6600,7 @@ function drawSpaceBody(u, c, ec, r, t) {
   }
 }
 
-function drawUnit(u) {
+function drawUnit(u, bare) {
   const c = TEAM_COLOR[u.team], t = elapsed, r = u.r;
   ctx.save();
   ctx.translate(u.x, u.y);
@@ -6754,6 +6754,7 @@ function drawUnit(u) {
   if (u.freeze > 0) circle(0, 0, r + 2, 'rgba(200,240,255,0.55)', '#e8f8ff', 2);
   drawStatus(u, r);
   ctx.restore();
+  if (bare) return;
   // health bar in team colour
   const w = u.structure ? r * 2.4 : Math.max(24, r * 2), y = u.y - r - (u.kind === 'nexus' ? r * 1.2 + 14 : u.kind === 'turret' ? r * 0.6 + 14 : 14);
   ctx.fillStyle = 'rgba(0,0,0,0.65)'; ctx.fillRect(u.x - w / 2, y, w, 5);
@@ -8386,7 +8387,21 @@ function drawMenuHero(cx, cy, s, dt) {
 // ── how to play: a scrolling page of plain, short instructions ──
 let howtoScroll = 0, howtoMax = 0, howtoDrag = null;
 const HOWTO = [
-  // ── the basics ──
+  // ── the quick start: a picture, then a line or two ──
+  ['demo', 'cast'],
+  ['say', 'Slide your finger across the star to make a spell.'],
+  ['say', 'Some spells wait on the FIRE button: tap FIRE to send them.'],
+  ['demo', 'move'],
+  ['say', 'Move: tilt your phone, or press with your finger.'],
+  ['h', 'Battle'],
+  ['say', 'Build turrets to control the most ground.'],
+  ['demo', 'build'],
+  ['icon', 'Destroy sigils to get extra points.', 'sigil'],
+  ['icon', 'Destroy the enemy base to finish the game.', 'nexus'],
+  ['points'],
+
+  // ── everything else ──
+  ['H', 'More', 'everything else you might want to know'],
   ['h', 'The story'],
   ['p', 'Parallel universes are converging. Pick your universe, Wizard or Space, and fight to keep it from being overwritten.'],
   ['h', 'Move'],
@@ -8397,7 +8412,6 @@ const HOWTO = [
   ['h', 'Shoot'],
   ['p', 'Tap the field to fire an arrow at that spot. Hold to keep firing.'],
   ['h', 'Cast a spell'],
-  ['star'],
   ['p', 'The star at the bottom of the screen has five elements: Spirit, Water, Fire, Earth and Air.'],
   ['p', 'Put your finger on one, slide through others, then lift your finger to cast. Each element you touch adds a rune, up to 7.'],
   ['p', 'Most patterns fizzle. When one works you have discovered a spell. Remember it!'],
@@ -8413,7 +8427,6 @@ const HOWTO = [
   ['h', 'Battle'],
   ['p', 'Your base is on the left, red’s is on the right. Most points after 5 minutes wins.'],
   ['p', 'Pick 1 rival or 2 on the Battle page. With 2 rivals, three universes fight on a round field: you (blue), red and green. The computer teams fight each other too, and tend to go after whoever is winning.'],
-  ['points'],
   ['p', 'Build turns go round the teams: each team gets one every 20 seconds. Pick an element, then build a turret where you stand (it claims ground) or send a titan. A dial beside the clock counts down to the next turn. No building in the last 15 seconds.'],
   ['p', 'You can build on enemy ground too, but the land there stays theirs until the enemy turrets holding it are destroyed. Land always stays with whoever holds it while their towers still surround it.'],
   ['p', 'The computer builds the same way: one of its wizards walks to the spot first (a dashed ring shows where), and if it can’t get there in time it sends a titan.'],
@@ -8435,7 +8448,7 @@ const HOWTO = [
   ['p', 'A whisper: “Fire, then fire again…”'],
 
   // ── extra information: all the types and the finer factors ──
-  ['H', 'Extra information'],
+  ['H', 'Extra information', 'all the types and finer details'],
   ['h', 'The element circle'],
   ['cycle'],
   ['p', 'Each element is super effective against the next one around the circle: 2.5× damage. It works the other way too: hitting the element that beats you does only 0.4×. Everything else is normal damage. Water beats Fire, Fire beats Air, Air beats Earth, Earth beats Spirit, Spirit beats Water.'],
@@ -8477,6 +8490,276 @@ const HOWTO = [
   ['p', 'Red always plays to win. Easy and Medium differ in how well red plays: how often it rethinks, how good its targets and builds are, how well it masses, defends and focuses fire. Hard plays as well as red can, and its wizards cast real spells at you.'],
   ['p', 'Very Hard is about twice as hard as Hard: on top of that, red’s waves are bigger (14 minions instead of 10), its units are tougher and hit harder, and its wizards have more mana.'],
 ];
+// ── how to play: moving pictures for the quick start ──
+// Each loops on its own clock from when the page was opened. They're laid
+// out 324 wide and scaled to fit the page.
+const DEMO_W = 324, DEMO_H = { cast: 244, move: 140, build: 178 };
+let howtoT0 = 0;
+const ease = k => (k <= 0 ? 0 : k >= 1 ? 1 : k * k * (3 - 2 * k));
+const ramp = (t, a, b) => ease((t - a) / (b - a)); // 0 until a, 1 from b, easing in between
+const towards = (p, q, k) => ({ x: p.x + (q.x - p.x) * k, y: p.y + (q.y - p.y) * k });
+
+// a patch of meadow to act things out on
+function demoField(x, y, w, h) {
+  roundRect(x, y, w, h, 10);
+  ctx.fillStyle = meadowPattern(); ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.22)'; ctx.lineWidth = 1.5; ctx.stroke();
+}
+// you, small: the wizard or the spacefarer, stepping along (step) or standing still
+function demoHero(x, y, s, fx, step, lift) {
+  ctx.save(); ctx.translate(x, y); ctx.scale(s, s);
+  const hop = step ? Math.abs(Math.sin(step)) * 3 : 0;
+  circle(3, 12, 12, 'rgba(0,0,0,0.25)');
+  if (mySkin === 'space') drawAstronaut(0, -hop, 1, '#c77dff', '#4aa8ff', { x: fx, y: 0 }, '#ffd24a');
+  else drawWizardFigure(0, -hop, fx, '#4b2d7a', '#6a3fb0', '#c77dff', lift || 0);
+  ctx.restore();
+}
+// a unit for a picture, without its health bar (and in your universe's style, whatever the last game was)
+function demoUnit(kind, team, x, y, s, extra) {
+  const keep = mode, d = UNITS[kind];
+  mode = 'demo';
+  ctx.save(); ctx.translate(x, y); ctx.scale(s, s);
+  try { drawUnit(Object.assign({ kind, team, def: d, r: d.r, elem: d.elem, x: 0, y: 0, hp: 1, maxHp: 1, cd: 0, wob: x * 0.37, walk: 0, structure: !!d.structure }, extra), true); }
+  finally { ctx.restore(); mode = keep; }
+}
+// a fingertip: a soft ring, rippling while it presses
+function drawFinger(x, y, press, alpha) {
+  if (alpha <= 0) return;
+  ctx.globalAlpha = alpha;
+  if (press > 0) { const k = press % 1; circle(x, y, 13 + k * 13, null, `rgba(255,255,255,${0.7 * (1 - k)})`, 2); }
+  circle(x, y, 13, 'rgba(255,255,255,0.3)', 'rgba(255,255,255,0.95)', 2);
+  circle(x, y, press > 0 ? 6 : 4, '#fff');
+  ctx.globalAlpha = 1;
+}
+
+// 1) Making a spell: onto Fire, off and back onto Fire, across to Air, lift: a
+// Fireball. It waits on the FIRE button, and a tap sends it at the imp.
+function demoCast(t) {
+  const LEN = 7.6, CAST = 1.85, PRESS = 2.85, HIT = 3.75;
+  t %= LEN;
+  // the field: you on the left, an imp on the right (gone in a flash when the fireball lands)
+  demoField(0, 0, DEMO_W, 84);
+  demoHero(46, 50, 1, 1, 0, t > PRESS && t < PRESS + 0.5 ? 7 : 0);
+  const gone = ramp(t, HIT, HIT + 0.45);
+  if (gone < 1) {
+    ctx.globalAlpha = ramp(t, 0, 0.35) * (1 - gone);
+    demoUnit('imp', 'red', 272, 50, 1.6, { flash: t > HIT && t < HIT + 0.2 ? 1 : 0 });
+    ctx.globalAlpha = 1;
+  }
+  if (t > PRESS && t < HIT) {
+    const k = (t - PRESS) / (HIT - PRESS), x = 64 + 200 * k, y = 30 + 18 * k - Math.sin(k * Math.PI) * 12;
+    for (let i = 4; i >= 1; i--) circle(x - i * 8, y + i * 0.8, 7 - i * 1.3, `rgba(255,${110 + i * 25},40,${0.55 - i * 0.11})`);
+    const g = ctx.createRadialGradient(x, y, 1, x, y, 12);
+    g.addColorStop(0, '#fff'); g.addColorStop(0.35, '#ffb04a'); g.addColorStop(1, 'rgba(255,90,42,0)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, 12, 0, TAU); ctx.fill();
+  } else if (t >= HIT && t < HIT + 0.6) {
+    const k = (t - HIT) / 0.6;
+    circle(268, 46, 10 + k * 30, null, `rgba(255,170,60,${1 - k})`, 4);
+    for (let i = 0; i < 8; i++) { const a = i * TAU / 8; circle(268 + Math.cos(a) * k * 28, 46 + Math.sin(a) * k * 28, 3.5 * (1 - k), '#ffd24a'); }
+  }
+  // the star, as in a game
+  const cx = 150, cy = 158, R = 47, S = 28, FB = { x: 284, y: cy - 18 };
+  const node = r => { const a = -Math.PI / 2 + NODE_ORDER.indexOf(r) * TAU / 5; return { x: cx + Math.cos(a) * R, y: cy + Math.sin(a) * R }; };
+  const fade = 1 - ramp(t, CAST + 0.35, CAST + 0.75); // (the runes clear once the spell is made)
+  const list = fade > 0 ? [[0.3, 'F'], [0.9, 'F'], [1.65, 'A']].filter(([at]) => t >= at).map(([, r]) => r) : [];
+  circle(cx, cy, R * 1.12, 'rgba(40,20,70,0.35)', 'rgba(199,125,255,0.3)', 2);
+  ctx.strokeStyle = 'rgba(199,125,255,0.3)'; ctx.lineWidth = 2; ctx.beginPath();
+  for (let i = 0; i <= 5; i++) { const p = node(NODE_ORDER[(i * 2) % 5]); i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y); }
+  ctx.stroke();
+  // where the finger is: sliding over the star, then lifted and over to FIRE (waiting just below it, so it can be read)
+  const F = node('F'), A = node('A'), out = towards(F, { x: cx, y: cy }, 0.55), below = { x: FB.x - 4, y: FB.y + 42 };
+  let fp = FB, down = 0, alpha = 1;
+  if (t < 0.3) { fp = F; alpha = ramp(t, 0, 0.25); }
+  else if (t < 0.6) { fp = towards(F, out, ease((t - 0.3) / 0.3)); down = t - 0.3; }
+  else if (t < 0.9) { fp = towards(out, F, ease((t - 0.6) / 0.3)); down = t - 0.3; }
+  else if (t < 1.65) { fp = towards(F, A, ease((t - 0.9) / 0.75)); down = t - 0.3; }
+  else if (t < CAST) { fp = A; down = t - 0.3; }
+  else if (t < PRESS - 0.25) { fp = towards(A, below, ease((t - CAST) / (PRESS - 0.25 - CAST))); alpha = 0.55; }
+  else if (t < PRESS) { fp = towards(below, FB, ease((t - PRESS + 0.25) / 0.25)); alpha = 0.8; }
+  else if (t < PRESS + 0.3) down = t - PRESS + 0.01;
+  else alpha = 1 - ramp(t, PRESS + 0.3, PRESS + 0.6);
+  // the runes so far, joined up
+  ctx.globalAlpha = fade; ctx.lineCap = 'round';
+  for (let i = 1; i < list.length; i++) {
+    const a = node(list[i - 1]), b = node(list[i]), col = ELEMENTS[list[i]].color;
+    if (list[i] === list[i - 1]) { circle(a.x, a.y, S * 0.62 + 3, null, col, 3); continue; }
+    ctx.strokeStyle = col; ctx.lineWidth = 5; ctx.shadowColor = col; ctx.shadowBlur = 10;
+    ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke(); ctx.shadowBlur = 0;
+  }
+  ctx.globalAlpha = 1;
+  if (down > 0 && t < CAST && list.length) {
+    const last = node(list[list.length - 1]);
+    ctx.strokeStyle = 'rgba(255,255,255,0.45)'; ctx.lineWidth = 3; ctx.setLineDash([5, 5]);
+    ctx.beginPath(); ctx.moveTo(last.x, last.y); ctx.lineTo(fp.x, fp.y); ctx.stroke(); ctx.setLineDash([]);
+  }
+  for (const r of NODE_ORDER) {
+    const e = ELEMENTS[r], p = node(r), n = list.filter(v => v === r).length;
+    if (n) { ctx.shadowColor = e.color; ctx.shadowBlur = 16 * fade; }
+    roundRect(p.x - S / 2, p.y - S / 2, S, S, 6);
+    ctx.fillStyle = n ? 'rgba(40,24,64,0.95)' : 'rgba(22,16,34,0.95)'; ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = e.color; ctx.lineWidth = 2; ctx.stroke();
+    drawGlyph(r, p.x, p.y, S * 0.72, e.color);
+    if (n) {
+      ctx.globalAlpha = fade;
+      circle(p.x + S / 2, p.y - S / 2, 7, e.color);
+      ctx.fillStyle = '#111'; ctx.font = `bold 10px ${SERIF}`; ctx.textAlign = 'center';
+      ctx.fillText(n, p.x + S / 2, p.y - S / 2 + 3.5);
+      ctx.globalAlpha = 1;
+    }
+  }
+  // the rune slots under the star
+  const ss = 16, gap = 4, x0 = cx - (7 * ss + 6 * gap) / 2, sy = cy + 70;
+  for (let i = 0; i < 7; i++) {
+    const x = x0 + i * (ss + gap), r = list[i];
+    ctx.globalAlpha = r ? fade : 1;
+    roundRect(x, sy - ss / 2, ss, ss, 4);
+    ctx.fillStyle = r ? 'rgba(30,20,50,0.9)' : 'rgba(255,255,255,0.05)'; ctx.fill();
+    ctx.strokeStyle = r ? ELEMENTS[r].color : 'rgba(255,255,255,0.15)'; ctx.lineWidth = 1.5; ctx.stroke();
+    if (r) drawGlyph(r, x + ss / 2, sy, ss * 0.8, ELEMENTS[r].color);
+  }
+  ctx.globalAlpha = 1;
+  // made it: its name in the middle of the star
+  const said = ramp(t, CAST, CAST + 0.15) * (1 - ramp(t, CAST + 0.9, CAST + 1.3));
+  if (said > 0) {
+    ctx.globalAlpha = said; ctx.textAlign = 'center'; ctx.fillStyle = '#ffd24a'; ctx.font = `bold 15px ${SERIF}`;
+    ctx.shadowColor = 'rgba(0,0,0,0.9)'; ctx.shadowBlur = 6;
+    ctx.fillText('Fireball!', cx, cy + 5); ctx.shadowBlur = 0; ctx.globalAlpha = 1;
+  }
+  // the FIRE button: pops up with the spell on it, pressed, then gone
+  const pop = ramp(t, CAST, CAST + 0.25);
+  if (pop > 0 && t <= PRESS + 0.12) {
+    const pressed = t > PRESS - 0.05, col = TIER_COLOR[3];
+    const r = 24 * (0.5 + 0.5 * pop) * (pressed ? 0.88 : 1) + (pressed ? 0 : Math.sin(t * 5) * 1.5);
+    circle(FB.x, FB.y, r + 5, 'rgba(0,0,0,0.35)');
+    const g = ctx.createRadialGradient(FB.x, FB.y - 5, 2, FB.x, FB.y, r);
+    g.addColorStop(0, '#fff'); g.addColorStop(0.3, col); g.addColorStop(1, 'rgba(40,20,60,0.95)');
+    circle(FB.x, FB.y, r, g, col, 3);
+    ctx.textAlign = 'center'; ctx.fillStyle = '#111'; ctx.font = `bold 12px ${SERIF}`;
+    ctx.fillText('FIRE', FB.x, FB.y + 4);
+    ctx.fillStyle = col; ctx.font = `bold 10px ${SERIF}`;
+    ctx.fillText('Fireball', FB.x, FB.y - r - 6);
+  }
+  drawFinger(fp.x, fp.y, down > 0 ? down * 1.6 : 0, alpha);
+}
+
+// 2) Moving: tilt the phone and you walk the way it leans; or press and hold,
+// and you walk to your finger.
+function demoMove(t) {
+  // tilt: a phone rocking from side to side, with you walking downhill on its screen
+  const ang = 0.32 * Math.sin(t * 1.4), sway = t * 1.4 - 0.9;
+  ctx.save(); ctx.translate(77, 62); ctx.rotate(ang);
+  roundRect(-31, -52, 62, 104, 11); ctx.fillStyle = '#17141f'; ctx.fill();
+  ctx.strokeStyle = '#8a8498'; ctx.lineWidth = 2; ctx.stroke();
+  roundRect(-26, -44, 52, 88, 5); ctx.fillStyle = meadowPattern(); ctx.fill();
+  roundRect(-8, -49, 16, 2.5, 1.2); ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.fill(); // (the speaker)
+  ctx.save(); roundRect(-26, -44, 52, 88, 5); ctx.clip();
+  demoHero(15 * Math.sin(sway), 12, 0.8, Math.cos(sway) >= 0 ? 1 : -1, Math.abs(Math.cos(sway)) > 0.2 ? t * 9 : 0, 0);
+  ctx.restore();
+  ctx.restore();
+  // press: you walk to wherever the finger holds (three spots in turn)
+  demoField(170, 6, 154, 112);
+  const STAND = [[205, 60], [290, 94], [264, 54]], SEG = 2.2;
+  const n = Math.floor(t / SEG), k = t - n * SEG, i = n % 3;
+  const from = { x: STAND[(i + 2) % 3][0], y: STAND[(i + 2) % 3][1] }, to = { x: STAND[i][0], y: STAND[i][1] };
+  const w = clamp((k - 0.45) / Math.min(1.25, Math.hypot(to.x - from.x, to.y - from.y) / 70), 0, 1), p = towards(from, to, w);
+  demoHero(p.x, p.y, 0.8, to.x >= from.x ? 1 : -1, w > 0 && w < 1 ? t * 10 : 0, 0);
+  drawFinger(to.x, to.y - 26, k > 0.35 && k < 1.85 ? (k - 0.35) * 1.6 : 0, ramp(k, 0, 0.3) * (1 - ramp(k, 1.85, 2.15)));
+  ctx.textAlign = 'center'; ctx.font = `italic 13px ${SERIF}`; ctx.fillStyle = '#ccc';
+  ctx.fillText('tilt', 77, 134);
+  ctx.fillText('or press', 247, 134);
+}
+
+// a side's land around its towers: their outline, rounded out by d
+function hullOf(pts) {
+  const P = pts.slice().sort((a, b) => a.x - b.x || a.y - b.y);
+  if (P.length < 3) return P;
+  const cross = (o, a, b) => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+  const lo = [], hi = [];
+  for (const p of P) { while (lo.length >= 2 && cross(lo[lo.length - 2], lo[lo.length - 1], p) <= 0) lo.pop(); lo.push(p); }
+  for (const p of P.reverse()) { while (hi.length >= 2 && cross(hi[hi.length - 2], hi[hi.length - 1], p) <= 0) hi.pop(); hi.push(p); }
+  return lo.slice(0, -1).concat(hi.slice(0, -1));
+}
+function blobPath(pts, d) {
+  const h = hullOf(pts);
+  ctx.beginPath();
+  if (h.length === 1) { ctx.arc(h[0].x, h[0].y, d, 0, TAU); return; }
+  h.forEach((p, i) => {
+    const a = h[(i + h.length - 1) % h.length], b = h[(i + 1) % h.length];
+    ctx.arc(p.x, p.y, d, Math.atan2(p.y - a.y, p.x - a.x) - Math.PI / 2, Math.atan2(b.y - p.y, b.x - p.x) - Math.PI / 2);
+  });
+  ctx.closePath();
+}
+function blobArea(pts, d) {
+  const h = hullOf(pts);
+  let a = 0, edge = 0;
+  h.forEach((p, i) => { const q = h[(i + 1) % h.length]; a += p.x * q.y - q.x * p.y; edge += Math.hypot(q.x - p.x, q.y - p.y); });
+  return Math.abs(a) / 2 + edge * d + Math.PI * d * d;
+}
+
+// 3) Building: you walk to a spot and build a turret; your land (blue) grows
+// out to take it in. The bar on top is each side's share of the field.
+function demoBuild(t) {
+  const LEN = 11.5, D = 26, FY = 24, FH = 152;
+  t %= LEN;
+  const at = (x, y) => ({ x, y: FY + y });
+  const base = at(40, 76), foeTowers = [at(284, 76), at(232, 34), at(238, 118)];
+  const spots = [at(106, 42), at(122, 112), at(170, 78)], built = [1.3, 3.2, 5.0];
+  const undo = ramp(t, 10.2, 10.9); // (back to the start for the next go)
+  // your towers so far: each new one draws the land out from the middle of the others
+  const mine = [base];
+  spots.forEach((s, i) => {
+    const g = ramp(t, built[i], built[i] + 0.7) * (1 - undo);
+    if (g <= 0) return;
+    const c = mine.reduce((m, p) => ({ x: m.x + p.x / mine.length, y: m.y + p.y / mine.length }), { x: 0, y: 0 });
+    mine.push(towards(c, s, g));
+  });
+  // the share of the field each side holds
+  const area = DEMO_W * FH, mineShare = blobArea(mine, D) / area, foeShare = blobArea(foeTowers, D) / area;
+  const bx = 68, bw = DEMO_W - 136;
+  roundRect(bx, 6, bw, 9, 4.5); ctx.fillStyle = 'rgba(255,255,255,0.12)'; ctx.fill();
+  roundRect(bx, 6, Math.max(9, bw * mineShare), 9, 4.5); ctx.fillStyle = TEAM_COLOR.blue; ctx.fill();
+  roundRect(bx + bw * (1 - foeShare), 6, bw * foeShare, 9, 4.5); ctx.fillStyle = TEAM_COLOR.red; ctx.fill();
+  ctx.font = `bold 12px ${SERIF}`;
+  ctx.textAlign = 'left'; ctx.fillStyle = TEAM_COLOR.blue; ctx.fillText(`You ${Math.round(mineShare * 100)}%`, 0, 15);
+  ctx.textAlign = 'right'; ctx.fillStyle = TEAM_COLOR.red; ctx.fillText(`${Math.round(foeShare * 100)}% Red`, DEMO_W, 15);
+  // the field
+  demoField(0, FY, DEMO_W, FH);
+  ctx.save(); roundRect(0, FY, DEMO_W, FH, 10); ctx.clip();
+  for (const [team, pts, fill, line] of [['red', foeTowers, 'rgba(255,74,90,0.2)', 'rgba(255,74,90,0.55)'], ['blue', mine, 'rgba(74,168,255,0.24)', 'rgba(74,168,255,0.65)']]) {
+    blobPath(pts, D); ctx.fillStyle = fill; ctx.fill(); ctx.strokeStyle = line; ctx.lineWidth = 1.5; ctx.stroke();
+    // the lines between its towers
+    const h = hullOf(pts);
+    for (let i = 0; i < (h.length === 2 ? 1 : h.length > 2 ? h.length : 0); i++) {
+      const a = h[i], b = h[(i + 1) % h.length];
+      ctx.strokeStyle = TEAM_COLOR[team]; ctx.globalAlpha = 0.3; ctx.lineWidth = 6;
+      ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+      ctx.strokeStyle = '#fff'; ctx.globalAlpha = 0.7; ctx.lineWidth = 1.2;
+      ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+  }
+  demoUnit('nexus', 'red', foeTowers[0].x, foeTowers[0].y, 0.42);
+  demoUnit('turret', 'red', foeTowers[1].x, foeTowers[1].y, 0.55, { elem: 'air' });
+  demoUnit('turret', 'red', foeTowers[2].x, foeTowers[2].y, 0.55, { elem: 'spirit' });
+  demoUnit('nexus', 'blue', base.x, base.y, 0.42);
+  spots.forEach((s, i) => {
+    const pop = ramp(t, built[i], built[i] + 0.3) * (1 - undo);
+    if (pop > 0) demoUnit('turret', 'blue', s.x, s.y, 0.55 * (pop + Math.sin(pop * Math.PI) * 0.3), { elem: ['water', 'fire', 'earth'][i] });
+    const k = (t - built[i]) / 0.5;
+    if (k > 0 && k < 1 && !undo) circle(s.x, s.y, 6 + k * 26, null, `rgba(255,255,255,${0.8 * (1 - k)})`, 3);
+  });
+  // you: to each spot in turn (building just above where you stand), then back to rest
+  const stand = i => ({ x: spots[i].x, y: spots[i].y + 20 }), home = at(64, 100), rest = at(86, 104);
+  const keys = [[0, home], [1.1, stand(0)], [1.75, stand(0)], [2.95, stand(1)], [3.6, stand(1)], [4.75, stand(2)], [5.5, stand(2)], [6.9, rest], [10.6, rest], [LEN, home]];
+  let j = 0;
+  while (j < keys.length - 2 && t >= keys[j + 1][0]) j++;
+  const [t0, p0] = keys[j], [t1, p1] = keys[j + 1], p = towards(p0, p1, clamp((t - t0) / (t1 - t0), 0, 1));
+  const walking = p0.x !== p1.x || p0.y !== p1.y, building = built.some(b => t > b - 0.15 && t < b + 0.35);
+  demoHero(p.x, p.y, 0.7, p1.x < p0.x ? -1 : 1, walking ? t * 10 : 0, building ? 6 : 0);
+  ctx.restore();
+}
+
 function drawHowTo(y, bx, bw) {
   menuButton({ title: 'How to Play', color: '#ffd24a', x: bx, y, w: bw, h: 44 });
   const top = y + 56, bottom = H - 66;
@@ -8484,14 +8767,33 @@ function drawHowTo(y, bx, bw) {
   ctx.beginPath(); ctx.rect(0, top, W, bottom - top); ctx.clip();
   roundRect(bx - 6, top, bw + 12, bottom - top, 12); ctx.fillStyle = 'rgba(10,8,30,0.78)'; ctx.fill();
   let yy = top + 6 - howtoScroll;
-  const L = bx + 8, Wd = bw - 16;
-  for (const [kind, text] of HOWTO) {
+  const L = bx + 8, Wd = bw - 16, T = Math.max(0, elapsed - howtoT0);
+  for (const [kind, text, more] of HOWTO) {
     if (kind === 'h') {
       yy += 16;
       ctx.textAlign = 'left'; ctx.fillStyle = '#ffd24a'; ctx.font = `22px ${SERIF_BIG}`;
       ctx.fillText(text.toUpperCase(), L, yy + 18);
       ctx.strokeStyle = 'rgba(255,210,74,0.35)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(L, yy + 26); ctx.lineTo(L + Wd, yy + 26); ctx.stroke();
       yy += 36;
+    } else if (kind === 'demo') {
+      // a moving picture (only drawn while it's on screen)
+      const k = Wd / DEMO_W, h = DEMO_H[text] * k;
+      if (yy + h > top && yy < bottom) {
+        ctx.save(); ctx.translate(L, yy + 6); ctx.scale(k, k);
+        ({ cast: demoCast, move: demoMove, build: demoBuild })[text](T);
+        ctx.restore();
+      }
+      yy += h + 14;
+    } else if (kind === 'say') {
+      // the quick start's words: bigger, in the middle
+      ctx.textAlign = 'center'; ctx.fillStyle = '#efe9f8'; ctx.font = `16px ${SERIF}`;
+      yy = wrapText(text, L + Wd / 2, yy + 16, Wd - 10, 21) + 4;
+    } else if (kind === 'icon') {
+      // a line with a picture of what it's about: red's sigil, or red's base
+      const sigil = more === 'sigil';
+      demoUnit(more, 'red', L + 22, yy + (sigil ? 22 : 30), sigil ? 0.7 : 0.3);
+      ctx.textAlign = 'left'; ctx.fillStyle = '#efe9f8'; ctx.font = `16px ${SERIF}`;
+      yy = Math.max(wrapText(text, L + 52, yy + 27, Wd - 52, 20), yy + 48) + 2;
     } else if (kind === 'p') {
       ctx.textAlign = 'left'; ctx.fillStyle = '#c77dff'; ctx.font = `15px ${SERIF}`;
       ctx.fillText('•', L + 2, yy + 14);
@@ -8547,7 +8849,7 @@ function drawHowTo(y, bx, bw) {
       ctx.textAlign = 'center'; ctx.fillStyle = '#c77dff'; ctx.font = `26px ${SERIF_BIG}`;
       ctx.fillText(text.toUpperCase(), L + Wd / 2, yy + 34);
       ctx.font = `italic 12px ${SERIF}`; ctx.fillStyle = '#bbb';
-      ctx.fillText('all the types and finer details', L + Wd / 2, yy + 52);
+      ctx.fillText(more || '', L + Wd / 2, yy + 52);
       yy += 62;
     } else if (kind === 'res') {
       // each element's team power, and how strong it gets at full share
@@ -8663,7 +8965,7 @@ function drawTitle() {
   ];
   const modeButtons = modes.map((o, i) => ({ ...o, x: bx, y: y + i * (bh + gap), w: bw, h: bh }));
   y += modes.length * (bh + gap) + 4;
-  modeButtons.push({ title: 'How to Play', color: '#ffd24a', x: bx + bw * 0.12, y, w: bw * 0.76, h: Math.max(30, bh * 0.5), go: () => { howtoScroll = 0; goMenu('howto'); } });
+  modeButtons.push({ title: 'How to Play', color: '#ffd24a', x: bx + bw * 0.12, y, w: bw * 0.76, h: Math.max(30, bh * 0.5), go: () => { howtoScroll = 0; howtoT0 = elapsed; goMenu('howto'); } });
   // Adventure first, so Enter starts it
   titleButtons = [...modeButtons, ...lookButtons, heroButton];
   for (const b of modeButtons.concat(lookButtons)) menuButton(b);
