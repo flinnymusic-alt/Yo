@@ -1314,7 +1314,7 @@ const ALTAR_NOTE = { fire: 'It burns the gate of logs, lower right.', water: 'It
 const ADV_SAVE = 'pentagram-adventure-1';
 let ADV = null;
 function advFresh() {
-  return { known: new Set(['SA']), zones: Object.fromEntries(ZONE_ELEMS.map(e => [e, { gate: false, beaten: 0, stage: 0, done: false }])), check: null, world: { titans: [], chests: [], rivals: [], ways: [], seen: '', elder: false, won: false }, boat: null };
+  return { known: new Set(['SA']), altars: [], zones: Object.fromEntries(ZONE_ELEMS.map(e => [e, { gate: false, beaten: 0, stage: 0, done: false }])), check: null, world: { titans: [], chests: [], rivals: [], ways: [], seen: '', elder: false, won: false }, boat: null };
 }
 function advSave() {
   if (!ADV) return;
@@ -1328,6 +1328,7 @@ function advLoad() {
     a.known = new Set(s.known || []);
     for (const e of ZONE_ELEMS) Object.assign(a.zones[e], s.zones[e]);
     a.check = s.check || null; a.boat = s.boat || null;
+    a.altars = s.altars || ZONE_ELEMS.filter(e => a.known.has(CORE[e]));
     Object.assign(a.world, s.world || {});
     return a;
   } catch (_) { return null; }
@@ -1807,7 +1808,8 @@ function shotBoom(s) {
 function updateSanctum(dt) {
   // the altars teach their core move
   for (const al of ALTARS) {
-    if (ADV.known.has(CORE[al.e]) || Math.hypot(player.x - al.x, player.y - al.y) > 48) continue;
+    if (ADV.altars.includes(al.e) || Math.hypot(player.x - al.x, player.y - al.y) > 48) continue;
+    ADV.altars.push(al.e);
     learnSpell(CORE[al.e], `THE ${ELEM_NAME[al.e].toUpperCase()} ALTAR`);
     if (reveal) reveal.note = ALTAR_NOTE[al.e];
     return;
@@ -2464,7 +2466,7 @@ function drawSanctum(camX, camY) {
     ctx.beginPath(); for (let i = 0; i <= 5; i++) { const p = zonePt(ZONE_ELEMS[(i * 2) % 5], HUB_R * 0.62); i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y); } ctx.stroke();
     // the altars
     for (const al of ALTARS) {
-      const learned = ADV.known.has(CORE[al.e]), col = TYPE_COLOR[al.e], glow = 0.5 + 0.3 * Math.sin(t * 2.5 + al.x);
+      const learned = ADV.altars.includes(al.e), col = TYPE_COLOR[al.e], glow = 0.5 + 0.3 * Math.sin(t * 2.5 + al.x);
       ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.beginPath(); ctx.ellipse(al.x + 4, al.y + 16, 30, 11, 0, 0, TAU); ctx.fill();
       roundRect(al.x - 24, al.y - 8, 48, 26, 5); ctx.fillStyle = '#6f685d'; ctx.fill(); ctx.strokeStyle = '#4c463e'; ctx.lineWidth = 2; ctx.stroke();
       roundRect(al.x - 18, al.y - 30, 36, 26, 5); ctx.fillStyle = '#857d70'; ctx.fill(); ctx.stroke();
@@ -2585,10 +2587,14 @@ function drawSanctum(camX, camY) {
         circle(x, y, 12, done ? TYPE_COLOR[e] : '#3d3832', done ? '#fff' : '#57514a', 2);
         drawGlyph(ELEM_GLYPH[e], x, y, 14, done ? '#fff' : '#77706a');
       });
-      if (Math.abs(player.x) < 220 && Math.abs(player.y - y) < 200) {
-        ctx.textAlign = 'center'; ctx.font = `bold 13px ${SERIF}`; ctx.fillStyle = '#fff6d8'; ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(0,0,0,0.7)';
-        const msg = 'The World Gate. It opens when all five elements are mastered.';
-        ctx.strokeText(msg, 0, y - 32); ctx.fillText(msg, 0, y - 32);
+      const n = ZONE_ELEMS.filter(e => ADV.zones[e].done).length;
+      ctx.textAlign = 'center'; ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(0,0,0,0.7)';
+      ctx.font = `bold 15px ${SERIF}`; ctx.fillStyle = '#ffd24a';
+      ctx.strokeText(`THE WORLD GATE · ${n}/5`, 0, y - 32); ctx.fillText(`THE WORLD GATE · ${n}/5`, 0, y - 32);
+      if (Math.abs(player.x) < 220 && Math.abs(player.y - y) < 220) {
+        ctx.font = `bold 13px ${SERIF}`; ctx.fillStyle = '#fff6d8';
+        wrapLines('Beat all five challenges (each canyon’s three titans and its standing stone) and it opens on the wide world.', 230)
+          .forEach((l, i) => { ctx.strokeText(l, 0, y + 40 + i * 16); ctx.fillText(l, 0, y + 40 + i * 16); });
       }
     } else {
       for (const s of [-1, 1]) { roundRect(s * 150 - 16, y - 26, 32, 52, 6); ctx.fillStyle = '#6d675e'; ctx.fill(); }
@@ -3603,8 +3609,18 @@ function startGame(fresh) {
   banner = null; castMsg = null; reveal = null; wonShown = false; lore = null;
   seq = []; curNode = null;
   state = 'play';
-  if (!ADV.known.size) showBanner('THE SANCTUM', 'Walk to the five glowing altars to learn your first spells', 6);
+  if (ADV.known.size <= 1) showBanner('THE SANCTUM', 'Five glowing altars show the spells that open the five gates', 6);
   else showBanner('Welcome back', worldOpen() ? 'The World Gate stands open' : `${ZONE_ELEMS.filter(e => ADV.zones[e].done).length} of 5 elements mastered`, 3);
+}
+
+function startWorld() {
+  startGame(false);
+  const w0 = WAYSTONES[0], c = ADV.check && !insideSanctum(ADV.check.x, ADV.check.y) ? ADV.check : { x: w0.x, y: w0.y + 40 };
+  player.x = c.x; player.y = c.y; player.face = { x: 0, y: 1 };
+  if (!ADV.world.ways.includes(w0.id)) ADV.world.ways.push(w0.id);
+  for (const w of WAYSTONES) if (Math.hypot(c.x - w.x, c.y - w.y) < 160) WLD.healed[w.id] = true;
+  ADV.check = { x: c.x, y: c.y }; ADV.world.welcomed = true; advSave();
+  showBanner('THE WIDE WORLD', `${ADV.world.titans.length} of 9 titans beaten`, 3);
 }
 
 function respawn() {
@@ -4584,13 +4600,9 @@ function castSequence() {
     return;
   }
   if (sp && mode === 'adventure' && player === hostP && !ADV.known.has(key)) {
-    // woven spells (the patterned ones) you can find for yourself once the world is open; the rest must be taught
-    if (sp.woven && worldOpen()) { ADV.known.add(key); advSave(); }
-    else {
-      castMessage(sp.woven ? 'Learn all five elements before weaving new spells' : 'You haven’t learned that spell yet', '#bbb');
-      SFX.fizzle();
-      return;
-    }
+    // any spell you can weave works from the start; one you've found for yourself goes in your book
+    ADV.known.add(key); advSave();
+    floatText(player.x, player.y - 50, 'New in your book!', '#ffd24a', 14);
   }
   if (!sp) {
     player.mana = Math.max(0, player.mana - 1);
@@ -11123,7 +11135,8 @@ function drawMinimap() {
     if (!Z.gate) { const g = zonePt(e, GATE_AT[e]); circle(mx(g.x), my(g.y), 3, TYPE_COLOR[e], '#000', 1); }
     else if (Z.stage < 3) { const c = arenaC(e, Z.stage); circle(mx(c.x), my(c.y), 3.5, TYPE_COLOR[e], '#fff', 1); }
   }
-  for (const al of ALTARS) if (!ADV.known.has(CORE[al.e])) circle(mx(al.x), my(al.y), 2.5, '#fff');
+  for (const al of ALTARS) if (!ADV.altars.includes(al.e)) circle(mx(al.x), my(al.y), 2.5, '#fff');
+  if (!worldOpen()) { ctx.fillStyle = '#ffd24a'; ctx.fillRect(mx(0) - 5, my(WORLD_GATE_Y) - 2.5, 10, 5); }
   if (worldOpen()) {
     for (const w of WAYSTONES) { const awake = ADV.world.ways.includes(w.id); ctx.fillStyle = awake ? '#8fd0ff' : '#888'; const x = mx(w.x), y = my(w.y); ctx.beginPath(); ctx.moveTo(x, y - 3.5); ctx.lineTo(x + 3, y); ctx.lineTo(x, y + 3.5); ctx.lineTo(x - 3, y); ctx.closePath(); ctx.fill(); }
     for (const c of CHESTS) if (!ADV.world.chests.includes(c.id)) circle(mx(c.x), my(c.y), 2, '#ffd24a');
@@ -11297,7 +11310,15 @@ function goMenu(page) { menuPage = page; SFX.buff(); }
 
 // a menu button: just the word, in capitals, filling its row top to bottom;
 // a long word is squished sideways to fit rather than shrunk
+let worldLockedT = 0;   // a tap on the locked Wide World makes its small print flash
 function menuButton(b) {
+  if (b.sub) {
+    worldLockedT = Math.max(0, worldLockedT - 0.016);
+    ctx.textAlign = 'center'; ctx.font = `13px ${SERIF}`;
+    ctx.fillStyle = worldLockedT > 0 && Math.sin(worldLockedT * 30) > 0 ? '#ff9a9a' : '#d6d0e4';
+    ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(10,8,30,0.85)';
+    ctx.strokeText(b.sub, b.x + b.w / 2, b.y + b.h + 14); ctx.fillText(b.sub, b.x + b.w / 2, b.y + b.h + 14);
+  }
   const word = b.title.toUpperCase();
   const fs = b.h * 1.3; // capitals are about 0.7 of the font size: this fills the row
   ctx.font = `${fs}px ${SERIF_BIG}`;
@@ -11391,12 +11412,12 @@ const HOWTO = [
   ['shapes'],
   ['p', '3rd rune: an upgrade. 4th rune: a finish, one extra trick. Longer spells are far stronger.'],
   ['h', 'Adventure'],
-  ['p', 'You start in the Sanctum, a court with five gates. Walk to its five glowing altars to learn one spell of each element: Firebolt, Frost Shard, Stone Spike, Haste and Soul Siphon. (Every wizard already knows Blink.)'],
+  ['p', 'Every spell you can weave works from the start: casting a new one puts it in your book. You begin in the Sanctum, a court with five gates. Its five glowing altars each show you the spell that opens one gate: Firebolt, Frost Shard, Stone Spike, Haste and Soul Siphon.'],
   ['p', 'Each of those spells opens its own gate: fire burns the gate of logs, frost freezes the river, a stone blow topples the pillar into a bridge, Soul Siphon drains the ward, and only Haste is fast enough to run up the gale.'],
-  ['p', 'Down each canyon wait three titans. Beat one and you learn the next spell in that line, one rune longer. Then a wave of minions comes at you in just the way that new spell is best against: use it!'],
+  ['p', 'Down each canyon wait three titans. Beat one and it shows you the next spell in that line, one rune longer. Then a wave of minions comes at you in just the way that new spell is best against: use it!'],
   ['p', 'A standing stone at the end of each canyon tells you what the element is good for, and which gate to try next: the one your new element beats, not the one that beats it.'],
-  ['p', 'Master all five and the World Gate below the court opens on the wide world: a village, hills you can only climb by their ramps, old castles, forests, rivers and a lake full of islands.'],
-  ['p', 'Nine titans out there guard the world’s great spells, and fight with the very spell they guard. Beat one and it’s yours. Rival wizards and astronauts camp in the wilds; beat one and they teach you their own spell.'],
+  ['p', 'Beat all five challenges and the World Gate below the court opens on the wide world: a village, hills you can only climb by their ramps, old castles, forests, rivers and a lake full of islands. From then on, The Wide World on the Adventure menu takes you straight there.'],
+  ['p', 'Nine titans out there guard the world’s great spells, and fight with the very spell they guard: beat one and it shows you how to cast it. Rival wizards and astronauts camp in the wilds; beat one and they teach you their own spell.'],
   ['p', 'Waystones keep your place: touch one and you’ll rise there if you fall. Stand on one to travel to any other you’ve woken. Crystals in chests make your health and mana grow.'],
   ['p', 'The boat waits at the village jetty: walk into it to sail the lake and up the rivers. You can fight from it, but serpents rise from deep water. You can’t swim, so sail to land to step off.'],
   ['p', 'BOOK (bottom left) lists every spell you know and when to use it. Tap the little map (top right) to see the whole world.'],
@@ -11898,15 +11919,18 @@ function drawTitle() {
 
   if (menuPage === 'howto') { drawHowTo(y, bx, bw); return; }
   if (menuPage === 'adventure') {
-    // carry on, or start again (which forgets everything you'd learned)
+    // carry on (or begin), go straight out to the wide world once the Sanctum's five challenges are beaten, or start again
     y += 10;
-    const bh = Math.min(70, Math.max(48, (H - y - 80) / 4));
+    const saved = hasAdventure() ? advLoad() : null, mastered = saved ? ZONE_ELEMS.filter(e => saved.zones[e].done).length : 0, open = mastered === 5;
+    const bh = Math.min(64, Math.max(44, (H - y - 110) / 4.6));
     const opts = [
-      { title: 'Continue', color: '#c77dff', go: () => startGame(false) },
-      { title: 'New Adventure', color: '#ffd24a', go: () => { menuPage = 'confirmNew'; } },
+      saved ? { title: 'Continue', color: '#c77dff', go: () => startGame(false) } : { title: 'Begin', color: '#c77dff', go: () => startGame(true) },
+      { title: 'The Wide World', color: open ? '#8fdf6a' : '#5a5470', sub: open ? 'Straight out past the World Gate' : `Locked · beat all 5 challenges in the Sanctum first (${mastered}/5)`,
+        go: () => { if (open) startWorld(); else { SFX.fizzle(); worldLockedT = 1; } } },
     ];
-    titleButtons = opts.map((o, i) => ({ ...o, x: bx, y: y + i * (bh + gap), w: bw, h: bh }));
-    y += opts.length * (bh + gap) + 6;
+    if (saved) opts.push({ title: 'New Adventure', color: '#ffd24a', go: () => { menuPage = 'confirmNew'; } });
+    titleButtons = opts.map((o, i) => ({ ...o, x: bx, y: y + i * (bh + gap + 18), w: bw, h: bh }));
+    y += opts.length * (bh + gap + 18) + 6;
     titleButtons.push({ title: 'Back', color: '#8a8498', x: bx + bw / 2 - 70, y, w: 140, h: 40, go: () => goMenu('main') });
     for (const b of titleButtons) menuButton(b);
     return;
@@ -11962,7 +11986,7 @@ function drawTitle() {
   // where to play
   const bh = Math.min(76, Math.max(54, (H - y - 64) / 2.6 - gap));
   const modes = [
-    { title: 'Adventure', color: '#c77dff', go: () => (hasAdventure() ? goMenu('adventure') : startGame(true)) },
+    { title: 'Adventure', color: '#c77dff', go: () => goMenu('adventure') },
     { title: 'Battle', color: TEAM_COLOR.blue, go: () => goMenu('battle') },
   ];
   const modeButtons = modes.map((o, i) => ({ ...o, x: bx, y: y + i * (bh + gap), w: bw, h: bh }));
