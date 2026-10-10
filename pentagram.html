@@ -1437,6 +1437,8 @@ function galeThrow() {
 }
 
 // ── the arenas: a titan, then its spell, then a wave ──
+// a simple spell of each element to try on a titan weak to it
+const ELEM_TRY = { fire: 'Firebolt (Fire, Fire)', water: 'Frost Shard (Water, Water)', earth: 'Stone Spike (Earth, Earth)', air: 'Gust (Air, Air)', spirit: 'Soul Siphon (Spirit, Spirit)' };
 let arena = null;
 let hazards = [], pickups = [], orbs = [];
 const arenaC = (e, k) => zonePt(e, ARENA_AT[k]);
@@ -1457,6 +1459,9 @@ function startArena(e, k) {
   foes.push(t);
   arena.titan = t;
   showBanner(t.name, k === 0 ? 'Beat it to learn the next part of this spell' : 'awakens', 3);
+  // what hurts it most (Haste can't hurt anything, so the air canyon needs another element)
+  const w = elemWeakTo(e)[0];
+  tipMsg(`${e === 'air' && k === 0 ? 'Haste can’t hurt it. ' : ''}${ELEM_NAME[w]} hits the ${t.name} hardest: try ${ELEM_TRY[w]}`, TYPE_COLOR[w], 6);
   SFX.awaken();
 }
 function endArena(won) {
