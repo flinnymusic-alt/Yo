@@ -1025,7 +1025,7 @@ const RIVALS = [
 // crystals in chests: each grows your health or your mana by 2
 const CHESTS = [
   { id: 'dun', x: -5200, y: -500, gift: 'hp' }, { id: 'watch', x: -1450, y: -5820, gift: 'mana' }, { id: 'grey', x: -3200, y: -2650, gift: 'hp' },
-  { id: 'gull', x: 3150, y: 5700, gift: 'mana' }, { id: 'willow', x: 450, y: 6250, gift: 'hp' }, { id: 'dark', x: -5700, y: 3900, gift: 'mana' },
+  { id: 'gull', x: 3208, y: 5638, gift: 'mana' }, { id: 'willow', x: 408, y: 6326, gift: 'hp' }, { id: 'dark', x: -5700, y: 3900, gift: 'mana' },
   { id: 'high', x: 750, y: -6400, gift: 'hp' }, { id: 'ember', x: 6650, y: -1700, gift: 'mana' }, { id: 'roost', x: 6450, y: -6050, gift: 'hp' },
   { id: 'north', x: 2950, y: -6600, gift: 'mana' }, { id: 'marsh', x: 5650, y: 5250, gift: 'hp' }, { id: 'star', x: 6330, y: 2800, gift: 'mana' },
 ];
@@ -1089,6 +1089,117 @@ const TEACHERS = [
     'Soul Siphon heals you by what it takes. Spirit Lance goes through several foes in a row.',
     'Confusion makes a group fight each other. Terror sends everything near you fleeing. Hex turns one foe into a frog.',
     'Ward blocks the next four hits. Mirror Shield sends shots back at whoever fired them. Time Stop freezes everyone but you.' ] },
+];
+// ── folk who need help, all over the world ──
+// Each has a problem (at) you cast at. One spell does it at once and earns a crystal as well; spells
+// of the right kind (an element, or a kind such as healing) do it in three goes; some make it worse.
+// Whichever way you do it, they teach you a spell of their own to say thank you.
+const QUESTS = [
+  { id: 'barn', area: 'Hollowbrook', who: 'Farmer Bell', coat: '#5a7a3a', hat: '#d8b05a', x: 1380, y: 4385, at: { x: 1300, y: 4330 }, best: 'WAEF', works: ['water'], worse: ['fire', 'air'], gift: 'mana',
+    ask: 'My hay barn’s caught fire! Put it out before it spreads to the house!', hint: 'Water, and lots of it! A great wave would put it out in one go.',
+    done: 'You saved the house! My gran kept a crystal for a wizard in need, and that’s you.' },
+  { id: 'mill', area: 'Hollowbrook', who: 'Wil the miller’s boy', coat: '#8a6a4a', x: -680, y: 4205, at: { x: -760, y: 4150 }, best: 'AA', works: ['air'], gift: 'hp',
+    ask: 'Not a breath of wind for a week. The sails won’t turn, and there’s no flour for bread.', hint: 'If only something would blow on the sails. Just a good strong puff of air.',
+    done: 'Listen to her creak! There’ll be bread in Hollowbrook tonight.' },
+  { id: 'well', area: 'Hollowbrook', who: 'Little Nell', coat: '#c86a8a', x: -820, y: 4670, at: { x: -900, y: 4620 }, best: 'WWSS', works: ['water'], worse: ['fire'], gift: 'mana',
+    ask: 'My ball fell down the old well, and it’s all dried up. I can’t reach it!', hint: 'If the well filled up with water again, my ball would float right up!',
+    done: 'My ball! And the well’s full again too. Thank you, wizard!' },
+  { id: 'crows', area: 'Hollowbrook', who: 'Old Maggie', coat: '#7a5a8a', hat: '#4a3a2a', x: -870, y: 5055, at: { x: -950, y: 5000 }, best: 'SFS', works: ['spirit', 'air'], gift: 'hp',
+    ask: 'Crows! Hundreds of them, eating every seed I’ve sown.', hint: 'Something to give them a real fright, that’s what they need.',
+    done: 'Look at them go! They won’t be back in a hurry.' },
+  { id: 'boat', area: 'The lake', who: 'Fisher Abe', coat: '#4a6a8a', hat: '#2a3a4a', x: 995, y: 5065, at: { x: 1160, y: 5115 }, best: 'AEEA', works: ['air', 'water'], worse: ['fire'], gift: 'mana',
+    ask: 'My boat’s slipped its rope and drifted out, and I can’t swim a stroke.', hint: 'Could you pull it back in somehow? Drag it right in to the shore?',
+    done: 'There she is, safe and sound. I owe you a fish supper!' },
+  { id: 'heron', area: 'Willow Isle', who: 'The heron-keeper', coat: '#6a7a5a', x: 530, y: 6300, at: { x: 450, y: 6250 }, best: 'EFSEE', works: ['earth'], worse: ['fire', 'air'], gift: 'hp',
+    ask: 'The herons’ old tree is cracking, and their nest is right at the top. It’ll come down any moment!', hint: 'If only the branch were made of stone. Then it would never break.',
+    done: 'Solid stone! The herons will nest there for a hundred years.' },
+  { id: 'lamp', area: 'Gull Rock', who: 'The lighthouse keeper', coat: '#2a3a5a', hat: '#1a2a3a', x: 3070, y: 5750, at: { x: 3150, y: 5700 }, best: 'FF', works: ['fire'], worse: ['water'], gift: 'mana',
+    ask: 'The lighthouse lamp’s blown out, and a boat’s coming in on the rocks!', hint: 'It just needs a spark of fire, quick!',
+    done: 'It’s burning bright. They’ll see it from the far shore!' },
+  { id: 'web', area: 'The Darkwood', who: 'Woodcutter Bram', coat: '#6a4a2a', hat: '#3a2a1a', x: -3470, y: 4300, at: { x: -3550, y: 4250 }, best: 'FAF', works: ['fire'], gift: 'hp',
+    ask: 'A giant spider’s web across the path, and my lad’s on the other side of it!', hint: 'Burn it! One sweep of flame across the whole web.',
+    done: 'Come here, Tam! Thank you, wizard, from both of us.' },
+  { id: 'ankle', area: 'The Darkwood', who: 'Tilly', coat: '#d87a4a', x: -4300, y: 3700, at: { x: -4300, y: 3700 }, best: 'WS', works: ['heal'], gift: 'mana',
+    ask: 'I’ve twisted my ankle and I can’t walk home. It hurts so much.', hint: 'Do you know any healing? Even a little would help.',
+    done: 'It doesn’t hurt at all now! I can run home!' },
+  { id: 'ghost', area: 'The Darkwood', who: 'Old Sorrel', coat: '#5a6a4a', hat: '#2a3a2a', x: -4620, y: 4750, at: { x: -4700, y: 4700 }, best: 'SE', works: ['spirit'], gift: 'hp',
+    ask: 'Every night a ghost wails in that old oak. Nobody dares come near the glade.', hint: 'Ghosts are spirit. Draw it out of the tree, drain it away.',
+    done: 'Silence at last, and the birds are singing in the glade again.' },
+  { id: 'sheep', area: 'The Old Hills', who: 'Shepherd Gwen', coat: '#9a8a6a', hat: '#5a4a3a', x: -4780, y: 200, at: { x: -4700, y: 150 }, best: 'ASAWA', works: ['air'], worse: ['fire'], gift: 'mana',
+    ask: 'The storm scattered my sheep all over the hills. I’ll never round them up alone!', hint: 'Something that sweeps them all together into one place would do it.',
+    done: 'All forty of them, safe in one flock! You’re a wonder.' },
+  { id: 'lamb', area: 'The Old Hills', who: 'Davey', coat: '#6a8a9a', x: -5580, y: -900, at: { x: -5500, y: -950 }, best: 'EF', works: ['earth'], gift: 'hp',
+    ask: 'A rockfall has shut a lamb in the hollow. Can you smash through the rocks?', hint: 'A heavy stone, thrown hard, would crack them.',
+    done: 'There she is! Not a scratch on her.' },
+  { id: 'mine', area: 'Dunmoor', who: 'Miner Hob', coat: '#5a5a5a', hat: '#d8b05a', x: -4170, y: -1000, at: { x: -4250, y: -1050 }, best: 'EFSE', works: ['earth'], worse: ['EEA', 'FEFEF'], gift: 'mana',
+    ask: 'The mine roof’s groaning, and Grandad’s still down there! Hold it up, please!', hint: 'Something big and strong, made of stone, to stand under the roof and hold it.',
+    done: 'Grandad’s out! That stone fellow held the whole roof up.' },
+  { id: 'troll', area: 'Greyhold', who: 'The bridge-keeper', coat: '#7a6a55', hat: '#3e3226', x: -2920, y: -2300, at: { x: -3000, y: -2350 }, best: 'EWE', works: ['spirit', 'control'], gift: 'hp',
+    ask: 'A troll’s gone to sleep on my bridge. Nobody can cross, and nobody dares wake it.', hint: 'Turn it into something small, and it’ll hop away on its own.',
+    done: 'A frog! It’s hopped off into the river. The bridge is open!' },
+  { id: 'rats', area: 'Greyhold', who: 'Cook Mabel', coat: '#f0e8d8', hat: '#fff', x: -3260, y: -2520, at: { x: -3350, y: -2500 }, best: 'FSE', works: ['summon'], worse: ['fire'], gift: 'mana',
+    ask: 'Rats in the granary! They’re eating the castle’s winter grain.', hint: 'Give them something to chase, and lead them out.',
+    done: 'Every last rat chased out of the castle. Bless you!' },
+  { id: 'pine', area: 'Pine Hollow', who: 'A carter', coat: '#7a5a3a', hat: '#4a3a2a', x: -2220, y: -3100, at: { x: -2300, y: -3150 }, best: 'FFA', works: ['fire', 'earth'], gift: 'hp',
+    ask: 'A great pine’s come down across the road. My cart can’t get past!', hint: 'Fire would clear it. One big blast of it.',
+    done: 'Nothing but ash! On my way at last.' },
+  { id: 'beacon', area: 'The Old Watch', who: 'Watchman Cole', coat: '#5a6a7a', hat: '#3a4a5a', x: -1420, y: -5400, at: { x: -1500, y: -5450 }, best: 'FFAF', works: ['fire'], worse: ['water'], gift: 'mana',
+    ask: 'The beacon must be lit to warn the valley of the storm, and my tinder’s soaked!', hint: 'Rain fire down on it, the whole pile at once.',
+    done: 'She’s blazing! They’ll see it in every village for miles.' },
+  { id: 'hearth', area: 'The frozen north', who: 'Granny Frost', coat: '#8a9aaa', hat: '#e8e8f0', x: -520, y: -6950, at: { x: -600, y: -7000 }, best: 'FFAFF', works: ['fire'], worse: ['water'], gift: 'hp',
+    ask: 'Our hamlet’s fire went out in the blizzard. We’re all freezing!', hint: 'A ring of fire, right here, to warm the whole hamlet.',
+    done: 'Warm at last! There’s always a seat by our fire for you now.' },
+  { id: 'ice', area: 'The frozen north', who: 'An ice fisher', coat: '#4a5a7a', hat: '#a03a3a', x: 1680, y: -7100, at: { x: 1600, y: -7150 }, best: 'WA', works: ['water'], worse: ['fire'], gift: 'mana',
+    ask: 'I’ve gone through the ice! Freeze it, quick, so I can climb out!', hint: 'Freeze the water. Even a little frost would help.',
+    done: 'Out! My boots are full of ice, but I’m out. Thank you!' },
+  { id: 'goat', area: 'The Highlands', who: 'Goatherd Ivo', coat: '#8a7a5a', hat: '#4a3a2a', x: 830, y: -5750, at: { x: 750, y: -5800 }, best: 'SA', works: ['earth'], gift: 'hp',
+    ask: 'My kid’s stuck on that ledge across the gorge. Nobody can jump that far.', hint: 'If you could leap across in a blink, you could carry her back.',
+    done: 'Back with her mother! You’re quicker than any goat.' },
+  { id: 'boulder', area: 'The Highlands', who: 'A road-mender', coat: '#9a7a4a', hat: '#5a4a2a', x: -170, y: -5100, at: { x: -250, y: -5150 }, best: 'FEFEF', works: ['earth', 'fire'], gift: 'mana',
+    ask: 'A boulder the size of a house rolled onto the mountain road. We’ll be digging for a year!', hint: 'Only something enormous, falling from the sky, could smash a rock that size.',
+    done: 'Gravel! Just gravel! The road’s clear.' },
+  { id: 'ledge', area: 'Northwood', who: 'A climber', coat: '#c05a3a', x: 3380, y: -6100, at: { x: 3300, y: -6150 }, best: 'EFS', works: ['earth'], worse: ['air'], gift: 'hp',
+    ask: 'I’m stuck on this crumbling ledge, and I daren’t climb down!', hint: 'If there were steps of stone below me, I could climb down them.',
+    done: 'Solid ground! I’ll stick to walking from now on.' },
+  { id: 'forge', area: 'The Ember Wastes', who: 'Smith Garth', coat: '#5a3a2a', hat: '#2a1a10', x: 5830, y: -1000, at: { x: 5750, y: -1050 }, best: 'WAEFW', works: ['water'], worse: ['fire', 'air'], gift: 'mana',
+    ask: 'My forge is overheating! If it bursts, it’ll take the whole camp with it!', hint: 'Cold, and lots of it, all around the forge at once.',
+    done: 'Cool as a winter morning. You’ve saved the camp!' },
+  { id: 'lava', area: 'The Ember Wastes', who: 'A pedlar', coat: '#8a5a8a', hat: '#4a2a4a', x: 6930, y: -700, at: { x: 6850, y: -750 }, best: 'WAE', works: ['water'], worse: ['fire'], gift: 'hp',
+    ask: 'Lava’s crept across the road. I can’t get my cart home!', hint: 'Freeze a path across it, in one straight line.',
+    done: 'A road of black stone! Safe home at last.' },
+  { id: 'egg', area: 'Dragon’s Roost', who: 'The dragon-keeper', coat: '#8a3a2a', hat: '#ffd24a', x: 5730, y: -5400, at: { x: 5650, y: -5450 }, best: 'FFSAFF', works: ['fire'], worse: ['water'], gift: 'mana',
+    ask: 'The dragon’s egg has gone cold! If it doesn’t hatch, its mother will burn us all.', hint: 'Only dragon fire is hot enough to warm a dragon’s egg.',
+    done: 'It’s moving! It’s hatching! You’d better go before its mother comes home.' },
+  { id: 'battery', area: 'The Fallen Star', who: 'Astronaut Juno', look: 'astronaut', coat: '#5aa0ff', x: 6160, y: 2530, at: { x: 6080, y: 2480 }, best: 'ASA', works: ['air'], worse: ['water'], gift: 'hp',
+    ask: 'Our ship’s battery is flat, and the radio’s dead. We need a jolt of power!', hint: 'Lightning! A good bolt of it, leaping right into the battery.',
+    done: 'Power! We can call home at last. Thanks, wizard!' },
+  { id: 'robot', area: 'The Fallen Star', who: 'Astronaut Pell', look: 'astronaut', coat: '#ff8a3a', x: 6640, y: 2980, at: { x: 6560, y: 2930 }, best: 'ASSA', works: ['control', 'time'], worse: ['air'], gift: 'mana',
+    ask: 'Our robot’s gone haywire, spinning like a top! We can’t get near enough to switch it off.', hint: 'If time ran slower round it, we could reach the switch.',
+    done: 'Off! Now, who taught it to dance like that?' },
+  { id: 'cloud', area: 'The marsh', who: 'The marsh-folk', coat: '#5a7a6a', hat: '#2a4a3a', x: 4930, y: 4600, at: { x: 4850, y: 4550 }, best: 'ASAW', works: ['air'], worse: ['fire'], gift: 'hp',
+    ask: 'A poison cloud’s settled over our huts. We can’t go home!', hint: 'A storm would wash it out of the air.',
+    done: 'Clean air! The rain’s washed it away. Thank you!' },
+  { id: 'oak', area: 'Whisperwood', who: 'The oak’s warden', coat: '#4a6a3a', hat: '#2a3a1a', x: 3230, y: 2600, at: { x: 3150, y: 2550 }, best: 'SSW', works: ['heal', 'spirit'], worse: ['fire'], gift: 'mana',
+    ask: 'The oldest oak in Whisperwood is dying. It was old when my great-gran was a girl.', hint: 'Healing, but slow and gentle, a little at a time.',
+    done: 'Look at the leaves coming out! It’ll outlive us all.' },
+  { id: 'rams', area: 'Riverside Copse', who: 'The ferryman', coat: '#3a5a6a', hat: '#1a2a3a', x: 4980, y: 1250, at: { x: 4900, y: 1200 }, best: 'SEWA', works: ['spirit', 'control'], gift: 'hp',
+    ask: 'Two rams are butting heads on my landing and won’t stop. Nobody can get aboard!', hint: 'Muddle their heads, and they’ll wander off.',
+    done: 'Off they go, each as puzzled as the other!' },
+  { id: 'cave', area: 'The hermit’s hut', who: 'The hermit', coat: '#6a5a4a', hat: '#3a2a1a', x: -6980, y: -50, at: { x: -6900, y: -100 }, best: 'SWA', works: ['spirit'], gift: 'mana',
+    ask: 'My cave door only opens to moonlight, and the moon’s behind the hill tonight.', hint: 'Could you catch the moonlight, and send it back onto the door?',
+    done: 'It opens! Come in any time you’re passing, wizard.' },
+  { id: 'knight', area: 'Greyhold', who: 'Sir Aldric', coat: '#9a9aa8', x: -2700, y: -2900, at: { x: -2700, y: -2900 }, best: 'SWWWS', works: ['heal'], gift: 'hp',
+    ask: 'That troll caught me a fearful blow. I can barely stand, let alone walk home.', hint: 'It would take the strongest healing there is.',
+    done: 'Fit to ride again! Greyhold owes you a debt.' },
+  { id: 'wisp', area: 'The Ember road', who: 'Tess', coat: '#e8c86a', x: 5000, y: -3500, at: { x: 5000, y: -3500 }, best: 'SAS', works: ['spirit', 'fire'], gift: 'mana',
+    ask: 'I’m lost, and it’s getting dark. I’m scared of the dark.', hint: 'A little light to walk beside me would show me the way home.',
+    done: 'The little light knows the way! Goodbye, wizard!' },
+  { id: 'cart', area: 'The River Wend', who: 'A carter', coat: '#8a6a3a', hat: '#5a3a1a', x: 4500, y: 3350, at: { x: 4420, y: 3300 }, best: 'WE', works: ['water', 'earth'], worse: ['air'], gift: 'hp',
+    ask: 'My cart’s rolling away downhill, straight for the river!', hint: 'Something to stick its wheels fast in the mud.',
+    done: 'Stuck fast, just short of the water! Phew.' },
+  { id: 'willo', area: 'The marsh', who: 'The marsh guide', coat: '#3a5a4a', hat: '#1a3a2a', x: 5430, y: 5200, at: { x: 5350, y: 5150 }, best: 'SEW', works: ['spirit'], gift: 'mana',
+    ask: 'A will-o’-the-wisp keeps luring folk into the bog. Two have gone missing this month!', hint: 'A spirit light. Pierce it right through with spirit.',
+    done: 'It’s gone out for good. The marsh path is safe again.' },
 ];
 const DOCK = { x: 0, y: 0, pier: null };       // set when the lake is made
 let RAMPS = [];                                 // each ramp's foot, top and width (for drawing steps)
@@ -1335,6 +1446,13 @@ for (let i = solids.length - 1; i >= 0; i--) {
   const s = solids[i];
   if (HALLS.some(h => s.x > h.x - 70 && s.x < h.x + h.w + 70 && s.y > h.y - 70 && s.y < h.y + h.h + 100) || (s.x > 80 && s.x < 830 && s.y > 4100 && s.y < 4370)) solids.splice(i, 1);
 }
+for (let i = solids.length - 1; i >= 0; i--) {
+  const s = solids[i];
+  if (s.kind !== 'mill' && QUESTS.some(q => Math.hypot(s.x - q.at.x, s.y - q.at.y) < (q.id === 'sheep' ? 150 : 95) || Math.hypot(s.x - q.x, s.y - q.y) < 50)) solids.splice(i, 1);
+}
+const QUEST_SOLID = { well: 20, lamp: 24, beacon: 20, hearth: 18, boulder: 44, egg: 22, forge: 24, battery: 18, heron: 16, oak: 26, ghost: 26 };
+for (const q of QUESTS) if (QUEST_SOLID[q.id]) solids.push({ x: q.at.x, y: q.at.y, r: QUEST_SOLID[q.id], kind: 'quest', quest: q });
+{ const q = QUESTS[0]; walls.push({ x: q.at.x - 75, y: q.at.y - 52, w: 150, h: 104, quest: q }); }   // Farmer Bell's barn
 for (const h of HALLS) {
   const T = HALL_T, d0 = h.x + (h.w - h.doorW) / 2, d1 = d0 + h.doorW, add = (x, y, w, hh) => walls.push({ x, y, w, h: hh, hall: h });
   add(h.x, h.y, h.w, T);                                                          // the back wall
@@ -1412,7 +1530,7 @@ const ALTAR_NOTE = { fire: 'It burns the gate of logs, lower right.', water: 'It
 const ADV_SAVE = 'pentagram-adventure-1';
 let ADV = null;
 function advFresh() {
-  return { reshaped: true, known: new Set(['SA']), taught: ['SA'], written: [], names: {}, altars: [], zones: Object.fromEntries(ZONE_ELEMS.map(e => [e, { gate: false, beaten: 0, stage: 0, done: false }])), check: null, world: { titans: [], chests: [], rivals: [], ways: [], seen: '', elder: false, won: false }, boat: null };
+  return { reshaped: true, known: new Set(['SA']), taught: ['SA'], written: [], names: {}, altars: [], zones: Object.fromEntries(ZONE_ELEMS.map(e => [e, { gate: false, beaten: 0, stage: 0, done: false }])), check: null, world: { titans: [], chests: [], rivals: [], ways: [], seen: '', elder: false, won: false, helped: {}, blessed: 0 }, boat: null };
 }
 function advSave() {
   if (!ADV) return;
@@ -2047,14 +2165,18 @@ function freeSpot(x, y, r) {
 }
 // your health and mana grow with each crystal you've found
 function advStats() {
-  const n = g => CHESTS.filter(c => c.gift === g && ADV.world.chests.includes(c.id)).length;
-  player.maxHp = 20 + 2 * n('hp'); player.maxMana = 20 + 2 * n('mana');
+  const n = g => CHESTS.filter(c => c.gift === g && ADV.world.chests.includes(c.id)).length
+               + QUESTS.filter(q => q.gift === g && (ADV.world.helped || {})[q.id] === 'best').length;   // (a crystal for each one helped with the best spell)
+  const b = 3 * (ADV.world.blessed || 0);                                                                // (and the elder's blessings)
+  player.maxHp = 20 + 2 * n('hp') + b; player.maxMana = 20 + 2 * n('mana') + b;
   player.hp = Math.min(player.hp, player.maxHp); player.mana = Math.min(player.mana, player.maxMana);
 }
 function setupWorld() {
   WLD = { later: [], packT: 8, serpT: 7, fogT: 0, saveT: 0, talk: null, wayAt: null, healed: {}, welcomed: false, dockT: 0 };
   const A = ADV.world;
   for (const k of ['titans', 'chests', 'rivals', 'ways']) if (!Array.isArray(A[k])) A[k] = [];
+  if (!A.helped || typeof A.helped !== 'object') A.helped = {};
+  WLD.qp = {}; WLD.qmiss = {};
   WLD.seen = new Uint8Array(FN * FN);
   for (let i = 0; i < (A.seen || '').length && i < WLD.seen.length; i++) WLD.seen[i] = A.seen[i] === '1' ? 1 : 0;
   foes = foes.filter(f => !f.world && !f.rival && !f.roam && !f.serpent && !f.owner);
@@ -2523,10 +2645,16 @@ function updateWorld(dt) {
         ADV.world.elder = true;
         learnSpell('WS', 'THE ELDER’S GIFT');
         if (reveal) reveal.note = 'Nine titans guard the world’s great spells, and each fights with the spell it guards. The last sits on the Isle of the Crown, out on the lake, and wears every element in turn.';
+      } else if (Math.floor(helpedCount() / 10) > (ADV.world.blessed || 0)) {
+        ADV.world.blessed = (ADV.world.blessed || 0) + 1; advSave(); advStats();
+        healPlayer(player.maxHp); player.mana = player.maxMana;
+        SFX.discover(); ring(player.x, player.y, 90, '#ffd24a', 0.7); burst(player.x, player.y, '#ffd24a', 50, 320);
+        showBanner('The Elder’s blessing', `For helping ${ADV.world.blessed * 10} of the folk: health and mana grow by 3`, 4);
       } else WLD.talk = WLD.talk || { name: 'The Elder', at: door, line: elderLine() };
     }
   }
   updateHalls(dt);
+  updateQuests(dt);
   // crystals in chests
   for (const c of CHESTS) {
     if (ADV.world.chests.includes(c.id) || Math.hypot(player.x - c.x, player.y - c.y) > 42 || state !== 'play') continue;
@@ -2662,6 +2790,84 @@ function leaveSchool(fell) {
   if (fell) return;
   showBanner(D.beaten ? `${D.beaten} duellist${D.beaten > 1 ? 's' : ''} beaten` : 'You leave the Spell School',
              `${clockText(D.t)} in the hall · ${D.beaten > best ? 'your best yet!' : `your best: ${best}`}`, 3.5);
+}
+// ── folk who need help ──
+const helped = id => !!(ADV && ADV.world.helped && ADV.world.helped[id]);
+const helpedCount = () => Object.keys(ADV.world.helped || {}).length;
+// the nearest problem still waiting for help, within reach of a spell
+function questNear(x, y, r) {
+  let best = null, bd = r;
+  for (const q of QUESTS) { if (helped(q.id)) continue; const d = Math.hypot(q.at.x - x, q.at.y - y); if (d < bd) { bd = d; best = q; } }
+  return best;
+}
+// what a spell counts as: its element (its first rune) and its kind
+function spellFits(key, list) {
+  const sp = SPELLS[key];
+  return !!list && list.some(w => w === key || w === RUNE_ELEM[key[0]] || (sp && w === sp.kind));
+}
+function updateQuests(dt) {
+  // whoever you're standing by tells you their trouble (or thanks you)
+  for (const q of QUESTS) {
+    if (Math.abs(player.x - q.x) > 130 || Math.abs(player.y - q.y) > 130 || Math.hypot(player.x - q.x, player.y - q.y) > 110) continue;
+    if (WLD.talk && WLD.talk.teacher) continue;
+    WLD.seenQ = WLD.seenQ || {}; WLD.seenQ[q.id] = true;
+    const p = WLD.qp[q.id] || 0, m = WLD.qmiss[q.id] || 0;
+    const line = helped(q.id) ? q.done : m >= 2 ? q.hint : p > 0 ? `It’s working! Keep going. (${p} of 3)` : q.ask;
+    WLD.talk = { name: q.who, at: { x: q.x, y: q.y - 22 }, line };
+    break;
+  }
+  // the elder sends for you after every ten
+  if (Math.floor(helpedCount() / 10) > (ADV.world.blessed || 0) && !WLD.blessTold) {
+    WLD.blessTold = true;
+    afterPlay(2500, () => tipMsg('Word of your kindness has reached the Elder. Visit them in Hollowbrook!', '#ffd24a', 5));
+  }
+}
+// a spell cast (or fired) near a problem that's waiting for help
+function questCast(key) {
+  if (mode !== 'adventure' || !WLD || player !== hostP || !worldOpen()) return;
+  const q = questNear(player.x, player.y, 330);
+  if (!q) return;
+  const at = q.at;
+  if (key === q.best) { questDone(q, true); return; }
+  if (spellFits(key, q.worse)) {
+    WLD.qp[q.id] = Math.max(0, (WLD.qp[q.id] || 0) - 1);
+    WLD.qmiss[q.id] = (WLD.qmiss[q.id] || 0) + 1;
+    floatText(at.x, at.y - 70, 'That made it worse!', '#ff8a6a', 16); SFX.fizzle();
+    return;
+  }
+  if (spellFits(key, q.works)) {
+    const p = WLD.qp[q.id] = (WLD.qp[q.id] || 0) + 1;
+    if (p >= 3) { questDone(q, false); return; }
+    floatText(at.x, at.y - 70, `It’s working! ${p} of 3`, '#8fdf6a', 16); SFX.buff();
+    ring(at.x, at.y, 60, '#8fdf6a', 0.4);
+    return;
+  }
+  WLD.qmiss[q.id] = (WLD.qmiss[q.id] || 0) + 1;
+  floatText(at.x, at.y - 70, WLD.qmiss[q.id] >= 2 ? `Ask ${q.who.replace(/^(A|The) /, m => m.toLowerCase())} what might work` : 'Nothing happens', '#ccc', 14);
+}
+// a spell a helper teaches you: one of the woven spells of the element that solved it, that you don't know yet
+function questTeach(q) {
+  const el = q.best[0], pool = Object.keys(SPELLS).filter(k => SPELLS[k].woven && !ADV.known.has(k));
+  const mine = pool.filter(k => k[0] === el && k.length === 3), list = mine.length ? mine : pool;
+  if (!list.length) return null;
+  let h = 0; for (const c of q.id) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  return list.sort()[h % list.length];
+}
+function questDone(q, best) {
+  ADV.world.helped[q.id] = best ? 'best' : 'slow';
+  advSave();
+  const at = q.at;
+  SFX.discover(); burst(at.x, at.y, '#ffd24a', 40, 300); ring(at.x, at.y, 90, '#ffd24a', 0.6);
+  floatText(at.x, at.y - 80, best ? 'Perfect!' : 'Done it!', '#ffd24a', 18);
+  if (best) { advStats(); q.gift === 'hp' ? healPlayer(player.maxHp) : (player.mana = player.maxMana); }
+  const n = helpedCount(), gift = best ? (q.gift === 'hp' ? `A Heart Crystal: your health grows to ${player.maxHp}` : `A Mana Crystal: your mana grows to ${player.maxMana}`) : 'They’re very grateful';
+  const k = questTeach(q);
+  afterPlay(700, () => {
+    if (k) { learnSpell(k, `${q.who.toUpperCase()} THANKS YOU`); if (reveal) reveal.note = best ? `${gift.replace(/^A /, 'And a ')}, for finding the very best spell for it.` : `${q.who} teaches you this. (The very best spell would have earned a crystal too.)`; }
+    else showBanner(`You helped ${q.who}!`, gift, 3.5);
+    if (n % 10 === 0) WLD.blessTold = false;
+  });
+  tipMsg(`You helped ${q.who}! (${n} of ${QUESTS.length})`, '#ffd24a', 3);
 }
 // what the elder says once you've had their gift: how you're doing, and where the nearest titan is
 function elderLine() {
@@ -3003,13 +3209,14 @@ function drawWorldSolid(d) {
       circle(d.x + 6, d.y + 8, d.r + 2, 'rgba(0,0,0,0.3)');
       roundRect(d.x - d.r, d.y - d.r * 1.4, d.r * 2, d.r * 2.2, 8); ctx.fillStyle = '#d8c8a0'; ctx.fill(); ctx.strokeStyle = '#7a6040'; ctx.lineWidth = 3; ctx.stroke();
       ctx.fillStyle = '#8a4a3a'; ctx.beginPath(); ctx.moveTo(d.x - d.r - 6, d.y - d.r * 1.3); ctx.lineTo(d.x, d.y - d.r * 2.3); ctx.lineTo(d.x + d.r + 6, d.y - d.r * 1.3); ctx.closePath(); ctx.fill();
-      ctx.save(); ctx.translate(d.x, d.y - d.r * 1.3); ctx.rotate(t * 0.9 * (0.5 + windAt()));
+      ctx.save(); ctx.translate(d.x, d.y - d.r * 1.3); ctx.rotate(ADV && !helped('mill') ? 0.35 : t * 0.9 * (0.5 + windAt()));
       for (let i = 0; i < 4; i++) { ctx.rotate(TAU / 4); ctx.fillStyle = '#efe6d0'; ctx.fillRect(4, -6, 52, 12); ctx.strokeStyle = '#6b4a2e'; ctx.lineWidth = 2; ctx.strokeRect(4, -6, 52, 12); ctx.beginPath(); ctx.moveTo(4, 0); ctx.lineTo(56, 0); ctx.stroke(); }
       ctx.restore();
       circle(d.x, d.y - d.r * 1.3, 5, '#5a3a20');
       return true;
     }
     case 'ship': drawFallenShip(d.x, d.y); return true;
+    case 'quest': return true;                     // (drawn with the folk who need help)
     case 'shipfin': case 'shipnose': return true;
     case 'menhir': {
       ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.beginPath(); ctx.ellipse(d.x + 6, d.y + 10, 16, 6, 0, 0, TAU); ctx.fill();
@@ -3209,9 +3416,305 @@ function drawHallFolk(camX, camY) {
     tag(t.x, t.y - 42, t.name, t.col);
   }
 }
+// ── folk who need help, and their troubles ──
+function qFlame(x, y, s) {
+  const f = 0.75 + 0.25 * Math.sin(elapsed * 11 + x * 0.7 + y);
+  const g = ctx.createRadialGradient(x, y - 10 * s, 1, x, y - 10 * s, 30 * s * f); g.addColorStop(0, '#fff6b0'); g.addColorStop(0.4, '#ff8a3a'); g.addColorStop(1, 'rgba(255,90,42,0)');
+  ctx.fillStyle = g; ctx.beginPath(); ctx.ellipse(x, y - 12 * s, 13 * s * f, 26 * s * f, 0, 0, TAU); ctx.fill();
+}
+function qSmoke(x, y, c, p) { if (Math.random() < (p || 0.3)) particles.push({ x: x + rnd(-8, 8), y, vx: rnd(-8, 8) + windAt() * 20, vy: -40, r: rnd(4, 8), life: 1.6, decay: 0.6, color: c || 'rgba(70,64,62,0.45)' }); }
+function qGlow(x, y, r, col) { const g = ctx.createRadialGradient(x, y, 0, x, y, r); g.addColorStop(0, col); g.addColorStop(1, 'rgba(0,0,0,0)'); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill(); }
+function drawPerson(x, y, coat, hat, opt = {}) {
+  if (opt.astro) { drawAstronaut(x, y, 0.85, coat, coat, { x: opt.face || 1, y: 0 }, coat); return; }
+  circle(x + 3, y + 12, 10, 'rgba(0,0,0,0.3)');
+  const s = opt.small ? 0.8 : 1;
+  ctx.save(); ctx.translate(x, y); ctx.scale(s, s);
+  ctx.fillStyle = '#4a3a2a'; ctx.fillRect(-5, 4, 4, 9); ctx.fillRect(1, 4, 4, 9);
+  roundRect(-9, -10, 18, 18, 6); ctx.fillStyle = coat; ctx.fill();
+  circle(0, -15, 7, '#f1d2b0'); circle(-2.5, -15, 1, '#3a2a2a'); circle(2.5, -15, 1, '#3a2a2a');
+  if (opt.sad) { ctx.strokeStyle = '#3a2a2a'; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(0, -10.5, 2, Math.PI * 1.15, Math.PI * 1.85); ctx.stroke(); circle(-3, -12 + (elapsed * 9 % 6), 1.2, '#7ac8ff'); }
+  if (hat) { ctx.fillStyle = hat; ctx.beginPath(); ctx.ellipse(0, -20, 10, 3.5, 0, 0, TAU); ctx.fill(); ctx.fillRect(-5, -27, 10, 7); }
+  ctx.restore();
+}
+function drawQuests(camX, camY) {
+  for (const q of QUESTS) {
+    if (!inView(q.at.x, q.at.y, 280, camX, camY) && !inView(q.x, q.y, 80, camX, camY)) continue;
+    const done = helped(q.id), { x, y } = q.at;
+    const own = drawQuestThing(q, done, x, y);              // (true when the person is part of the picture)
+    if (!own) drawPerson(q.x, q.y, q.coat, q.hat, { astro: q.look === 'astronaut', face: player.x < q.x ? -1 : 1 });
+    if (!done && !(WLD.talk && WLD.talk.name === q.who)) {
+      const b = Math.sin(elapsed * 4 + q.x) * 3, py = own && own.y != null ? own.y : q.y;
+      ctx.textAlign = 'center'; ctx.font = `bold 22px ${SERIF}`; ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(0,0,0,0.7)';
+      ctx.strokeText('!', q.x, py - 44 + b); ctx.fillStyle = '#ffd24a'; ctx.fillText('!', q.x, py - 44 + b);
+    }
+    if (Math.hypot(player.x - q.x, player.y - q.y) < 260) {
+      ctx.textAlign = 'center'; ctx.font = `bold 10px ${SERIF}`; ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.7)';
+      const ty = (own && own.y != null ? own.y : q.y) - 32;
+      ctx.strokeText(q.who, q.x, ty); ctx.fillStyle = done ? '#cfc6a8' : '#ffd24a'; ctx.fillText(q.who, q.x, ty);
+    }
+  }
+}
+// each trouble, before and after (returns { y } when the person is drawn as part of it)
+function drawQuestThing(q, done, x, y) {
+  const t = elapsed, H = (i, k) => hash2(i * 7.1 + x * 0.01, k * 3.3 + y * 0.01);
+  switch (q.id) {
+    case 'barn': {
+      const w = 150, h = 104, x0 = x - w / 2, y0 = y - h / 2, fh = h * 0.42;
+      ctx.fillStyle = 'rgba(0,0,0,0.28)'; ctx.fillRect(x0 + 7, y0 + 9, w, h);
+      ctx.fillStyle = '#a8322a'; ctx.fillRect(x0, y0 + h - fh, w, fh); ctx.strokeStyle = '#f4ead0'; ctx.lineWidth = 3; ctx.strokeRect(x0, y0 + h - fh, w, fh);
+      const dx = x - 22, dy = y0 + h - 34;
+      ctx.fillStyle = '#6a1a14'; ctx.fillRect(dx, dy, 44, 34); ctx.strokeStyle = '#f4ead0'; ctx.lineWidth = 2.5; ctx.strokeRect(dx, dy, 44, 34);
+      ctx.beginPath(); ctx.moveTo(dx, dy); ctx.lineTo(dx + 44, dy + 34); ctx.moveTo(dx + 44, dy); ctx.lineTo(dx, dy + 34); ctx.stroke();
+      const rx = x0 - 8, ry = y0 - 14, rw = w + 16, rh = h - fh + 16;
+      ctx.fillStyle = done ? '#2a2422' : '#4a2a22'; ctx.fillRect(rx, ry, rw, rh * 0.5); ctx.fillStyle = done ? '#33302c' : '#5a3428'; ctx.fillRect(rx, ry + rh * 0.5, rw, rh * 0.5);
+      ctx.fillStyle = '#d8b05a'; for (let i = 0; i < 6; i++) ctx.fillRect(rx + 10 + i * 24, ry + rh - 6, 14, 4);
+      if (!done) { for (let i = 0; i < 6; i++) qFlame(rx + 14 + i * (rw - 28) / 5, ry + rh * (0.3 + 0.15 * Math.sin(i * 1.7)), 1.1); qSmoke(rx + rnd(10, rw - 10), ry, null, 0.5); }
+      return false;
+    }
+    case 'mill': if (done) { ctx.fillStyle = '#e8dcc0'; for (let i = 0; i < 3; i++) { roundRect(x + 30 + i * 14, y + 26, 12, 16, 4); ctx.fill(); } } return false;
+    case 'well': {
+      ctx.fillStyle = '#5a3a20'; ctx.fillRect(x - 24, y - 34, 4, 30); ctx.fillRect(x + 20, y - 34, 4, 30); ctx.fillRect(x - 26, y - 36, 52, 5);
+      circle(x, y, 20, '#8a8478', '#5a544a', 3);
+      circle(x, y, 13, done ? '#3a8ad0' : '#1a1410');
+      if (done) circle(x + Math.sin(t * 2) * 3, y + Math.cos(t * 1.7) * 2, 5, '#e04050', '#fff', 1);
+      return false;
+    }
+    case 'crows': if (!done) for (let i = 0; i < 12; i++) {
+      const cx = x + (H(i, 1) - 0.5) * 240, cy = y + (H(i, 2) - 0.5) * 150, hop = Math.max(0, Math.sin(t * 6 + i * 1.9)) * 3, f = H(i, 3) < 0.5 ? 1 : -1;
+      ctx.fillStyle = '#111'; ctx.beginPath(); ctx.ellipse(cx, cy - hop, 7, 5, 0, 0, TAU); ctx.fill(); circle(cx + 6 * f, cy - 4 - hop, 3.5, '#111');
+      ctx.fillStyle = '#e8b030'; ctx.beginPath(); ctx.moveTo(cx + 9 * f, cy - 5 - hop); ctx.lineTo(cx + 13 * f, cy - 4 - hop); ctx.lineTo(cx + 9 * f, cy - 3 - hop); ctx.fill();
+    } return false;
+    case 'boat': { const p = done ? { x: x + (q.x - x) * 0.45, y: y + (q.y - y) * 0.45 } : { x: x + Math.sin(t * 0.7) * 12, y: y + Math.cos(t * 0.5) * 6 }; drawBoatAt(p.x, p.y, done ? 0.3 : Math.sin(t * 0.6) * 0.4); return false; }
+    case 'heron': {
+      const sh = done ? 0 : Math.sin(t * 9) * 1.2, wood = done ? '#8a8a8e' : '#6b5a48';
+      ctx.strokeStyle = wood; ctx.lineCap = 'round';
+      ctx.lineWidth = 10; ctx.beginPath(); ctx.moveTo(x, y + 10); ctx.lineTo(x + sh, y - 60); ctx.stroke();
+      ctx.lineWidth = 5; ctx.beginPath(); ctx.moveTo(x + sh, y - 40); ctx.lineTo(x - 26 + sh, y - 64); ctx.moveTo(x + sh, y - 50); ctx.lineTo(x + 24 + sh, y - 78); ctx.stroke();
+      ctx.fillStyle = done ? '#8a8478' : '#7a5a34'; ctx.beginPath(); ctx.ellipse(x + 24 + sh, y - 80, 14, 6, 0, 0, TAU); ctx.fill();
+      if (done) { ctx.fillStyle = '#f4f4f4'; ctx.beginPath(); ctx.ellipse(x + 24, y - 90, 7, 9, 0, 0, TAU); ctx.fill(); ctx.strokeStyle = '#f4f4f4'; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.moveTo(x + 26, y - 96); ctx.lineTo(x + 30, y - 106); ctx.stroke(); }
+      else { ctx.strokeStyle = '#2a1a10'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(x + 4, y - 44); ctx.lineTo(x + 10, y - 50); ctx.lineTo(x + 14, y - 46); ctx.stroke(); }
+      return false;
+    }
+    case 'lamp': {
+      circle(x + 5, y + 8, 26, 'rgba(0,0,0,0.3)');
+      for (let i = 0; i < 4; i++) { ctx.fillStyle = i % 2 ? '#d84a3a' : '#f4f0e8'; ctx.fillRect(x - 16 + i * 0.6, y - 20 - i * 16, 32 - i * 1.2, 17); }
+      ctx.fillStyle = '#3a3a4a'; ctx.fillRect(x - 13, y - 86, 26, 6);
+      circle(x, y - 94, 10, done ? '#fff6b0' : '#4a4a5a', '#2a2a3a', 2);
+      ctx.fillStyle = '#3a3a4a'; ctx.beginPath(); ctx.moveTo(x - 12, y - 102); ctx.lineTo(x, y - 116); ctx.lineTo(x + 12, y - 102); ctx.fill();
+      if (done) { qGlow(x, y - 94, 110, 'rgba(255,240,170,0.75)'); qGlow(x, y - 94, 40, 'rgba(255,255,230,0.9)'); const a = t * 1.5; ctx.fillStyle = 'rgba(255,246,176,0.3)'; for (const o of [0, Math.PI]) { ctx.beginPath(); ctx.moveTo(x, y - 94); ctx.arc(x, y - 94, 340, a + o - 0.14, a + o + 0.14); ctx.fill(); } }
+      return false;
+    }
+    case 'web': {
+      ctx.fillStyle = '#4a3a2a'; ctx.fillRect(x - 70, y - 70, 8, 80); ctx.fillRect(x + 62, y - 70, 8, 80);
+      ctx.strokeStyle = done ? 'rgba(30,20,20,0.7)' : 'rgba(240,240,250,0.8)'; ctx.lineWidth = 1.5;
+      if (done) { for (let i = 0; i < 4; i++) { ctx.beginPath(); ctx.moveTo(x - 62, y - 60 + i * 12); ctx.lineTo(x - 50, y - 50 + i * 14); ctx.stroke(); } return false; }
+      const cy = y - 30;
+      for (let i = 0; i < 10; i++) { const a = i * TAU / 10; ctx.beginPath(); ctx.moveTo(x, cy); ctx.lineTo(x + Math.cos(a) * 64, cy + Math.sin(a) * 40); ctx.stroke(); }
+      for (let r = 12; r < 64; r += 12) { ctx.beginPath(); for (let i = 0; i <= 10; i++) { const a = i * TAU / 10; i ? ctx.lineTo(x + Math.cos(a) * r, cy + Math.sin(a) * r * 0.62) : ctx.moveTo(x + Math.cos(a) * r, cy + Math.sin(a) * r * 0.62); } ctx.stroke(); }
+      circle(x + 10, cy - 6 + Math.sin(t * 2) * 3, 6, '#1a1a1a'); circle(x + 10, cy - 13 + Math.sin(t * 2) * 3, 3.5, '#1a1a1a');
+      return false;
+    }
+    case 'ankle': drawPerson(q.x, q.y + (done ? 0 : 8), q.coat, null, { sad: !done, small: true }); return { y: q.y + (done ? 0 : 8) };
+    case 'ghost': {
+      ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.beginPath(); ctx.ellipse(x + 8, y + 16, 46, 16, 0, 0, TAU); ctx.fill();
+      ctx.fillStyle = '#4a3a2a'; ctx.fillRect(x - 9, y - 24, 18, 40);
+      for (const [ox, oy, r] of [[0, -48, 34], [-26, -34, 24], [26, -36, 24]]) circle(x + ox, y + oy, r, done ? '#3f7a3a' : '#2d4a2e');
+      if (!done) { const gx = x + Math.sin(t * 1.3) * 22, gy = y - 54 + Math.sin(t * 2.1) * 6; ctx.globalAlpha = 0.55 + 0.25 * Math.sin(t * 3); ctx.fillStyle = '#dfe8ff'; ctx.beginPath(); ctx.arc(gx, gy, 14, Math.PI, 0); ctx.lineTo(gx + 14, gy + 18); for (let i = 0; i < 4; i++) ctx.lineTo(gx + 10 - i * 8, gy + 12 + (i % 2) * 6); ctx.closePath(); ctx.fill(); ctx.globalAlpha = 1; circle(gx - 5, gy - 2, 2.5, '#223'); circle(gx + 5, gy - 2, 2.5, '#223'); }
+      return false;
+    }
+    case 'sheep': for (let i = 0; i < 9; i++) {
+      const sx = done ? q.x + 50 + (i % 3) * 16 - 16 : x + (H(i, 1) - 0.5) * 380, sy = done ? q.y + 10 + Math.floor(i / 3) * 12 : y + (H(i, 2) - 0.5) * 300, b = Math.sin(t * 2 + i) * 1.5;
+      ctx.fillStyle = '#f2efe6'; ctx.beginPath(); ctx.ellipse(sx, sy + b, 9, 6.5, 0, 0, TAU); ctx.fill(); circle(sx + 7, sy - 2 + b, 3.5, '#3a3a3a');
+    } if (done) { ctx.strokeStyle = '#7a5a3a'; ctx.lineWidth = 2; ctx.beginPath(); ctx.ellipse(q.x + 50, q.y + 22, 40, 26, 0, 0, TAU); ctx.stroke(); } return false;
+    case 'lamb': {
+      if (!done) for (let i = 0; i < 7; i++) circle(x + (H(i, 1) - 0.5) * 70, y + (H(i, 2) - 0.5) * 40, 10 + H(i, 3) * 9, i % 2 ? '#8a8a8e' : '#76767a', '#5a5a5e', 1.5);
+      else for (let i = 0; i < 12; i++) circle(x + (H(i, 1) - 0.5) * 110, y + (H(i, 2) - 0.5) * 60, 2 + H(i, 3) * 3, '#8a8a8e');
+      const lx = done ? q.x + 22 : x + 4, ly = done ? q.y + 6 : y - 22;
+      ctx.fillStyle = '#f6f2e8'; ctx.beginPath(); ctx.ellipse(lx, ly, 7, 5, 0, 0, TAU); ctx.fill(); circle(lx + 5, ly - 2, 3, '#f6f2e8');
+      return false;
+    }
+    case 'mine': {
+      ctx.fillStyle = '#7a6a55'; ctx.beginPath(); ctx.ellipse(x, y - 6, 66, 40, 0, Math.PI, 0); ctx.fill();
+      ctx.fillStyle = '#1a1410'; ctx.beginPath(); ctx.ellipse(x, y - 4, 24, 28, 0, Math.PI, 0); ctx.fill(); ctx.fillRect(x - 24, y - 4, 48, 8);
+      ctx.fillStyle = done ? '#8a8a8e' : '#6a4a2a'; ctx.fillRect(x - 30, y - 34, 8, 40); ctx.fillRect(x + 22, y - 34, 8, 40); ctx.fillRect(x - 32, y - 38, 64, 7);
+      if (!done) { ctx.strokeStyle = '#2a1a10'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(x - 10, y - 37); ctx.lineTo(x - 4, y - 33); ctx.lineTo(x + 2, y - 37); ctx.stroke(); if (Math.random() < 0.2) particles.push({ x: x + rnd(-20, 20), y: y - 30, vx: 0, vy: 40, r: 1.6, life: 0.6, decay: 1.6, color: '#a89878' }); }
+      return false;
+    }
+    case 'troll': {
+      ctx.fillStyle = '#3a7ab0'; ctx.fillRect(x - 90, y - 10, 180, 26);
+      ctx.fillStyle = '#8a6238'; ctx.fillRect(x - 40, y - 16, 80, 38); ctx.fillStyle = '#5a3a20'; ctx.fillRect(x - 40, y - 18, 80, 4); ctx.fillRect(x - 40, y + 20, 80, 4);
+      if (!done) {
+        ctx.fillStyle = '#5a8a4a'; ctx.beginPath(); ctx.ellipse(x, y, 30, 16, 0, 0, TAU); ctx.fill(); circle(x + 26, y - 8, 11, '#6a9a5a'); circle(x + 30, y - 10, 1.8, '#1a1a1a');
+        ctx.fillStyle = 'rgba(255,255,255,0.75)'; ctx.font = `bold ${10 + 2 * Math.sin(t * 2)}px ${SERIF}`; ctx.textAlign = 'center'; ctx.fillText('z', x + 34, y - 26 - (t * 8 % 10));
+      } else { const fx = x + 60 + Math.sin(t) * 20, hop = Math.abs(Math.sin(t * 3)) * 6; circle(fx, y + 4 - hop, 6, '#4caf50'); circle(fx - 2, y - hop, 1.5, '#111'); circle(fx + 2, y - hop, 1.5, '#111'); }
+      return false;
+    }
+    case 'rats': {
+      ctx.fillStyle = 'rgba(0,0,0,0.28)'; ctx.fillRect(x - 36, y - 18, 80, 50);
+      ctx.fillStyle = '#9a7448'; ctx.fillRect(x - 40, y - 10, 80, 40); ctx.fillStyle = '#6a4a2a'; ctx.fillRect(x - 46, y - 30, 92, 22); ctx.strokeStyle = '#4e3218'; ctx.lineWidth = 2; ctx.strokeRect(x - 40, y - 10, 80, 40);
+      if (!done) for (let i = 0; i < 6; i++) { const a = t * (1.2 + i * 0.13) + i * 1.1, rx = x + Math.cos(a) * (56 + i * 3), ry = y + 12 + Math.sin(a) * 30; ctx.fillStyle = '#6a6a6e'; ctx.beginPath(); ctx.ellipse(rx, ry, 5, 3, a + Math.PI / 2, 0, TAU); ctx.fill(); }
+      return false;
+    }
+    case 'pine': {
+      if (done) { ctx.fillStyle = '#3a3634'; ctx.beginPath(); ctx.ellipse(x, y, 60, 14, -0.2, 0, TAU); ctx.fill(); qSmoke(x, y - 6, 'rgba(120,120,120,0.35)', 0.1); return false; }
+      ctx.save(); ctx.translate(x, y); ctx.rotate(-0.2);
+      ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.fillRect(-110, 6, 220, 14);
+      ctx.fillStyle = '#6b4a2e'; ctx.fillRect(-110, -8, 200, 16);
+      for (let i = 0; i < 6; i++) { ctx.fillStyle = '#2d5a3a'; ctx.beginPath(); ctx.moveTo(60 + i * 8, -8); ctx.lineTo(90 + i * 6, -24 + (i % 2) * 8); ctx.lineTo(96 + i * 4, -6); ctx.fill(); }
+      circle(-110, 0, 9, '#8a6a44', '#5a3a20', 2);
+      ctx.restore(); return false;
+    }
+    case 'beacon': {
+      circle(x + 5, y + 8, 22, 'rgba(0,0,0,0.3)'); circle(x, y, 20, '#7a7570', '#5a5550', 3);
+      ctx.fillStyle = '#2a2a2e'; ctx.beginPath(); ctx.ellipse(x, y - 14, 18, 8, 0, 0, TAU); ctx.fill();
+      ctx.strokeStyle = '#6b4a2e'; ctx.lineWidth = 4; for (let i = 0; i < 4; i++) { ctx.beginPath(); ctx.moveTo(x - 12 + i * 6, y - 12); ctx.lineTo(x - 6 + i * 4, y - 26); ctx.stroke(); }
+      if (done) { qGlow(x, y - 30, 80, 'rgba(255,170,60,0.45)'); for (let i = 0; i < 3; i++) qFlame(x - 8 + i * 8, y - 18, 1.4); qSmoke(x, y - 60); }
+      return false;
+    }
+    case 'hearth': {
+      for (let i = 0; i < 8; i++) { const a = i * TAU / 8; circle(x + Math.cos(a) * 18, y + Math.sin(a) * 12, 6, '#8a8a8e', '#5a5a5e', 1.5); circle(x + Math.cos(a) * 18, y + Math.sin(a) * 12 - 3, 3, '#f4f6fa'); }
+      circle(x, y, 11, done ? '#3a2a1a' : '#5a5a5e');
+      if (done) { qGlow(x, y - 10, 90, 'rgba(255,170,60,0.4)'); qFlame(x - 5, y - 2, 1.2); qFlame(x + 5, y, 1); qSmoke(x, y - 40); }
+      return false;
+    }
+    case 'ice': {
+      ctx.fillStyle = '#cfe6f4'; ctx.beginPath(); ctx.ellipse(x, y, 120, 64, 0, 0, TAU); ctx.fill(); ctx.strokeStyle = '#a8c8dc'; ctx.lineWidth = 2; ctx.stroke();
+      if (!done) {
+        ctx.fillStyle = '#1a4a6a'; ctx.beginPath(); ctx.ellipse(x, y, 22, 11, 0, 0, TAU); ctx.fill();
+        circle(x, y - 6, 7, '#f1d2b0'); ctx.fillStyle = q.hat; ctx.fillRect(x - 6, y - 15, 12, 5);
+        const w = Math.sin(t * 8) * 6; ctx.strokeStyle = q.coat; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(x - 6, y); ctx.lineTo(x - 14, y - 12 + w); ctx.moveTo(x + 6, y); ctx.lineTo(x + 14, y - 12 - w); ctx.stroke();
+        if (Math.random() < 0.3) particles.push({ x: x + rnd(-14, 14), y: y - 2, vx: rnd(-30, 30), vy: -40, r: 1.6, life: 0.5, decay: 2, color: '#bfe6ff' });
+        return { y: y - 6 };
+      }
+      ctx.fillStyle = '#e8f6ff'; ctx.beginPath(); ctx.ellipse(x, y, 22, 11, 0, 0, TAU); ctx.fill();
+      return false;
+    }
+    case 'goat': {
+      ctx.fillStyle = '#1a1612'; ctx.beginPath(); ctx.ellipse(x - 40, y, 70, 120, 0, 0, TAU); ctx.fill();
+      ctx.fillStyle = '#8a8478'; ctx.beginPath(); ctx.ellipse(x - 70, y - 20, 30, 18, 0, 0, TAU); ctx.fill();
+      const gx = done ? q.x + 22 : x - 70, gy = done ? q.y + 4 : y - 26;
+      ctx.fillStyle = '#efe8d8'; ctx.beginPath(); ctx.ellipse(gx, gy, 8, 6, 0, 0, TAU); ctx.fill(); circle(gx + 7, gy - 4, 3.5, '#efe8d8');
+      ctx.strokeStyle = '#5a4a3a'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(gx + 7, gy - 7); ctx.lineTo(gx + 5, gy - 11); ctx.stroke();
+      return false;
+    }
+    case 'boulder': {
+      if (done) { for (let i = 0; i < 16; i++) circle(x + (H(i, 1) - 0.5) * 140, y + (H(i, 2) - 0.5) * 80, 2 + H(i, 3) * 4, '#8a8a8e'); return false; }
+      ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.beginPath(); ctx.ellipse(x + 10, y + 30, 54, 18, 0, 0, TAU); ctx.fill();
+      circle(x, y, 46, '#8a8a8e'); circle(x - 12, y - 14, 30, '#9a9a9e'); circle(x - 20, y - 22, 12, '#aeaeb2');
+      ctx.strokeStyle = 'rgba(40,40,44,0.5)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(x + 10, y - 30); ctx.lineTo(x + 18, y - 4); ctx.lineTo(x + 8, y + 18); ctx.stroke();
+      return false;
+    }
+    case 'ledge': {
+      ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.beginPath(); ctx.ellipse(x + 8, y + 14, 40, 14, 0, 0, TAU); ctx.fill();
+      ctx.fillStyle = '#7a7670'; ctx.beginPath(); ctx.moveTo(x - 34, y + 10); ctx.lineTo(x - 26, y - 60); ctx.lineTo(x + 24, y - 66); ctx.lineTo(x + 34, y + 10); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#8e8a84'; ctx.fillRect(x - 28, y - 70, 54, 10);
+      if (done) { for (let i = 0; i < 3; i++) circle(x + 44 + i * 10, y - 4 - i * 18, 10, '#8a8a8e', '#5a5a5e', 1.5); return false; }
+      drawPerson(x, y - 76, q.coat, q.hat, { small: true }); return { y: y - 76 };
+    }
+    case 'forge': {
+      ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.fillRect(x - 22, y - 10, 52, 40);
+      ctx.fillStyle = '#7a4a3a'; ctx.fillRect(x - 26, y - 22, 52, 44); ctx.strokeStyle = '#4a2a1a'; ctx.lineWidth = 2; ctx.strokeRect(x - 26, y - 22, 52, 44);
+      ctx.fillStyle = done ? '#ff8a3a' : '#fff0a0'; ctx.beginPath(); ctx.ellipse(x, y + 4, 12, 9, 0, 0, TAU); ctx.fill();
+      ctx.fillStyle = '#3a3a3e'; ctx.fillRect(x + 34, y + 2, 22, 8); ctx.fillRect(x + 40, y + 10, 10, 10);
+      if (!done) { qGlow(x, y, 70 + Math.sin(t * 9) * 8, 'rgba(255,90,42,0.5)'); qSmoke(x, y - 26, 'rgba(60,50,50,0.35)', 0.12); if (Math.random() < 0.4) particles.push({ x: x + rnd(-10, 10), y: y - 20, vx: rnd(-60, 60), vy: rnd(-120, -60), r: 1.6, life: 0.6, decay: 1.8, color: '#ffd24a' }); }
+      else { ctx.fillStyle = '#e8f8ff'; for (let i = 0; i < 5; i++) ctx.fillRect(x - 24 + i * 11, y + 22, 3, 6 + (i % 2) * 4); }
+      return false;
+    }
+    case 'lava': {
+      ctx.save(); ctx.translate(x, y); ctx.rotate(0.5);
+      if (done) { ctx.fillStyle = '#2a2624'; ctx.fillRect(-150, -30, 300, 60); ctx.strokeStyle = 'rgba(90,80,70,0.6)'; ctx.lineWidth = 2; for (let i = -140; i < 150; i += 30) { ctx.beginPath(); ctx.moveTo(i, -30); ctx.lineTo(i + 10, 30); ctx.stroke(); } }
+      else { ctx.fillStyle = '#7a1a0a'; ctx.fillRect(-150, -34, 300, 68); ctx.fillStyle = '#ff5a1a'; ctx.fillRect(-150, -24, 300, 48); ctx.fillStyle = '#ffb04a'; for (let i = 0; i < 8; i++) { const bx = -140 + ((i * 41 + t * 30) % 280); circle(bx, Math.sin(i * 3 + t) * 12, 4 + Math.sin(t * 4 + i) * 2, '#ffd27a'); } }
+      ctx.restore();
+      if (!done) qGlow(x, y, 120, 'rgba(255,90,30,0.25)');
+      return false;
+    }
+    case 'egg': {
+      for (let i = 0; i < 9; i++) { const a = i * TAU / 9; circle(x + Math.cos(a) * 26, y + 8 + Math.sin(a) * 14, 7, '#6a6a6e', '#4a4a4e', 1.5); }
+      ctx.fillStyle = done ? '#f4ead0' : '#d8e4ee'; ctx.beginPath(); ctx.ellipse(x, y - 8, 17, 23, 0, 0, TAU); ctx.fill();
+      for (let i = 0; i < 5; i++) circle(x + (H(i, 1) - 0.5) * 22, y - 8 + (H(i, 2) - 0.5) * 30, 2.5, done ? '#c0603a' : '#9ab0c8');
+      if (done) { ctx.strokeStyle = '#5a3a20'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(x - 16, y - 14); ctx.lineTo(x - 8, y - 20); ctx.lineTo(x, y - 12); ctx.lineTo(x + 8, y - 20); ctx.lineTo(x + 16, y - 14); ctx.stroke(); circle(x + Math.sin(t * 3) * 3, y - 30, 8, '#d03a2a'); circle(x + 3 + Math.sin(t * 3) * 3, y - 32, 1.8, '#ffd24a'); }
+      else { ctx.fillStyle = 'rgba(220,240,255,0.6)'; ctx.fillRect(x - 10, y - 24, 3, 8); ctx.fillRect(x + 6, y - 18, 3, 6); }
+      return false;
+    }
+    case 'battery': {
+      ctx.strokeStyle = '#2a2a2e'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(x, y - 10); ctx.quadraticCurveTo((x + CRASH.x) / 2, y - 40, CRASH.x - 40, CRASH.y - 10); ctx.stroke();
+      ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.fillRect(x - 16, y - 8, 40, 28);
+      ctx.fillStyle = '#7a8088'; ctx.fillRect(x - 20, y - 16, 40, 30); ctx.strokeStyle = '#3a3e44'; ctx.lineWidth = 2; ctx.strokeRect(x - 20, y - 16, 40, 30);
+      ctx.fillStyle = '#ffd24a'; ctx.fillRect(x - 6, y - 22, 12, 6);
+      circle(x, y - 2, 6, done ? '#5aff7a' : '#ff3a3a');
+      if (done && Math.random() < 0.3) particles.push({ x: x + rnd(-14, 14), y: y - 18, vx: rnd(-50, 50), vy: -60, r: 1.4, life: 0.4, decay: 2.2, color: '#9fe8ff' });
+      return false;
+    }
+    case 'robot': {
+      const spin = done ? 0 : t * 12;
+      ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.beginPath(); ctx.ellipse(x + 4, y + 16, 20, 7, 0, 0, TAU); ctx.fill();
+      ctx.save(); ctx.translate(x, y); ctx.rotate(spin);
+      ctx.fillStyle = '#a8b0bc'; ctx.fillRect(-14, -12, 28, 26); ctx.fillStyle = '#c8d0dc'; ctx.fillRect(-10, -26, 20, 14);
+      circle(-4, -19, 2.5, done ? '#444' : '#5ae0ff'); circle(4, -19, 2.5, done ? '#444' : '#5ae0ff');
+      ctx.strokeStyle = '#7a8088'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(-14, -4); ctx.lineTo(-26, 4); ctx.moveTo(14, -4); ctx.lineTo(26, 4); ctx.stroke();
+      ctx.restore();
+      if (!done && Math.random() < 0.4) particles.push({ x: x + rnd(-20, 20), y: y + rnd(-20, 10), vx: rnd(-80, 80), vy: rnd(-80, 20), r: 1.5, life: 0.4, decay: 2.2, color: '#ffd24a' });
+      return false;
+    }
+    case 'cloud': {
+      for (const [ox, roof] of [[-50, '#b8a060'], [40, '#a89050']]) { ctx.fillStyle = '#c8b898'; ctx.fillRect(x + ox - 22, y - 6, 44, 26); ctx.fillStyle = roof; ctx.beginPath(); ctx.moveTo(x + ox - 28, y - 4); ctx.lineTo(x + ox, y - 30); ctx.lineTo(x + ox + 28, y - 4); ctx.fill(); ctx.fillStyle = '#4a3a2a'; ctx.fillRect(x + ox - 5, y + 6, 10, 14); }
+      if (!done) for (let i = 0; i < 9; i++) { const cx = x + Math.sin(t * 0.6 + i * 1.3) * 60 + (i - 4) * 14, cy = y - 30 + Math.cos(t * 0.5 + i) * 14; ctx.fillStyle = 'rgba(140,60,170,0.32)'; ctx.beginPath(); ctx.arc(cx, cy, 26 + (i % 3) * 6, 0, TAU); ctx.fill(); }
+      return false;
+    }
+    case 'oak': {
+      ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.beginPath(); ctx.ellipse(x + 8, y + 18, 56, 18, 0, 0, TAU); ctx.fill();
+      ctx.fillStyle = '#5a4030'; ctx.fillRect(x - 12, y - 30, 24, 48);
+      if (done) { for (const [ox, oy, r] of [[0, -62, 44], [-34, -44, 30], [34, -46, 30], [-14, -84, 26], [18, -82, 26]]) circle(x + ox, y + oy, r, '#3f7a3a'); for (const [ox, oy, r] of [[-6, -70, 24], [-30, -50, 16], [26, -54, 16]]) circle(x + ox, y + oy, r, '#5a9a4a'); }
+      else { ctx.strokeStyle = '#6a5a4a'; ctx.lineWidth = 5; ctx.lineCap = 'round'; for (const [a, l] of [[-2.2, 50], [-1.6, 60], [-1.0, 52], [-2.6, 36], [-0.5, 38]]) { ctx.beginPath(); ctx.moveTo(x, y - 28); ctx.lineTo(x + Math.cos(a) * l, y - 28 + Math.sin(a) * l); ctx.stroke(); } for (let i = 0; i < 6; i++) circle(x + (H(i, 1) - 0.5) * 80, y - 50 - H(i, 2) * 30, 3, '#a87a3a'); }
+      return false;
+    }
+    case 'rams': {
+      ctx.fillStyle = '#8a6238'; ctx.fillRect(x - 60, y - 24, 120, 48); ctx.strokeStyle = '#5a3a20'; ctx.lineWidth = 2; for (let i = -60; i < 60; i += 15) { ctx.beginPath(); ctx.moveTo(x + i, y - 24); ctx.lineTo(x + i, y + 24); ctx.stroke(); }
+      const ram = (rx, ry, f) => { ctx.fillStyle = '#f2efe6'; ctx.beginPath(); ctx.ellipse(rx, ry, 13, 9, 0, 0, TAU); ctx.fill(); circle(rx + 11 * f, ry - 4, 5, '#d8d4ca'); ctx.strokeStyle = '#9a8a6a'; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.arc(rx + 9 * f, ry - 7, 4, 0, TAU); ctx.stroke(); };
+      if (!done) { const k = Math.abs(Math.sin(t * 3)) * 10; ram(x - 22 + k, y, 1); ram(x + 22 - k, y, -1); }
+      else { ram(x - 130, y + 50, -1); ram(x + 140, y - 40, 1); }
+      return false;
+    }
+    case 'cave': {
+      ctx.fillStyle = '#6d6a66'; ctx.beginPath(); ctx.ellipse(x, y - 10, 80, 54, 0, Math.PI, 0); ctx.fill(); ctx.fillRect(x - 80, y - 10, 160, 14);
+      circle(x, y - 14, 24, done ? '#141018' : '#8a8680', '#4a4640', 3);
+      if (done) qGlow(x, y - 14, 40, 'rgba(160,200,255,0.4)');
+      else { ctx.strokeStyle = '#c8d8ff'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(x, y - 14, 12, 0.3, 2.6); ctx.stroke(); }
+      return false;
+    }
+    case 'knight': {
+      if (done) { drawPerson(q.x, q.y, '#9a9aa8', '#6a6a78'); ctx.fillStyle = '#3a5a9a'; ctx.beginPath(); ctx.ellipse(q.x - 13, q.y - 2, 6, 9, 0, 0, TAU); ctx.fill(); return { y: q.y }; }
+      ctx.save(); ctx.translate(q.x, q.y + 6); ctx.rotate(-Math.PI / 2);
+      roundRect(-9, -10, 18, 22, 6); ctx.fillStyle = '#9a9aa8'; ctx.fill(); circle(0, -16, 7, '#c8c8d0');
+      ctx.restore();
+      ctx.fillStyle = '#3a5a9a'; ctx.beginPath(); ctx.ellipse(q.x + 4, q.y + 22, 9, 6, 0, 0, TAU); ctx.fill();
+      return { y: q.y + 8 };
+    }
+    case 'wisp': {
+      drawPerson(q.x, q.y, q.coat, null, { small: true, sad: !done });
+      if (done) { const wx = q.x + 18 + Math.sin(t * 2) * 6, wy = q.y - 26 + Math.cos(t * 3) * 4; qGlow(wx, wy, 26, 'rgba(200,255,200,0.6)'); circle(wx, wy, 4, '#f0fff0'); }
+      return { y: q.y };
+    }
+    case 'cart': {
+      const rx = done ? x : x + Math.sin(t * 0.8) * 16;
+      if (done) { ctx.fillStyle = '#5a4028'; ctx.beginPath(); ctx.ellipse(x, y + 10, 44, 16, 0, 0, TAU); ctx.fill(); }
+      ctx.fillStyle = '#8a6238'; ctx.fillRect(rx - 26, y - 20, 52, 26); ctx.strokeStyle = '#5a3a20'; ctx.lineWidth = 2; ctx.strokeRect(rx - 26, y - 20, 52, 26);
+      ctx.fillStyle = '#c9a24a'; ctx.fillRect(rx - 20, y - 26, 16, 8); ctx.fillRect(rx + 2, y - 28, 18, 10);
+      for (const wx of [-16, 16]) { circle(rx + wx, y + 8, 9, '#5a3a20'); ctx.save(); ctx.translate(rx + wx, y + 8); ctx.rotate(done ? 0 : Math.sin(t * 0.8) * 2); ctx.strokeStyle = '#c9a24a'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(-8, 0); ctx.lineTo(8, 0); ctx.moveTo(0, -8); ctx.lineTo(0, 8); ctx.stroke(); ctx.restore(); }
+      return false;
+    }
+    case 'willo': {
+      ctx.fillStyle = '#2a3a2e'; ctx.beginPath(); ctx.ellipse(x, y + 6, 54, 22, 0, 0, TAU); ctx.fill();
+      if (!done) { const wx = x + Math.sin(t * 0.9) * 40, wy = y - 24 + Math.sin(t * 2.3) * 8; qGlow(wx, wy, 40, 'rgba(140,255,200,0.55)'); circle(wx, wy, 5, '#e8fff4'); }
+      return false;
+    }
+  }
+  return false;
+}
 // the folk of Hollowbrook, and the signposts at the crossroads
 function drawFolk(camX, camY) {
   drawHallFolk(camX, camY);
+  drawQuests(camX, camY);
   for (const v of VILLAGERS) {
     const p = v.at || v;
     if (!inView(p.x, p.y, 60, camX, camY)) continue;
@@ -3544,6 +4047,11 @@ function drawMapOverlay() {
     else { circle(x, y, 6, d.crown ? '#ffd24a' : TYPE_COLOR[d.elem], '#000', 1.5); }
   }
   for (const r of RIVALS) if (!ADV.world.rivals.includes(r.id) && seenAt(r.x, r.y)) circle(X(r.x), Y(r.y), 3, TYPE_COLOR[r.elem], '#000', 1);
+  if (!mapView.travel) for (const q of QUESTS) {
+    if (helped(q.id) || !seenAt(q.x, q.y)) continue;
+    circle(X(q.x), Y(q.y), 5.5, '#ffd24a', '#000', 1.2);
+    ctx.fillStyle = '#2a1a00'; ctx.font = `bold 9px ${SERIF}`; ctx.textAlign = 'center'; ctx.fillText('!', X(q.x), Y(q.y) + 3);
+  }
   if (boat.x < AW) { ctx.fillStyle = '#c08a50'; ctx.beginPath(); ctx.ellipse(X(boat.x), Y(boat.y), 5, 3, boat.ang || 0, 0, TAU); ctx.fill(); }
   const pulse = 4 + Math.sin(elapsed * 6) * 1.5;
   circle(X(player.x), Y(player.y), pulse + 3, 'rgba(255,255,255,0.3)');
@@ -3552,17 +4060,19 @@ function drawMapOverlay() {
   ctx.textAlign = 'center'; ctx.font = `13px ${SERIF}`; ctx.fillStyle = '#ccc';
   const by = R.y + R.s + 22;
   if (!mapView.travel) {
-    const ky = R.y + R.s + 76;
+    const ky = R.y + R.s + 92;
     ctx.font = `12px ${SERIF}`; ctx.textAlign = 'left';
-    const items = [['◆', '#8fd0ff', 'waystone'], ['●', '#ff5a2a', 'titan'], ['✕', '#999', 'titan beaten'], ['•', '#c77dff', 'rival'], ['▬', '#c08a50', 'your boat']];
+    const items = [['◆', '#8fd0ff', 'waystone'], ['●', '#ff5a2a', 'titan'], ['•', '#c77dff', 'rival'], ['!', '#ffd24a', 'needs help'], ['▬', '#c08a50', 'boat']];
     let x = W / 2 - items.reduce((a, [, , t]) => a + ctx.measureText(t).width + 26, 0) / 2;
     for (const [sym, c, t] of items) { ctx.fillStyle = c; ctx.fillText(sym, x, ky); ctx.fillStyle = '#bbb'; ctx.fillText(t, x + 13, ky); x += ctx.measureText(t).width + 26; }
     ctx.textAlign = 'center'; ctx.font = `13px ${SERIF}`; ctx.fillStyle = '#ccc';
   }
   ctx.fillText(`Titans ${ADV.world.titans.length}/9 · Rivals ${ADV.world.rivals.length}/${RIVALS.length} · Crystals ${ADV.world.chests.length}/${CHESTS.length} · Waystones ${ADV.world.ways.length}/${WAYSTONES.length}`, W / 2, by);
-  ctx.fillStyle = '#ffd24a'; ctx.font = `bold 15px ${SERIF}`;
+  ctx.fillStyle = '#ffd24a'; ctx.font = `12px ${SERIF}`;
+  ctx.fillText(`Folk helped ${helpedCount()} of ${QUESTS.length}${helpedCount() >= 10 ? ` · the Elder’s blessings ${ADV.world.blessed || 0}` : ''}`, W / 2, by + 18);
+  ctx.font = `bold 15px ${SERIF}`;
   ctx.globalAlpha = 0.7 + Math.sin(elapsed * 3) * 0.3;
-  ctx.fillText(mapView.travel ? '[ tap a glowing waystone · tap elsewhere to close ]' : '[ tap to close ]', W / 2, by + 26);
+  ctx.fillText(mapView.travel ? '[ tap a glowing waystone · tap elsewhere to close ]' : '[ tap to close ]', W / 2, by + 44);
   ctx.globalAlpha = 1;
 }
 function mapTap(x, y) {
@@ -3834,6 +4344,7 @@ function tipFor(key) {
   if (SPELL_TIP[key]) return SPELL_TIP[key];
   const sp = SPELLS[key];
   if (!sp) return '';
+  if (sp.woven) return wovenTip(sp.woven);
   return sp.kind === 'heal' ? 'Heals you.' : sp.kind === 'summon' ? 'Calls a helper to fight with you.' : sp.kind === 'defence' ? 'Keeps you safe.' : sp.kind === 'buff' ? 'Makes you stronger for a while.' : sp.kind === 'control' ? 'Holds your foes back.' : 'An attack.';
 }
 
@@ -4164,6 +4675,8 @@ function aimFrom(src, range) {
     const dx = t.x - src.x, dy = t.y - src.y, d = Math.hypot(dx, dy) || 1;
     return { x: dx / d, y: dy / d, t };
   }
+  const q = src === player && mode === 'adventure' && WLD ? questNear(src.x, src.y, Math.min(range || 600, 330)) : null;
+  if (q) { const dx = q.at.x - src.x, dy = q.at.y - src.y, d = Math.hypot(dx, dy) || 1; return { x: dx / d, y: dy / d, t: null }; }
   return { x: player.face.x, y: player.face.y, t: null };
 }
 
@@ -4421,6 +4934,8 @@ function chainLightning(dmg, jumps) {
 function targetPoint(range, ahead) {
   const t = nearestFoe(player.x, player.y, range);
   if (t) return { x: t.x, y: t.y };
+  const q = mode === 'adventure' && WLD ? questNear(player.x, player.y, Math.min(range, 330)) : null;
+  if (q) return { x: q.at.x, y: q.at.y };
   return { x: player.x + player.face.x * ahead, y: player.y + player.face.y * ahead };
 }
 
@@ -5082,6 +5597,7 @@ function castSequence() {
     if (tier >= 4) shake = Math.max(shake, (tier - 3) * 4);
     if (player === hostP) { SFX.weave(key); (sp.kind === 'heal' ? SFX.heal : sp.kind === 'summon' ? SFX.summon : SFX.buff)(); }
     castWithPotency(key, () => sp.cast());
+    if (mode === 'adventure' && player === hostP) questCast(key);
   }
   if (!discovered.has(key)) {
     discovered.add(key);
@@ -5113,6 +5629,7 @@ function releaseSpell(key) {
   const sp = SPELLS[key];
   castSigil(key, player.x, player.y, true);
   castWithPotency(key, () => (sp.fire || sp.cast)());
+  if (mode === 'adventure' && player === hostP) questCast(key);
 }
 
 function shootArrow(wx, wy) {
@@ -9614,7 +10131,7 @@ function drawCastles(camX, camY) {
     ctx.fillText(c.name, c.x, c.y - c.h - 14);
   }
   for (const w of walls) {
-    if (w.hall) continue;                         // (drawn with their halls)
+    if (w.hall || w.quest) continue;              // (drawn with their halls, or with the folk who need help)
     if (!inView(w.x + w.w / 2, w.y + w.h / 2, Math.max(w.w, w.h), camX, camY)) continue;
     if (w.house) { drawHouse(w); continue; }
     if (w.ruin) { drawRuinWall(w); continue; }
