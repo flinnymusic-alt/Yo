@@ -189,7 +189,12 @@ const TIER_WINDUP = [0, 0, 0, 0.25, 0.7, 1.2, 1.6, 2.2]; // seconds standing sti
 // element types in it, and with a richer repetition pattern (how many
 // different repeat counts it uses). 2 Spirit + 3 Air + 1 Water (counts 3,2,1)
 // beats 2 + 2 + 2 (counts all the same), and both beat six of one rune.
+// The water, earth and spirit lines were re-shaped so that no two lines look alike;
+// each spell keeps the complexity (so the power) of the pattern it used to have.
+const LINE_WAS = { WA: 'WW', WAE: 'WWA', WAEF: 'WWAW', WAEFW: 'WWAWW', EF: 'EE', EFS: 'EES', EFSE: 'EESE', EFSEE: 'EESEE',
+                   SE: 'SS', SEW: 'SSA', SEWA: 'SSAW', SEWAF: 'SSAWS' };
 function complexityOf(key) {
+  key = LINE_WAS[key] || key;
   const counts = {};
   for (const c of key) counts[c] = (counts[c] || 0) + 1;
   const n = Object.values(counts);
@@ -207,11 +212,11 @@ const isAttack = sp => sp.kind === 'attack' || sp.kind === 'poison' || sp.kind =
 const SPELLS = {
   // ── 2 · Minor: cheap pokes and tricks ──
   FF:      { name: 'Firebolt',        kind: 'attack',  cost: 3,  cast() { shoot({ dmg: 1.5, type: 'fire', speed: 520, r: 7, fx: 'burn', look: 'firebolt' }); } },
-  WW:      { name: 'Frost Shard',     kind: 'attack',  cost: 3,  cast() { shoot({ dmg: 1, type: 'water', speed: 600, r: 6, fx: 'slow', look: 'frost' }); } },
-  EE:      { name: 'Stone Spike',     kind: 'attack',  cost: 3,  cast() { shoot({ dmg: 2, type: 'earth', speed: 380, r: 8, look: 'spike' }); } },
+  WA:      { name: 'Frost Shard',     kind: 'attack',  cost: 3,  cast() { shoot({ dmg: 1, type: 'water', speed: 600, r: 6, fx: 'slow', look: 'frost' }); } },
+  EF:      { name: 'Stone Spike',     kind: 'attack',  cost: 3,  cast() { shoot({ dmg: 2, type: 'earth', speed: 380, r: 8, look: 'spike' }); } },
   AA:      { name: 'Gust',            kind: 'attack',  cost: 3,  cast() { aoe(player.x, player.y, 150, 0.5, 'air', 320); } },
   EW:      { name: 'Venom Dart',      kind: 'poison',  cost: 3,  cast() { shoot({ dmg: 0.3, type: 'poison', speed: 560, r: 6, fx: 'poison', look: 'venom' }); } },
-  SS:      { name: 'Soul Siphon',     kind: 'attack',  cost: 3,  cast() { shoot({ dmg: 1.5, type: 'spirit', speed: 560, r: 6, fx: 'drain', look: 'siphon' }); } },
+  SE:      { name: 'Soul Siphon',     kind: 'attack',  cost: 3,  cast() { shoot({ dmg: 1.5, type: 'spirit', speed: 560, r: 6, fx: 'drain', look: 'siphon' }); } },
   FE:      { name: 'Ember Trap',      kind: 'attack',  cost: 3,  cast() { layTrap(); } },
   WE:      { name: 'Quagmire',        kind: 'control', cost: 3,  cast() { const p = targetPoint(420, 140); zones.push({ x: p.x, y: p.y, r: 85, life: 4, max: 4, tick: 0, type: 'mud' }); } },
   WS:      { name: 'Mend',            kind: 'heal',    cost: 3,  cast() { healPlayer(3); } },
@@ -221,36 +226,36 @@ const SPELLS = {
   // ── 3 · Adept: real spells ──
   ASA:     { name: 'Chain Lightning', kind: 'attack',  cost: 7,  cast() { chainLightning(3.5, 5); } },
   FFA:     { name: 'Fireball',        kind: 'attack',  cost: 7,  cast() { shoot({ dmg: 4.5, type: 'fire', speed: 450, r: 11, fx: 'explode', boom: 1.6, boomR: 100, look: 'fireball' }); } },
-  SSA:     { name: 'Spirit Lance',    kind: 'attack',  cost: 7,  cast() { shoot({ dmg: 4.5, type: 'spirit', speed: 760, r: 8, pierce: 3, look: 'lance' }); } },
+  SEW:     { name: 'Spirit Lance',    kind: 'attack',  cost: 7,  cast() { shoot({ dmg: 4.5, type: 'spirit', speed: 760, r: 8, pierce: 3, look: 'lance' }); } },
   FAF:     { name: 'Flame Wave',      kind: 'attack',  cost: 7,  cast() { cone(player.x, player.y, aimAngle(), 180, 0.6, 1.8, 'fire', 'burn'); } },
   EWS:     { name: 'Plague Cloud',    kind: 'poison',  cost: 7,  cast() { plagueCloud(); } },
-  WWA:     { name: 'Ice Lance',       kind: 'control', cost: 6,  cast() { shoot({ dmg: 2, type: 'water', speed: 650, r: 8, fx: 'freeze', pierce: 3, look: 'icelance' }); } },
+  WAE:     { name: 'Ice Lance',       kind: 'control', cost: 6,  cast() { shoot({ dmg: 2, type: 'water', speed: 650, r: 8, fx: 'freeze', pierce: 3, look: 'icelance' }); } },
   EEA:     { name: 'Earthquake',      kind: 'control', cost: 6,  cast() { quake(); } },
   SFS:     { name: 'Terror',          kind: 'control', cost: 6,  cast() { areaCC(player.x, player.y, 260, 'fear', 3.5, '#b070ff'); } },
   EWE:     { name: 'Hex',             kind: 'control', cost: 6,  cast() { shoot({ dmg: 0.5, type: 'poison', speed: 520, r: 8, fx: 'hex', look: 'hex' }); } },
   SWS:     { name: 'Ward',            kind: 'defence', cost: 5,  cast() { player.ward = 4; } },
   SWA:     { name: 'Mirror Shield',   kind: 'defence', cost: 6,  cast() { player.mirror = 5; } },
-  EES:     { name: 'Stone Wall',      kind: 'defence', cost: 6,  cast() { stoneWall(); } },
+  EFS:     { name: 'Stone Wall',      kind: 'defence', cost: 6,  cast() { stoneWall(); } },
   SSW:     { name: 'Rejuvenate',      kind: 'heal',    cost: 5,  cast() { player.regen = 8; } },
   FSF:     { name: 'Empower',         kind: 'buff',    cost: 5,  cast() { player.empower = 10; } },
   SAS:     { name: 'Healing Wisp',    kind: 'summon',  cost: 5,  cast() { summon('wisp'); } },
   FSE:     { name: 'Decoy Imp',       kind: 'summon',  cost: 5,  cast() { summon('imp'); } },
   // ── 4 · Greater: way more than a 3 ──
-  WWAW:    { name: 'Tidal Wave',      kind: 'attack',  cost: 11, cast() { tidalWave(); } },
+  WAEF:    { name: 'Tidal Wave',      kind: 'attack',  cost: 11, cast() { tidalWave(); } },
   ASAW:    { name: 'Thunderstorm',    kind: 'attack',  cost: 11, cast() { storms.push({ left: 10, t: 0, struck: new Set() }); } },
   FFAF:    { name: 'Firestorm',       kind: 'attack',  cost: 11, cast() { firestorm(); } },
   AEEA:    { name: 'Vortex',          kind: 'control', cost: 10, cast() { const p = targetPoint(500, 200); zones.push({ x: p.x, y: p.y, r: 260, life: 2.8, max: 2.8, tick: 0, type: 'vortex' }); } },
-  SSAW:    { name: 'Confusion',       kind: 'control', cost: 9,  cast() { areaCC(player.x, player.y, 300, 'confuse', 5, '#ff8ad8'); } },
+  SEWA:    { name: 'Confusion',       kind: 'control', cost: 9,  cast() { areaCC(player.x, player.y, 300, 'confuse', 5, '#ff8ad8'); } },
   ASSA:    { name: 'Time Warp',       kind: 'time',    cost: 9,  cast() { if (humanFoes()) castMessage('Time magic is banned against friends', '#ccc'); else timeWarp = 6; } },
   WWSS:    { name: 'Healing Spring',  kind: 'heal',    cost: 9,  cast() { zones.push({ x: player.x, y: player.y, r: 95, life: 8, max: 8, tick: 0, type: 'spring' }); } },
-  EESE:    { name: 'Stone Guardian',  kind: 'summon',  cost: 8,  cast() { summon('golem'); } },
+  EFSE:    { name: 'Stone Guardian',  kind: 'summon',  cost: 8,  cast() { summon('golem'); } },
   // ── 5 · Monstrous ──
   FEFEF:   { name: 'Meteor',          kind: 'attack',  cost: 13, cast() { meteor(); } },
-  WWAWW:   { name: 'Blizzard',        kind: 'attack',  cost: 13, cast() { blizzard(); } },
+  WAEFW:   { name: 'Blizzard',        kind: 'attack',  cost: 13, cast() { blizzard(); } },
   FFAFF:   { name: 'Inferno',         kind: 'defence', cost: 13, cast() { inferno(); } },
   ASAWA:   { name: 'Tornado',         kind: 'control', cost: 13, cast() { tornado(); } },
-  EESEE:   { name: 'Petrify',         kind: 'control', cost: 12, cast() { areaCC(player.x, player.y, 330, 'stone', 6, '#aaa'); } },
-  SSAWS:   { name: 'Time Stop',       kind: 'time',    cost: 14, cast() { if (humanFoes()) castMessage('Time magic is banned against friends', '#ccc'); else timeStop = 6.5; } },
+  EFSEE:   { name: 'Petrify',         kind: 'control', cost: 12, cast() { areaCC(player.x, player.y, 330, 'stone', 6, '#aaa'); } },
+  SEWAF:   { name: 'Time Stop',       kind: 'time',    cost: 14, cast() { if (humanFoes()) castMessage('Time magic is banned against friends', '#ccc'); else timeStop = 6.5; } },
   SWWWS:   { name: 'Sanctuary',       kind: 'heal',    cost: 14, cast() { healPlayer(player.maxHp); player.sanct = 5; } },
   // ── 6 · Omni King ──
   SAFEWS:  { name: 'Crown of All',    kind: 'buff',    cost: 16, cast() { player.omni = 10; } },
@@ -365,7 +370,7 @@ const FOES = {
 // Bosses only take damage from their `weak` types. Each guards a chest holding `reward`.
 const BOSSES = [
   { id: 'troll',    pts: 1000, name: 'Frost Troll',   x: 0,     y: -850,  hp: 30, r: 38, spd: 50, color: '#9fd8ff', weak: ['fire'],            dmg: 3, attack: 'aimed', shots: 1,  rate: 2.0, minion: 'bat',      reward: 'AWA' },
-  { id: 'sentinel', pts: 1500, name: 'Iron Sentinel', x: 1150,  y: 150,   hp: 40, r: 40, spd: 40, color: '#8a8f9c', weak: ['air'],             dmg: 3, attack: 'aimed', shots: 3,  rate: 2.2, minion: 'skeleton', reward: 'SSA' },
+  { id: 'sentinel', pts: 1500, name: 'Iron Sentinel', x: 1150,  y: 150,   hp: 40, r: 40, spd: 40, color: '#8a8f9c', weak: ['air'],             dmg: 3, attack: 'aimed', shots: 3,  rate: 2.2, minion: 'skeleton', reward: 'SEW' },
   { id: 'lich',     pts: 2000, name: 'Bone Lich',     x: -150,  y: 1200,  hp: 45, r: 34, spd: 55, color: '#d8d2b8', weak: ['spirit'],          dmg: 3, attack: 'aimed', shots: 2,  rate: 2.0, minion: 'skeleton', reward: 'WWWA', summon: 'skeleton' },
   { id: 'titan',    pts: 3000, name: 'Magma Titan',   x: -1200, y: -150,  hp: 60, r: 48, spd: 38, color: '#ff7a30', weak: ['water'],           dmg: 4, attack: 'ring',  shots: 10, rate: 2.6, minion: 'ember',    reward: 'SAFEWS' },
   { id: 'hydra',    pts: 5000, name: 'Void Hydra',    x: 1250,  y: -1250, hp: 90, r: 50, spd: 45, color: '#6a3aa8', weak: ['earth', 'spirit'],dmg: 4, attack: 'aimed', shots: 5,  rate: 2.4, minion: 'shade',    reward: 'SFWEASS', summon: 'shade' },
@@ -1360,16 +1365,16 @@ function buildGrid(list) {
 // element: beating one teaches the next, longer spell in its line (one more
 // rune), and then a wave of minions comes at you in just the way that new
 // spell handles best. The minions there are always the element yours beats.
-const CORE = { fire: 'FF', water: 'WW', earth: 'EE', air: 'AS', spirit: 'SS' };
+const CORE = { fire: 'FF', water: 'WA', earth: 'EF', air: 'AS', spirit: 'SE' };
 const LINE = {
   fire:   ['FF', 'FFA', 'FFAF', 'FFAFF'],
-  water:  ['WW', 'WWA', 'WWAW', 'WWAWW'],
-  earth:  ['EE', 'EES', 'EESE', 'EESEE'],
+  water:  ['WA', 'WAE', 'WAEF', 'WAEFW'],
+  earth:  ['EF', 'EFS', 'EFSE', 'EFSEE'],
   air:    ['AS', 'ASA', 'ASAW', 'ASAWA'],
-  spirit: ['SS', 'SSA', 'SSAW', 'SSAWS'],
+  spirit: ['SE', 'SEW', 'SEWA', 'SEWAF'],
 };
-const FORMATION = { FFA: 'pack', FFAF: 'horde', FFAFF: 'siege', WWA: 'sprint', WWAW: 'flood', WWAWW: 'stampede', EES: 'archers', EESE: 'brutes', EESEE: 'elites',
-                    ASA: 'swarm', ASAW: 'skirmish', ASAWA: 'scatter', SSA: 'column', SSAW: 'warband', SSAWS: 'barrage' };
+const FORMATION = { FFA: 'pack', FFAF: 'horde', FFAFF: 'siege', WAE: 'sprint', WAEF: 'flood', WAEFW: 'stampede', EFS: 'archers', EFSE: 'brutes', EFSEE: 'elites',
+                    ASA: 'swarm', ASAW: 'skirmish', ASAWA: 'scatter', SEW: 'column', SEWA: 'warband', SEWAF: 'barrage' };
 const WAVE_HINT = {
   pack:     n => `A tight pack is coming. One ${n} catches the lot.`,
   horde:    n => `A wide horde is crossing. Rain a ${n} on them before they reach you.`,
@@ -1407,7 +1412,7 @@ const ALTAR_NOTE = { fire: 'It burns the gate of logs, lower right.', water: 'It
 const ADV_SAVE = 'pentagram-adventure-1';
 let ADV = null;
 function advFresh() {
-  return { known: new Set(['SA']), taught: ['SA'], written: [], names: {}, altars: [], zones: Object.fromEntries(ZONE_ELEMS.map(e => [e, { gate: false, beaten: 0, stage: 0, done: false }])), check: null, world: { titans: [], chests: [], rivals: [], ways: [], seen: '', elder: false, won: false }, boat: null };
+  return { reshaped: true, known: new Set(['SA']), taught: ['SA'], written: [], names: {}, altars: [], zones: Object.fromEntries(ZONE_ELEMS.map(e => [e, { gate: false, beaten: 0, stage: 0, done: false }])), check: null, world: { titans: [], chests: [], rivals: [], ways: [], seen: '', elder: false, won: false }, boat: null };
 }
 function advSave() {
   if (!ADV) return;
@@ -1418,6 +1423,9 @@ function advLoad() {
     const s = JSON.parse(localStorage.getItem(ADV_SAVE));
     if (!s || !s.zones) return null;
     const a = advFresh();
+    const moved = k => ({ WW: 'WA', WWA: 'WAE', WWAW: 'WAEF', WWAWW: 'WAEFW', EE: 'EF', EES: 'EFS', EESE: 'EFSE', EESEE: 'EFSEE', SS: 'SE', SSA: 'SEW', SSAW: 'SEWA', SSAWS: 'SEWAF' })[k] || k;
+    if (!s.reshaped) for (const f of ['known', 'taught', 'written']) if (s[f]) s[f] = s[f].map(moved);
+    if (!s.reshaped && s.names) s.names = Object.fromEntries(Object.entries(s.names).map(([k, v]) => [moved(k), v]));
     a.known = new Set(s.known || []);
     for (const e of ZONE_ELEMS) Object.assign(a.zones[e], s.zones[e]);
     a.check = s.check || null; a.boat = s.boat || null;
@@ -1551,7 +1559,7 @@ function galeThrow() {
 
 // ── the arenas: a titan, then its spell, then a wave ──
 // a simple spell of each element to try on a titan weak to it
-const ELEM_TRY = { fire: 'Firebolt (Fire, Fire)', water: 'Frost Shard (Water, Water)', earth: 'Stone Spike (Earth, Earth)', air: 'Gust (Air, Air)', spirit: 'Soul Siphon (Spirit, Spirit)' };
+const ELEM_TRY = { fire: 'Firebolt (Fire, Fire)', water: 'Frost Shard (Water, Air)', earth: 'Stone Spike (Earth, Fire)', air: 'Gust (Air, Air)', spirit: 'Soul Siphon (Spirit, Earth)' };
 let arena = null;
 let hazards = [], pickups = [], orbs = [];
 const arenaC = (e, k) => zonePt(e, ARENA_AT[k]);
@@ -3644,7 +3652,7 @@ function drawBook() {
     y += 10;
   };
   section('TAUGHT TO YOU', 'Given by the altars, the titans, the rivals and the elder.', ADV.taught.filter(k => SPELLS[k]));
-  section('IN YOUR OWN HAND', ADV.written.length ? 'Spells you worked out yourself, written in at the Scribe’s House.' : 'Nothing yet. Spells you work out for yourself go here once you’ve cast them for the scribe in Hollowbrook.', ADV.written.filter(k => SPELLS[k]));
+  section('IN YOUR OWN HAND', ADV.written.length ? 'Spells you worked out yourself, written in at the Scribe’s House.' : 'Nothing yet. Spells you work out for yourself go here once you’ve cast them for the scribe in Hollowbrook.', ADV.written.filter(k => SPELLS[k] && !ADV.taught.includes(k)));
   const u = unwritten().length;
   if (u) { ctx.textAlign = 'left'; ctx.fillStyle = '#ffb04a'; ctx.font = `14px ${SERIF}`; y = wrapText(`You’ve found ${u} more spell${u > 1 ? 's' : ''} that ${u > 1 ? 'aren’t' : 'isn’t'} written in yet. Remember ${u > 1 ? 'them' : 'it'} till you reach the Scribe’s House in Hollowbrook!`, L, y + 6, maxW, 19) + 6; }
   bookMax = Math.max(0, y + bookScroll - bottom + 10);
@@ -3777,22 +3785,22 @@ const SPELL_TIP = {
   FFA: 'A ball of fire that bursts where it lands. For a tight pack.',
   FFAF: 'Fire rains over a wide area for a few seconds. For a big group spread out, before it reaches you.',
   FFAFF: 'A ring of flame round you that burns anything that comes close. For when they’re all over you.',
-  WW: 'Slows whatever it hits. For one fast foe you can’t shake.',
-  WWA: 'Freezes everything in a line. For sprinters charging at you.',
-  WWAW: 'A wave rolls out the way you aim and sweeps them back. For a mass pushing in on you.',
-  WWAWW: 'Freezes and hurts everything around you. For a stampede from every side.',
-  EE: 'A heavy stone that knocks back what it hits. For a tough foe up close.',
-  EES: 'A wall of boulders that stops shots and feet. For archers, or holding a gap.',
-  EESE: 'A stone guardian that stands between you and them and takes the hits. For brutes.',
-  EESEE: 'Everything close turns to stone and takes more damage. For strong foes round you.',
+  WA: 'Slows whatever it hits. For one fast foe you can’t shake.',
+  WAE: 'Freezes everything in a line. For sprinters charging at you.',
+  WAEF: 'A wave rolls out the way you aim and sweeps them back. For a mass pushing in on you.',
+  WAEFW: 'Freezes and hurts everything around you. For a stampede from every side.',
+  EF: 'A heavy stone that knocks back what it hits. For a tough foe up close.',
+  EFS: 'A wall of boulders that stops shots and feet. For archers, or holding a gap.',
+  EFSE: 'A stone guardian that stands between you and them and takes the hits. For brutes.',
+  EFSEE: 'Everything close turns to stone and takes more damage. For strong foes round you.',
   AS: 'Run much faster for a while. To get away, to get round, to outrun the gale.',
   ASA: 'Lightning leaps from foe to foe. For a swarm of little ones.',
   ASAW: 'A storm strikes everything around you by itself. For foes too quick to aim at.',
   ASAWA: 'A tornado drifts the way you aim and drags everything into it. For a crowd scattered about.',
-  SS: 'Hits and heals you by what it takes. For staying alive in a long fight.',
-  SSA: 'A lance that goes through several in a row. For a column, or one foe behind another.',
-  SSAW: 'Bewitches everyone near you so they fight each other. For a big group.',
-  SSAWS: 'Stops time for everyone but you, shots too. For when the air is full of danger.',
+  SE: 'Hits and heals you by what it takes. For staying alive in a long fight.',
+  SEW: 'A lance that goes through several in a row. For a column, or one foe behind another.',
+  SEWA: 'Bewitches everyone near you so they fight each other. For a big group.',
+  SEWAF: 'Stops time for everyone but you, shots too. For when the air is full of danger.',
   FE: 'A trap that bursts when something steps on it. For a path you know they’ll take.',
   WE: 'Thick mud that roots whatever wades in. To pin a group in place.',
   WS: 'Heals you a little, at once.',
@@ -4974,22 +4982,22 @@ const FLAIR = {
   SFS:  p => { fx.push({ kind: 'tendrils', x: p.x, y: p.y, r: 260, rot: rnd(0, TAU), life: 0.8, max: 0.8 }); puff(p.x, p.y, '#4a2070', 3, 30, 5); },
   SWS:  p => { shapeBits(p.x, p.y, 'star', '#e6ccff', 8, 90, 30); },
   SWA:  p => { fx.push({ kind: 'rays', x: p.x, y: p.y, r: 46, color: '#e6ccff', life: 0.5, max: 0.5, rot: 0.3 }); shapeBits(p.x, p.y, 'shard', '#f3e6ff', 8, 140); },
-  EES:  p => { },
+  EFS:  p => { },
   SSW:  p => { leafSwirl(p.x, p.y, 10, 120); shapeBits(p.x, p.y, 'plus', '#9dffb0', 5, 50, 70); },
   FSF:  p => { puff(p.x, p.y, '#ffb04a', 2, 28, 30); burst(p.x, p.y, '#ffd24a', 16, 200); },
   SAS:  p => { shapeBits(p.x, p.y, 'star', '#e6ccff', 10, 120, 40); },
   FSE:  p => { puff(p.x, p.y, '#8a7a70', 2, 20, 20); burst(p.x, p.y, '#ff8a3a', 14, 200); },
-  WWAW: p => { shapeBits(p.x, p.y, 'drop', '#9fd8ff', 16, 260, 60); },
+  WAEF: p => { shapeBits(p.x, p.y, 'drop', '#9fd8ff', 16, 260, 60); },
   ASAW: p => { fx.push({ kind: 'arcs', x: p.x, y: p.y - 60, r: 90, color: '#c8d0e0', rot: 0, life: 0.6, max: 0.6 }); },
   AEEA: p => { const t = targetPoint(500, 200); leafSwirl(t.x, t.y, 14, 220); },
-  SSAW: p => { shapeBits(p.x, p.y, 'star', '#ff8ad8', 18, 300, 0, 1.2); },
+  SEWA: p => { shapeBits(p.x, p.y, 'star', '#ff8ad8', 18, 300, 0, 1.2); },
   ASSA: p => { fx.push({ kind: 'clock', x: p.x, y: p.y, r: 120, color: '#9fd0ff', life: 1, max: 1 }); },
   WWSS: p => { shapeBits(p.x, p.y, 'drop', '#9dffd0', 12, 140, 120); },
-  EESE: p => { for (let i = 0; i < 12; i++) { const a = i * TAU / 12; particles.push({ shape: 'shard', x: p.x + Math.cos(a) * 90, y: p.y + Math.sin(a) * 90, vx: -Math.cos(a) * 300, vy: -Math.sin(a) * 300, r: 5, life: 0.32, decay: 3, color: '#8a7a66', rot: a, spin: 0 }); } puff(p.x, p.y, '#c2a57a', 3, 22, 10); },
+  EFSE: p => { for (let i = 0; i < 12; i++) { const a = i * TAU / 12; particles.push({ shape: 'shard', x: p.x + Math.cos(a) * 90, y: p.y + Math.sin(a) * 90, vx: -Math.cos(a) * 300, vy: -Math.sin(a) * 300, r: 5, life: 0.32, decay: 3, color: '#8a7a66', rot: a, spin: 0 }); } puff(p.x, p.y, '#c2a57a', 3, 22, 10); },
   FEFEF: p => { },
-  WWAWW: p => { fx.push({ kind: 'nova', elem: 'water', x: p.x, y: p.y, r: 460, life: 0.8, max: 0.8 }); shapeBits(p.x, p.y, 'star', '#e8f8ff', 30, 420, 0, 1.3); },
-  EESEE: p => { puff(p.x, p.y, '#a0a0a0', 6, 34, 8); fx.push({ kind: 'cracks', ...crackLines(p.x, p.y, 300, 10), life: 1.2, max: 1.2 }); },
-  SSAWS: p => { fx.push({ kind: 'clock', x: p.x, y: p.y, r: 200, color: '#ffffff', life: 1.2, max: 1.2 }); },
+  WAEFW: p => { fx.push({ kind: 'nova', elem: 'water', x: p.x, y: p.y, r: 460, life: 0.8, max: 0.8 }); shapeBits(p.x, p.y, 'star', '#e8f8ff', 30, 420, 0, 1.3); },
+  EFSEE: p => { puff(p.x, p.y, '#a0a0a0', 6, 34, 8); fx.push({ kind: 'cracks', ...crackLines(p.x, p.y, 300, 10), life: 1.2, max: 1.2 }); },
+  SEWAF: p => { fx.push({ kind: 'clock', x: p.x, y: p.y, r: 200, color: '#ffffff', life: 1.2, max: 1.2 }); },
   FFAFF: p => { fx.push({ kind: 'nova', elem: 'fire', x: p.x, y: p.y, r: 150, life: 0.6, max: 0.6 }); puff(p.x, p.y, '#8a7a70', 3, 26, 30); },
   ASAWA: p => { leafSwirl(p.x, p.y, 16, 260); },
   SWWWS: p => { fx.push({ kind: 'pillars', x: p.x, y: p.y, r: 60, life: 1.6, max: 1.6 }); fx.push({ kind: 'rays', x: p.x, y: p.y, r: 120, color: '#fff6b0', life: 0.8, max: 0.8, rot: 0 }); },
