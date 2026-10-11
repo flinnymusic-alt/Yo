@@ -1670,13 +1670,13 @@ function updateAdvFoe(f, dt) {
   const dx = player.x - f.x, dy = player.y - f.y, d = Math.hypot(dx, dy) || 1;
   if (f.titan) updateTitan(f, dt, d, spd);
   else if (f.serpent) updateSerpent(f, dt, d);
-  else if (f.fear > 0) moveToward(f, f.x - dx, f.y - dy, spd * 1.1, dt, 0);
+  else if (f.fear > 0) walkToward(f, f.x - dx, f.y - dy, spd * 1.1, dt, 0);
   else if (f.confuse > 0) {
     // confused: it goes for whoever's nearest, friend or foe
     let t = null, bd = 260;
     for (const o of foes) { if (o === f || o.dead || o.gate) continue; const od = Math.hypot(o.x - f.x, o.y - f.y); if (od < bd) { bd = od; t = o; } }
     if (t) {
-      moveToward(f, t.x, t.y, spd, dt, f.r + t.r - 2);
+      walkToward(f, t.x, t.y, spd, dt, f.r + t.r - 2);
       if (bd < f.r + t.r + 6 && f.hitCd <= 0) { f.hitCd = 0.8; damageFoe(t, f.dmg * 2.5, 'confusion'); burst(t.x, t.y, '#ff8ad8', 6, 120); }
     } else { if (Math.random() < dt * 1.5) f.wander = rnd(0, TAU); f.x += Math.cos(f.wander || 0) * spd * dt; f.y += Math.sin(f.wander || 0) * spd * dt; }
   } else if (f.rival) updateRival(f, dt, d, spd);
@@ -1689,18 +1689,18 @@ function updateAdvFoe(f, dt) {
       moveToward(f, o.x + Math.cos(f.turn) * 64, o.y + Math.sin(f.turn) * 64, spd * 1.6, dt, 0);
       if (o.hp < o.maxHp && o.awake) { o.hp = Math.min(o.maxHp, o.hp + 1.3 * dt); if (Math.random() < dt * 3) fx.push({ kind: 'streak', x1: f.x, y1: f.y, x2: o.x, y2: o.y, color: '#c9ffb0', life: 0.25, max: 0.25 }); }
     }
-  } else if (f.how === 'hold') moveToward(f, f.home.x, f.home.y, spd, dt, 4);
+  } else if (f.how === 'hold') walkToward(f, f.home.x, f.home.y, spd, dt, 4);
   else if (f.how === 'flee') {
-    if (d < 270) moveToward(f, f.x - dx, f.y - dy, spd, dt, 0);
+    if (d < 270) walkToward(f, f.x - dx, f.y - dy, spd, dt, 0);
     else { f.turn += rnd(-2, 2) * dt; f.x += Math.cos(f.turn) * spd * 0.35 * dt; f.y += Math.sin(f.turn) * spd * 0.35 * dt; }
   } else if (f.how === 'zigzag') {
     // circles you at a distance, changing direction, and darts in now and then
     f.dart -= dt;
     if (f.dart <= 0) { f.dart = rnd(1.6, 3); f.turn = -f.turn || 1; f.lunge = 0.7; }
-    if (f.lunge > 0) { f.lunge -= dt; moveToward(f, player.x, player.y, spd * 1.6, dt, f.r + PLAYER_R - 2); }
+    if (f.lunge > 0) { f.lunge -= dt; walkToward(f, player.x, player.y, spd * 1.6, dt, f.r + PLAYER_R - 2); }
     else {
       const a = Math.atan2(f.y - player.y, f.x - player.x) + (f.turn > 0 ? 1 : -1) * 1.1 * dt * spd / 90;
-      moveToward(f, player.x + Math.cos(a) * 170, player.y + Math.sin(a) * 170, spd, dt, 0);
+      walkToward(f, player.x + Math.cos(a) * 170, player.y + Math.sin(a) * 170, spd, dt, 0);
       f.x += Math.sin(elapsed * 9 + f.wob) * 60 * dt; f.y += Math.cos(elapsed * 7 + f.wob) * 60 * dt;
     }
   } else if (f.how === 'charge') {
@@ -1709,15 +1709,18 @@ function updateAdvFoe(f, dt) {
     if (f.dir == null) f.dir = want;
     let da = Math.atan2(Math.sin(want - f.dir), Math.cos(want - f.dir));
     f.dir += clamp(da, -1.2 * dt, 1.2 * dt);
+    // a tree dead ahead: swerve round it
+    const h = treeAhead(f, Math.cos(f.dir), Math.sin(f.dir), f.r + 50);
+    if (h) { const side = (h.x - f.x) * Math.sin(f.dir) - (h.y - f.y) * Math.cos(f.dir) >= 0 ? 1 : -1; f.dir += side * 4 * dt; }
     f.x += Math.cos(f.dir) * spd * dt; f.y += Math.sin(f.dir) * spd * dt;
   } else if (f.range && !f.melee) {
     // a shooter keeps its distance
     const want = f.range * 0.7;
-    if (d > want + 40) moveToward(f, player.x, player.y, spd, dt, 0);
-    else if (d < want - 60) moveToward(f, f.x - dx, f.y - dy, spd * 0.8, dt, 0);
+    if (d > want + 40) walkToward(f, player.x, player.y, spd, dt, 0);
+    else if (d < want - 60) walkToward(f, f.x - dx, f.y - dy, spd * 0.8, dt, 0);
   } else {
     const tgt = f.tgt = foeTarget(f);
-    moveToward(f, tgt.x, tgt.y, spd, dt, f.r + (tgt === player ? PLAYER_R : tgt.r) - 2);
+    walkToward(f, tgt.x, tgt.y, spd, dt, f.r + (tgt === player ? PLAYER_R : tgt.r) - 2);
   }
   // knocked about
   f.x += f.kx * dt; f.y += f.ky * dt;
@@ -1772,8 +1775,8 @@ function updateTitan(t, dt, d, spd) {
   }
   if (d < t.r + 34 && t.slamCd <= 0) { t.slamT = 0.5; t.slammed = false; t.slamCd = 1.6; return; }
   const want = t.tier >= 1 ? t.r + 140 : t.r + 30, pool = hazards.find(h => h.kind === 'spring' && h.owner === t);
-  if (pool) { if (Math.hypot(t.x - pool.x, t.y - pool.y) > pool.r * 0.35) moveToward(t, pool.x, pool.y, spd, dt, 0); }  // back into its healing spring
-  else if (d > want) moveToward(t, player.x, player.y, spd, dt, 0);
+  if (pool) { if (Math.hypot(t.x - pool.x, t.y - pool.y) > pool.r * 0.35) walkToward(t, pool.x, pool.y, spd, dt, 0); }  // back into its healing spring
+  else if (d > want) walkToward(t, player.x, player.y, spd, dt, 0);
   if (t.drainT > 0) {
     t.drainT -= dt;
     if (d < 340) { sapPlayer(1.1 * dt); t.hp = Math.min(t.maxHp, t.hp + 2.2 * dt); }
@@ -1984,7 +1987,7 @@ function worldTitanAwake(t, dt, spd) {
   const dh = Math.hypot(t.x - t.home.x, t.y - t.home.y), dp = Math.hypot(player.x - t.home.x, player.y - t.home.y);
   if (t.awake && dp > 1500) { t.awake = false; t.drainT = 0; t.mirrorT = 0; tipMsg(`The ${t.name} goes back to its lair`, '#ccc', 3); }
   if (t.awake) return true;
-  if (dh > 12) moveToward(t, t.home.x, t.home.y, spd * 1.6, dt, 0);
+  if (dh > 12) walkToward(t, t.home.x, t.home.y, spd * 1.6, dt, 0);
   else t.hp = Math.min(t.maxHp, t.hp + t.maxHp * 0.25 * dt);
   if (dp < 640 && state === 'play') wakeTitan(t);
   return false;
@@ -2087,17 +2090,17 @@ function updateRival(f, dt, d, spd) {
   if (!f.awake) {
     // pacing about its camp
     f.turn += dt * 0.6;
-    if (dh > 70) moveToward(f, f.home.x, f.home.y, spd, dt, 0);
-    else { moveToward(f, f.home.x + Math.cos(f.turn) * 40, f.home.y + Math.sin(f.turn * 0.7) * 30, spd * 0.25, dt, 0); f.hp = Math.min(f.maxHp, f.hp + f.maxHp * 0.2 * dt); }
+    if (dh > 70) walkToward(f, f.home.x, f.home.y, spd, dt, 0);
+    else { walkToward(f, f.home.x + Math.cos(f.turn) * 40, f.home.y + Math.sin(f.turn * 0.7) * 30, spd * 0.25, dt, 0); f.hp = Math.min(f.maxHp, f.hp + f.maxHp * 0.2 * dt); }
     if (dp < 560 && d < 620 && state === 'play') wakeRival(f);
     return;
   }
   // keep at range, circling you
   const want = f.look === 'astronaut' ? 235 : 205;
   if (f.dashT > 0) { f.dashT -= dt; f.x += f.dashVx * dt; f.y += f.dashVy * dt; if (Math.random() < 0.6) particles.push({ x: f.x + rnd(-6, 6), y: f.y + 12, vx: -f.dashVx * 0.2, vy: 40, r: rnd(2, 4), life: 0.5, decay: 2, color: Math.random() < 0.5 ? '#ffb04a' : '#fff6b0' }); }
-  else if (d > want + 50) moveToward(f, player.x, player.y, spd, dt, 0);
-  else if (d < want - 70) moveToward(f, f.x * 2 - player.x, f.y * 2 - player.y, spd * 0.85, dt, 0);
-  else { const a = Math.atan2(f.y - player.y, f.x - player.x) + f.circ * 0.5 * dt; moveToward(f, player.x + Math.cos(a) * d, player.y + Math.sin(a) * d, spd * 0.6, dt, 0); }
+  else if (d > want + 50) walkToward(f, player.x, player.y, spd, dt, 0);
+  else if (d < want - 70) walkToward(f, f.x * 2 - player.x, f.y * 2 - player.y, spd * 0.85, dt, 0);
+  else { const a = Math.atan2(f.y - player.y, f.x - player.x) + f.circ * 0.5 * dt; walkToward(f, player.x + Math.cos(a) * d, player.y + Math.sin(a) * d, spd * 0.6, dt, 0); }
   if (Math.random() < dt * 0.15) f.circ = -f.circ;
   if (f.hex > 0) return;                                        // a frog casts nothing
   // getting away when you come too close
@@ -4474,7 +4477,7 @@ function updateCritter(a, dt) {
   const swift = sp.finish === 'A' ? 1.3 : 1, keen = sp.finish === 'S' ? 1.4 : 1;
   const spd = C.spd * (1 + 0.2 * (sp.count - 1)) * swift;
   if (engage && C.melee) {
-    const d = moveToward(a, t.x, t.y, spd, dt, a.r + t.r);
+    const d = walkToward(a, t.x, t.y, spd, dt, a.r + t.r);
     if (d <= a.r + t.r + 8 && a.cd <= 0) {
       a.cd = C.cd / swift;
       const dealt = damageFoe(t, C.dmg * sp.power, a.elem, true);
@@ -4484,7 +4487,7 @@ function updateCritter(a, dt) {
   } else {
     // keep near you, circling
     a.ang += dt * (C.spd / 140);
-    moveToward(a, player.x + Math.cos(a.ang) * 60, player.y + Math.sin(a.ang) * 45, spd, dt, 4);
+    walkToward(a, player.x + Math.cos(a.ang) * 60, player.y + Math.sin(a.ang) * 45, spd, dt, 4);
     if (engage && a.cd <= 0 && Math.hypot(t.x - a.x, t.y - a.y) < C.range * keen) {
       a.cd = C.cd / (1 + 0.3 * (sp.count - 1)) / swift;
       launch(a.x, a.y, aimFrom(a, C.range * keen), { dmg: C.dmg * sp.power, type: a.elem, speed: 480, r: 5, fx: 'woven', spec: sp, ally: true });
@@ -4685,6 +4688,147 @@ function moveToward(e, tx, ty, spd, dt, stop) {
   e.y += dy / d * step;
   return d;
 }
+// ── a way through a thicket: A* on a fine grid round the walker and where it's going ──
+let waysLeft = 1;   // ways worked out per tick (each costs a millisecond or few)
+function findWay(e, tx, ty) {
+  const r = e.r || 12, C = 12, pad = 260;
+  const x0 = Math.min(e.x, tx) - pad, y0 = Math.min(e.y, ty) - pad, x1 = Math.max(e.x, tx) + pad, y1 = Math.max(e.y, ty) + pad;
+  if (x1 - x0 > 1700 || y1 - y0 > 1700) return null;
+  const GW = Math.ceil((x1 - x0) / C), GH = Math.ceil((y1 - y0) / C), N = GW * GH;
+  const blocked = new Uint8Array(N), cx = i => x0 + (i + 0.5) * C, cy = j => y0 + (j + 0.5) * C;
+  const disc = (x, y, R) => {
+    const i0 = Math.max(0, Math.floor((x - R - x0) / C)), i1 = Math.min(GW - 1, Math.floor((x + R - x0) / C));
+    const j0 = Math.max(0, Math.floor((y - R - y0) / C)), j1 = Math.min(GH - 1, Math.floor((y + R - y0) / C));
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) if (Math.hypot(cx(i) - x, cy(j) - y) < R) blocked[j * GW + i] = 1;
+  };
+  // trees and rocks (and your stone walls), grown by the walker's size
+  for (const o of activeSolids.concat(solidTemps())) if (o.x > x0 - 80 && o.x < x1 + 80 && o.y > y0 - 80 && o.y < y1 + 80) disc(o.x, o.y, o.r + r - 2);
+  for (let j = 0; j < GH; j++) for (let i = 0; i < GW; i++) {
+    const k = j * GW + i;
+    if (blocked[k]) continue;
+    const x = cx(i), y = cy(j);
+    if (mode === 'battle' ? !inArena(x, y, r) : landBlocks(x, y, r * 0.8) || segWallHit(x, y, r * 0.8)) blocked[k] = 1;
+  }
+  if (mode !== 'battle') for (const w of walls) {
+    if (w.x > x1 || w.x + w.w < x0 || w.y > y1 || w.y + w.h < y0) continue;
+    const i0 = Math.max(0, Math.floor((w.x - r - x0) / C)), i1 = Math.min(GW - 1, Math.floor((w.x + w.w + r - x0) / C));
+    const j0 = Math.max(0, Math.floor((w.y - r - y0) / C)), j1 = Math.min(GH - 1, Math.floor((w.y + w.h + r - y0) / C));
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) blocked[j * GW + i] = 1;
+  }
+  const at = (x, y) => clamp(Math.floor((y - y0) / C), 0, GH - 1) * GW + clamp(Math.floor((x - x0) / C), 0, GW - 1);
+  const start = at(e.x, e.y), goal = at(tx, ty), gi = goal % GW, gj = (goal / GW) | 0;
+  blocked[start] = 0;
+  // A*, eight ways, not cutting corners
+  const g = new Float32Array(N).fill(Infinity), from = new Int32Array(N).fill(-1), shut = new Uint8Array(N);
+  const heap = [], push = (f, k) => { heap.push([f, k]); let c = heap.length - 1; while (c > 0) { const p = (c - 1) >> 1; if (heap[p][0] <= heap[c][0]) break; [heap[p], heap[c]] = [heap[c], heap[p]]; c = p; } };
+  const pop = () => { const top = heap[0], last = heap.pop(); if (heap.length) { heap[0] = last; let c = 0; for (;;) { const l = 2 * c + 1, rr = l + 1; let m = c; if (l < heap.length && heap[l][0] < heap[m][0]) m = l; if (rr < heap.length && heap[rr][0] < heap[m][0]) m = rr; if (m === c) break; [heap[m], heap[c]] = [heap[c], heap[m]]; c = m; } } return top[1]; };
+  const h = k => { const di = Math.abs(k % GW - gi), dj = Math.abs(((k / GW) | 0) - gj); return Math.max(di, dj) + 0.414 * Math.min(di, dj); };
+  g[start] = 0; push(h(start), start);
+  let end = -1;
+  while (heap.length) {
+    const k = pop();
+    if (shut[k]) continue;
+    shut[k] = 1;
+    const i = k % GW, j = (k / GW) | 0;
+    if (Math.abs(i - gi) <= 2 && Math.abs(j - gj) <= 2) { end = k; break; }
+    for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) {
+      if (!di && !dj) continue;
+      const a = i + di, b = j + dj;
+      if (a < 0 || b < 0 || a >= GW || b >= GH) continue;
+      const n = b * GW + a;
+      if (blocked[n] || shut[n]) continue;
+      if (di && dj && (blocked[j * GW + a] || blocked[b * GW + i])) continue;
+      const ng = g[k] + (di && dj ? 1.414 : 1);
+      if (ng < g[n]) { g[n] = ng; from[n] = k; push(ng + h(n), n); }
+    }
+  }
+  if (end < 0) return null;
+  const cells = [];
+  for (let k = end; k >= 0; k = from[k]) cells.push(k);
+  cells.reverse();
+  // pull the path straight wherever the walker can see further along it
+  const clear = (a, b) => {
+    const ax = cx(a % GW), ay = cy((a / GW) | 0), bx = cx(b % GW), by = cy((b / GW) | 0), n = Math.ceil(Math.hypot(bx - ax, by - ay) / (C * 0.5));
+    for (let t = 1; t < n; t++) if (blocked[at(ax + (bx - ax) * t / n, ay + (by - ay) * t / n)]) return false;
+    return true;
+  };
+  const pts = [];
+  for (let a = 0; a < cells.length - 1;) {
+    let b = cells.length - 1;
+    while (b > a + 1 && !clear(cells[a], cells[b])) b--;
+    pts.push({ x: cx(cells[b] % GW), y: cy((cells[b] / GW) | 0) });
+    a = b;
+  }
+  return pts.length ? pts : null;
+}
+// the nearest tree or rock standing across a walker's way, within `look` ahead of it
+function treeAhead(e, ux, uy, look) {
+  const r = e.r || 12;
+  let hit = null, ha = Infinity;
+  for (const s of solidsNear(e.x, e.y)) {
+    const ox = s.x - e.x, oy = s.y - e.y, along = ox * ux + oy * uy;
+    if (along <= 0 || along - s.r > look) continue;
+    if (Math.abs(ox * uy - oy * ux) < s.r + r && along < ha) { ha = along; hit = s; }
+  }
+  return hit;
+}
+// The same, for something on foot: it steps round the trees and rocks in its way
+// instead of pressing into them. It turns along the edge of whatever stands ahead,
+// keeps to the side it chose till it's past, and if it still gets nowhere (wedged
+// between trees, or against a house) it sets off the other way round for a moment.
+function walkToward(e, tx, ty, spd, dt, stop) {
+  const dx = tx - e.x, dy = ty - e.y, d = Math.hypot(dx, dy);
+  if (d <= stop || d === 0) return d;
+  if (e.fly || (e.def && e.def.flying)) return moveToward(e, tx, ty, spd, dt, stop);
+  const step = Math.min(spd * dt, d - stop), r = e.r || 12;
+  let ux = dx / d, uy = dy / d, ahead = d;
+  // stuck? (it got hardly anywhere it tried to go for a while, and not because one of your stone walls holds it):
+  // work out a way through, or (if enough others are doing that this moment) set off the other way round
+  e.stuckT = (e.stuckT || 0) + dt; e.stuckWant = (e.stuckWant || 0) + step;
+  if (e.stuckT > 0.6) {
+    const moved = e.stuckX == null ? Infinity : Math.hypot(e.x - e.stuckX, e.y - e.stuckY);
+    if (e.stuckWant > 12 && moved < e.stuckWant * 0.25 && !solidTemps().some(b => Math.hypot(b.x - e.x, b.y - e.y) < b.r + r + 4)) {
+      let way = null;
+      if (!(elapsed < e.noWayTill) && waysLeft > 0) {
+        waysLeft--; way = findWay(e, tx, ty);
+        if (!way) e.noWayTill = elapsed + 3;   // (no way through from here: don't look again for a bit)
+      }
+      if (way) { e.way = { pts: way, i: 0, tx, ty, t: elapsed }; e.detour = 0; }
+      else {
+        e.roundSide = -(e.roundSide || 1);
+        e.detour = 0.7 + Math.random() * 0.4;
+        e.detourA = Math.atan2(uy, ux) + e.roundSide * 1.3;
+      }
+    }
+    e.stuckT = 0; e.stuckWant = 0; e.stuckX = e.x; e.stuckY = e.y;
+  }
+  // following a way it worked out, while what it's after stays about where it was
+  if (e.way && (elapsed - e.way.t > 8 || Math.hypot(tx - e.way.tx, ty - e.way.ty) > 160)) e.way = null;
+  if (e.way) {
+    const w = e.way;
+    while (w.i < w.pts.length && Math.hypot(w.pts[w.i].x - e.x, w.pts[w.i].y - e.y) < 16) w.i++;
+    if (w.i >= w.pts.length) e.way = null;
+    else { const p = w.pts[w.i]; ahead = Math.hypot(p.x - e.x, p.y - e.y) || 1; ux = (p.x - e.x) / ahead; uy = (p.y - e.y) / ahead; }
+  }
+  if (e.detour > 0) {
+    e.detour -= dt;
+    ux = Math.cos(e.detourA); uy = Math.sin(e.detourA);
+  } else {
+    const hit = treeAhead(e, ux, uy, Math.min(ahead, r + 70));
+    if (hit) {
+      const ox = hit.x - e.x, oy = hit.y - e.y, od = Math.hypot(ox, oy) || 1;
+      // go round on the side away from it (the shorter way), and stick to that side
+      if (e.round !== hit) { e.round = hit; e.roundSide = ox * uy - oy * ux >= 0 ? 1 : -1; }
+      const sx = -oy / od * e.roundSide, sy = ox / od * e.roundSide;   // along its edge
+      const w = clamp(1 - (od - hit.r - r) / 70, 0.3, 1);
+      ux = ux * (1 - w) + sx * w; uy = uy * (1 - w) + sy * w;
+      const l = Math.hypot(ux, uy) || 1; ux /= l; uy /= l;
+    }
+  }
+  e.x += ux * step;
+  e.y += uy * step;
+  return d;
+}
 
 function bossAttack(b) {
   const col = b.def.color;
@@ -4773,7 +4917,7 @@ function updateFoes(realDt) {
     }
     if (f.adv) { updateAdvFoe(f, dt); continue; }
     if (f.unit) {
-      if (f.fear > 0) moveToward(f, f.x * 2 - player.x, f.y * 2 - player.y, f.spd, dt, 0);
+      if (f.fear > 0) walkToward(f, f.x * 2 - player.x, f.y * 2 - player.y, f.spd, dt, 0);
       else if (f.confuse > 0) {
         if (Math.random() < dt * 1.5) f.wander = rnd(0, TAU);
         f.x += Math.cos(f.wander) * f.spd * dt; f.y += Math.sin(f.wander) * f.spd * dt;
@@ -4799,13 +4943,13 @@ function updateFoes(realDt) {
       let spd = f.spd * (f.slow > 0 ? 0.5 : 1) * (f.hex > 0 ? 0.4 : 1);
       if (f.root > 0) spd = 0;
       if (f.fear > 0) {
-        moveToward(f, f.x * 2 - player.x, f.y * 2 - player.y, spd * 1.1, dt, 0); // run away
+        walkToward(f, f.x * 2 - player.x, f.y * 2 - player.y, spd * 1.1, dt, 0); // run away
       } else if (f.confuse > 0) {
         if (Math.random() < dt * 1.5) f.wander = rnd(0, TAU);
         f.x += Math.cos(f.wander) * spd * dt; f.y += Math.sin(f.wander) * spd * dt;
       } else {
         tgt = foeTarget(f);
-        moveToward(f, tgt.x, tgt.y, spd, dt, f.r + (tgt === player ? PLAYER_R : tgt.r) - 2);
+        (f.kind === 'bat' ? moveToward : walkToward)(f, tgt.x, tgt.y, spd, dt, f.r + (tgt === player ? PLAYER_R : tgt.r) - 2);
         if (f.kind === 'bat' && spd > 0) { f.x += Math.cos(elapsed * 7 + f.wob) * 40 * dt; f.y += Math.sin(elapsed * 9 + f.wob) * 40 * dt; }
       }
     }
@@ -4927,13 +5071,13 @@ function stepAlly(a, dt) {
     }
   } else if (a.kind === 'imp') {
     // runs ahead of you and draws enemies to it
-    moveToward(a, player.x + player.face.x * 110, player.y + player.face.y * 110, 200, dt, 4);
+    walkToward(a, player.x + player.face.x * 110, player.y + player.face.y * 110, 200, dt, 4);
     pushOut(a, a.r);
   } else if (a.kind === 'golem') {
     // plants itself between you and the nearest enemy; soaks bites and shots
     const t = nearestFoe(player.x, player.y, 400);
     const tx = t ? player.x + (t.x - player.x) * 0.45 : player.x + 50, ty = t ? player.y + (t.y - player.y) * 0.45 : player.y;
-    moveToward(a, tx, ty, 120, dt, 4);
+    walkToward(a, tx, ty, 120, dt, 4);
     pushOut(a, a.r);
   } else if (a.kind === 'critter') {
     updateCritter(a, dt);
@@ -5247,6 +5391,7 @@ function heroMove(dt) {
 
 function update(dt) {
   elapsed += dt;
+  waysLeft = 1;
 
   heroMove(dt);
 
@@ -6168,7 +6313,7 @@ function stepUnit(f, dt) {
     f.freeze = (f.freeze || 0) - dt; f.stun = (f.stun || 0) - dt; f.stone = (f.stone || 0) - dt;
     return;
   }
-  if (f.fear > 0) { const p = f.fearFrom || f; moveToward(f, f.x * 2 - p.x, f.y * 2 - p.y, f.spd, dt, 0); }
+  if (f.fear > 0) { const p = f.fearFrom || f; walkToward(f, f.x * 2 - p.x, f.y * 2 - p.y, f.spd, dt, 0); }
   else if (f.confuse > 0) {
     if (Math.random() < dt * 1.5) f.wander = rnd(0, TAU);
     f.x += Math.cos(f.wander) * f.spd * dt; f.y += Math.sin(f.wander) * f.spd * dt;
@@ -6276,7 +6421,7 @@ function updateUnit(u, dt) {
   if (tx !== null) {
     const spd = u.spd * resSpeed(u.team) * (u.mage && u.mage.haste > 0 ? 1.6 : 1) * (u.slow > 0 ? 0.5 : 1) * (u.hex > 0 ? 0.4 : 1) * (u.root > 0 ? 0 : 1) * tiredSpd(u);
     const ox = u.x, oy = u.y;
-    moveToward(u, tx, ty, spd, dt, 0);
+    walkToward(u, tx, ty, spd, dt, 0);
     const moved = Math.hypot(u.x - ox, u.y - oy);
     if (isMinion(u)) u.tired = Math.min(1, (u.tired || 0) + moved * TIRE_PER_PX);
     u.walk += moved;
