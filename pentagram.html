@@ -1033,7 +1033,7 @@ const CHESTS = [
 const VILLAGERS = [
   { name: 'Miller Tom', x: -620, y: 4280, coat: '#8a6a4a', line: 'The Old Hills? Only two ways up: the track from the south, and the narrow pass up the east side.' },
   { name: 'Ada', x: 220, y: 4560, coat: '#a04a5a', line: 'There’s a boat tied up at the jetty, south of the square. Mind the serpents out on the lake!' },
-  { name: 'Young Pip', x: -220, y: 4760, coat: '#4a6a9a', line: 'Wizards camp out in the wilds, and astronauts by the fallen ship. Beat one and you learn its trick!' },
+  { name: 'Young Pip', x: -220, y: 4760, coat: '#4a6a9a', line: 'Wizards camp out in the wilds, and astronauts by the fallen ship. Beat one and you might learn its trick, or win tokens to spend at Barnaby’s stall!' },
   { name: 'Old Wren', x: 420, y: 4640, coat: '#6a5a8a', line: 'Touch a waystone and you’ll wake there if you fall. Stand on one to travel to any other you’ve woken.' },
   { name: 'Fisher Jo', x: 300, y: 4990, coat: '#4a7a6a', line: 'The titan on Spring Isle heals in its pool. Knock it out of the water, I say.' },
 ];
@@ -1052,6 +1052,7 @@ const hallOf = id => HALLS.find(h => h.id === id);
 function hallAt(x, y) { for (const h of HALLS) if (x > h.x + HALL_T && x < h.x + h.w - HALL_T && y > h.y + HALL_T && y < h.y + h.h - HALL_T) return h; return null; }
 const SCRIBE = { x: -430, y: 4035, name: 'Elsie the Scribe' };   // her desk
 const NURSE = { x: 868, y: 4712, name: 'Nurse Hazel' };
+const STALL = { x: -40, y: 4880, name: 'Barnaby the Merchant' };   // his spell stall, on the south side of the square
 // the teachers in the school yard: each tells you how the spells of one kind differ (tap their words to turn the page)
 const TEACHERS = [
   { name: 'Headmistress Rowan', topic: 'The circle of elements', x: 310, y: 4195, robe: '#4a3a6a', hat: '#2a2040', col: '#ffd24a', pages: [
@@ -1459,6 +1460,8 @@ for (const h of HALLS) {
   add(h.x, h.y + h.h - T, d0 - h.x, T); add(d1, h.y + h.h - T, h.x + h.w - d1, T); // the front, with its doorway
   add(h.x, h.y, T, h.h); add(h.x + h.w - T, h.y, T, h.h);                         // the sides
 }
+for (let i = solids.length - 1; i >= 0; i--) { const s = solids[i]; if (Math.abs(s.x - STALL.x) < 150 && s.y > STALL.y - 200 && s.y < STALL.y + 80) solids.splice(i, 1); }
+walls.push({ x: STALL.x - 86, y: STALL.y - 90, w: 172, h: 90, stall: true });
 // spatial grid so collision checks only look at nearby solids
 const GRID = 200;
 const solidGrid = new Map();
@@ -1530,7 +1533,7 @@ const ALTAR_NOTE = { fire: 'It burns the gate of logs, lower right.', water: 'It
 const ADV_SAVE = 'pentagram-adventure-1';
 let ADV = null;
 function advFresh() {
-  return { reshaped: true, known: new Set(['SA']), taught: ['SA'], written: [], names: {}, altars: [], zones: Object.fromEntries(ZONE_ELEMS.map(e => [e, { gate: false, beaten: 0, stage: 0, done: false }])), check: null, world: { titans: [], chests: [], rivals: [], ways: [], seen: '', elder: false, won: false, helped: {}, blessed: 0 }, boat: null };
+  return { reshaped: true, known: new Set(['SA']), taught: ['SA'], written: [], names: {}, fizzled: [], altars: [], zones: Object.fromEntries(ZONE_ELEMS.map(e => [e, { gate: false, beaten: 0, stage: 0, done: false }])), check: null, world: { titans: [], chests: [], rivals: [], ways: [], seen: '', elder: false, won: false, helped: {}, blessed: 0, tokens: 0, minions: 0, grp: 0, had: false }, boat: null };
 }
 function advSave() {
   if (!ADV) return;
@@ -1550,6 +1553,7 @@ function advLoad() {
     a.altars = s.altars || ZONE_ELEMS.filter(e => a.known.has(CORE[e]));
     a.written = s.written || [];
     a.names = s.names || {};
+    a.fizzled = s.fizzled || [];
     a.taught = s.taught || taughtSoFar(a, s);
     Object.assign(a.world, s.world || {});
     return a;
@@ -1679,7 +1683,7 @@ function galeThrow() {
 // a simple spell of each element to try on a titan weak to it
 const ELEM_TRY = { fire: 'Firebolt (Fire, Fire)', water: 'Frost Shard (Water, Air)', earth: 'Stone Spike (Earth, Fire)', air: 'Gust (Air, Air)', spirit: 'Soul Siphon (Spirit, Earth)' };
 let arena = null;
-let hazards = [], pickups = [], orbs = [];
+let hazards = [], pickups = [], orbs = [], coins = [];
 const arenaC = (e, k) => zonePt(e, ARENA_AT[k]);
 function arenaWalls(e, k) {
   const at = ARENA_AT[k];
@@ -1819,6 +1823,112 @@ function makeTitan(elem, tier, x, y, o = {}) {
                      moves: o.moves || TITAN_MOVES[elem].slice(0, tier + 1), mi: 0, atkCd: 2.5, summonCd: 9, slamT: 0, slamCd: 0, drainT: 0 });
   return t;
 }
+// ── tokens: one in three beaten wizards and astronauts shows you a spell, the rest drop 100 tokens;
+//    every twentieth minion drops a coin worth 50; Barnaby sells spells for them on the square ──
+const TOKENS_RIVAL = 100, TOKENS_COIN = 50, COIN_EVERY = 20;
+const SHOP_PRICE = { 2: 200, 3: 300, 4: 500, 5: 700, 6: 1000, 7: 2500 };
+function drawCoin(x, y, r, label) {
+  circle(x, y + r * 0.18, r, '#9a6a14');
+  circle(x, y, r, '#ffd24a', '#c8901a', Math.max(1.2, r * 0.13));
+  ctx.strokeStyle = 'rgba(170,110,20,0.75)'; ctx.lineWidth = Math.max(1, r * 0.09); ctx.beginPath(); ctx.arc(x, y, r * 0.66, 0, TAU); ctx.stroke();
+  ctx.fillStyle = 'rgba(255,255,230,0.75)'; ctx.beginPath(); ctx.ellipse(x - r * 0.38, y - r * 0.42, r * 0.22, r * 0.12, -0.6, 0, TAU); ctx.fill();
+  if (label) { ctx.fillStyle = '#6a3a00'; ctx.font = `bold ${Math.round(r * 0.8)}px ${SERIF}`; ctx.textAlign = 'center'; ctx.fillText(label, x, y + r * 0.29); return; }
+  ctx.fillStyle = '#c8901a'; ctx.beginPath();                        // a star stamped in
+  for (let i = 0; i < 10; i++) { const a = -Math.PI / 2 + i * Math.PI / 5, rr = i % 2 ? r * 0.2 : r * 0.48; ctx.lineTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr); }
+  ctx.fill();
+}
+// tokens are yours (and saved) at once; the gold just bursts out, bounces, and flies to you
+function giveTokens(x, y, value, big) {
+  ADV.world.tokens = (ADV.world.tokens || 0) + value; advSave();
+  const n = big ? 1 : 16;
+  for (let i = 0; i < n; i++) { const a = rnd(0, TAU), s = big ? 30 : rnd(90, 260); coins.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, z: 0, vz: big ? 420 : rnd(160, 300), t: 0, v: value / n, big }); }
+}
+// what your purse shows: what you have, less what's still flying to you
+const tokensShown = () => Math.max(0, Math.round((ADV.world.tokens || 0) - coins.reduce((s, c) => s + c.v, 0)));
+// a spell you don't know yet: not found, not taught, not written in your book
+const freshSpell = k => !!SPELLS[k] && !ADV.known.has(k) && !inBook(k);
+// exactly one in every three shows you a spell (their own if it's new to you, else one of their element), at a random
+// spot in each three; the others drop tokens
+function spellOrTokens(own, elem, len) {
+  const W = ADV.world, pos = W.grp || 0;
+  const turn = !W.had && Math.random() < 1 / (3 - pos);
+  let key = null;
+  if (turn) {
+    if (own && freshSpell(own)) key = own;
+    else {
+      const pool = Object.keys(SPELLS).filter(k => freshSpell(k) && RUNE_ELEM[k[0]] === elem && k.length <= Math.max(4, len));
+      const same = pool.filter(k => k.length === len), p = same.length ? same : pool;
+      if (p.length) key = p[Math.floor(Math.random() * p.length)];
+    }
+  }
+  W.had = !!W.had || turn;
+  W.grp = (pos + 1) % 3;
+  if (!W.grp) W.had = false;
+  return key;
+}
+function updateCoins(dt) {
+  for (const c of coins) {
+    c.t += dt;
+    const wait = c.big ? 1.3 : 0.75;
+    if (c.t < wait) { c.x += c.vx * dt; c.y += c.vy * dt; c.vx *= 0.9; c.vy *= 0.9; c.vz -= 900 * dt; c.z += c.vz * dt; if (c.z < 0) { c.z = 0; c.vz = Math.abs(c.vz) * 0.45; } }
+    else {
+      const dx = player.x - c.x, dy = player.y - c.y, d = Math.hypot(dx, dy) || 1, sp = 260 + 900 * (c.t - wait);
+      c.x += dx / d * Math.min(d, sp * dt); c.y += dy / d * Math.min(d, sp * dt); c.z *= 0.85;
+      if (d < 16 || c.t > 6) c.done = true;
+    }
+  }
+  coins = coins.filter(c => !c.done);
+}
+function drawCoins() {
+  for (const c of coins) {
+    ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.beginPath(); ctx.ellipse(c.x, c.y + 4, c.big ? 13 : 5, c.big ? 4.5 : 2, 0, 0, TAU); ctx.fill();
+    if (c.big) { const gy = c.y - c.z - 14, g = ctx.createRadialGradient(c.x, gy, 2, c.x, gy, 46); g.addColorStop(0, 'rgba(255,230,120,0.6)'); g.addColorStop(1, 'rgba(255,230,120,0)'); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(c.x, gy, 46, 0, TAU); ctx.fill(); }
+    drawCoin(c.x, c.y - c.z - (c.big ? 14 : 5), c.big ? 15 : 5.5, c.big ? String(TOKENS_COIN) : null);
+  }
+}
+// the purse by your score: your tokens, and a ring that fills as you beat minions (a coin at twenty)
+function drawPurse(cx, cy) {
+  const m = (ADV.world.minions || 0) / COIN_EVERY;
+  ctx.strokeStyle = 'rgba(255,255,255,0.2)'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(cx, cy, 11.5, 0, TAU); ctx.stroke();
+  if (m > 0) { ctx.strokeStyle = '#ffd24a'; ctx.beginPath(); ctx.arc(cx, cy, 11.5, -Math.PI / 2, -Math.PI / 2 + TAU * m); ctx.stroke(); }
+  drawCoin(cx, cy, 7.5);
+  ctx.fillStyle = '#ffd24a'; ctx.textAlign = 'left'; ctx.font = 'bold 16px "Big Caslon", "Libre Caslon Text", Georgia, serif';
+  ctx.fillText(tokensShown().toLocaleString(), cx + 18, cy + 6);
+}
+// Barnaby's stall: a striped awning over a counter of scrolls
+function drawStall() {
+  const { x, y } = STALL;
+  ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.fillRect(x - 80, y - 4, 172, 18);
+  ctx.fillStyle = '#5a3a20'; ctx.fillRect(x - 74, y - 92, 148, 50);                                   // the shelves at the back
+  ctx.fillStyle = '#4a2e18'; ctx.fillRect(x - 74, y - 68, 148, 4);
+  const cols = ['#ff6a3a', '#4ab4ff', '#c8a05a', '#f4e06a', '#d08aff'];
+  for (let i = 0; i < 12; i++) {                                                                       // scrolls in rows
+    const sx = x - 66 + (i % 6) * 24, sy = y - 88 + Math.floor(i / 6) * 24;
+    ctx.fillStyle = '#efe2c0'; ctx.fillRect(sx, sy + 4, 16, 9); circle(sx, sy + 8.5, 4.5, '#e2d2a8'); circle(sx + 16, sy + 8.5, 4.5, '#e2d2a8');
+    ctx.fillStyle = cols[i % 5]; ctx.fillRect(sx + 6, sy + 3, 4, 11);
+  }
+  drawPerson(x + 26, y - 46, '#6a4a2a', '#2a1a10');                                                    // Barnaby
+  ctx.fillStyle = '#9a6a3a'; ctx.fillRect(x - 80, y - 34, 160, 34);                                     // the counter
+  ctx.strokeStyle = '#5a3a1a'; ctx.lineWidth = 2; ctx.strokeRect(x - 80, y - 34, 160, 34);
+  ctx.strokeStyle = 'rgba(70,40,20,0.5)'; ctx.lineWidth = 1.5; for (let i = 1; i < 5; i++) { ctx.beginPath(); ctx.moveTo(x - 80 + i * 32, y - 30); ctx.lineTo(x - 80 + i * 32, y); ctx.stroke(); }
+  ctx.fillStyle = '#b07a44'; ctx.fillRect(x - 84, y - 40, 168, 8);
+  [3, 4, 5].forEach((n, k) => { const px = x - 50 + k * 50; for (let j = 0; j < n; j++) { ctx.fillStyle = j % 2 ? '#e8d8b0' : '#f4ead0'; ctx.fillRect(px - 9, y - 44 - j * 4, 18, 5); ctx.fillStyle = cols[(j + k) % 5]; ctx.fillRect(px - 2, y - 44 - j * 4, 4, 5); } });
+  drawCoin(x + 62, y - 46, 5.5); drawCoin(x + 70, y - 44, 5.5); drawCoin(x + 66, y - 51, 5.5);
+  ctx.fillStyle = '#5a3a1a'; ctx.fillRect(x - 86, y - 128, 6, 128); ctx.fillRect(x + 80, y - 128, 6, 128);   // the poles
+  for (let i = 0; i < 8; i++) {                                                                        // the awning
+    const ax = x - 92 + i * 23;
+    ctx.fillStyle = i % 2 ? '#f4e6c0' : '#7a3a9a';
+    ctx.beginPath(); ctx.moveTo(ax, y - 136); ctx.lineTo(ax + 23, y - 136); ctx.lineTo(ax + 23, y - 114); ctx.arc(ax + 11.5, y - 114, 11.5, 0, Math.PI); ctx.closePath(); ctx.fill();
+  }
+  ctx.fillStyle = 'rgba(0,0,0,0.18)'; ctx.fillRect(x - 92, y - 118, 184, 4);
+  roundRect(x - 46, y - 166, 92, 26, 6); ctx.fillStyle = '#3a2416'; ctx.fill(); ctx.strokeStyle = '#ffd24a'; ctx.lineWidth = 2; ctx.stroke();   // the sign
+  ctx.fillStyle = '#ffd24a'; ctx.font = `bold 14px ${SERIF}`; ctx.textAlign = 'center'; ctx.fillText('SPELLS', x + 8, y - 148);
+  drawCoin(x - 30, y - 153, 8);
+  if (Math.hypot(player.x - x, player.y - y) < 300) {
+    ctx.font = `bold 10px ${SERIF}`; ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.7)';
+    ctx.strokeText('Barnaby · Spell Stall', x, y + 22); ctx.fillStyle = '#ffd24a'; ctx.fillText('Barnaby · Spell Stall', x, y + 22);
+  }
+}
 function advFoeDown(f) {
   if (f.rival) { if (f.phoenixUp) phoenixRise(f); else rivalDown(f); return; }
   f.dead = true;
@@ -1834,6 +1944,10 @@ function advFoeDown(f) {
   SFX.kill();
   burst(f.x, f.y, TYPE_COLOR[f.elem], 14, 240);
   addScore(Math.round(10 * f.maxHp / ARCH[f.art].hp), f.x, f.y - f.r - 14);
+  if ((ADV.world.minions = (ADV.world.minions || 0) + 1) >= COIN_EVERY) {
+    ADV.world.minions = 0; giveTokens(f.x, f.y, TOKENS_COIN, true); SFX.discover();
+    floatText(f.x, f.y - 56, `${COIN_EVERY} minions! A coin worth ${TOKENS_COIN}`, '#ffd24a', 15);
+  }
   // now and then one leaves a little health or mana behind
   if (Math.random() < (f.wave ? 0.06 : 0.14)) pickups.push({ x: f.x, y: f.y, kind: Math.random() < 0.5 ? 'hp' : 'mana', t: 14 });
 }
@@ -2129,6 +2243,7 @@ function updateSanctum(dt) {
     }
   }
   pickups = pickups.filter(p => p.t > 0);
+  updateCoins(dt);
 }
 // the standing stone's words (and the advice on where next)
 let lore = null;
@@ -2406,10 +2521,12 @@ function rivalDown(f) {
   burst(f.x, f.y, TYPE_COLOR[f.elem], 50, 380);
   addScore(250 + 100 * f.tier, f.x, f.y - 40, true);
   ADV.world.rivals.push(f.rid); advSave();
-  orbs.push({ x: f.x, y: f.y, key: f.key, title: `${f.name.toUpperCase()} IS BEATEN`, t: 0 });
+  const key = spellOrTokens(f.key, f.elem, f.key.length);
+  if (key) orbs.push({ x: f.x, y: f.y, key, title: `${f.name.toUpperCase()} IS BEATEN`, t: 0 });
+  else giveTokens(f.x, f.y, TOKENS_RIVAL);
   hazards = hazards.filter(h => h.kind !== 'trap' && h.kind !== 'mud');
   foes.forEach(o => { if (o.owner === f && !o.dead) { o.dead = true; burst(o.x, o.y, '#ccc', 10, 160); } });
-  showBanner(`${f.name} is beaten!`, `Take the spell they dropped: ${SPELLS[f.key].name}`, 3.5);
+  showBanner(`${f.name} is beaten!`, key ? `Take the spell they dropped: ${SPELLS[key].name}` : `They dropped ${TOKENS_RIVAL} tokens`, 3.5);
   // beat every rival and the last of them leaves the most terrible spell of all
   if (RIVALS.every(r => ADV.world.rivals.includes(r.id)) && !ADV.known.has('SFWEASS')) orbs.push({ x: f.x + 50, y: f.y, key: 'SFWEASS', title: 'EVERY RIVAL BEATEN', t: 0 });
 }
@@ -2653,6 +2770,8 @@ function updateWorld(dt) {
       } else WLD.talk = WLD.talk || { name: 'The Elder', at: door, line: elderLine() };
     }
   }
+  if (Math.hypot(player.x - STALL.x, player.y - (STALL.y + 50)) < 100 && !WLD.hall)
+    WLD.talk = { name: STALL.name, at: { x: STALL.x + 26, y: STALL.y - 70 }, line: 'Tokens for spells! Tell me what kind of spell you’re after, and I’ll find you one you don’t know yet.', shop: true };
   updateHalls(dt);
   updateQuests(dt);
   // crystals in chests
@@ -2718,15 +2837,15 @@ function nurseHeals() {
   player.burnT = 0; player.poisonT = 0; player.chill = 0;
   if (hurt) { floatText(player.x, player.y - 44, 'Healed!', '#8fdf6a', 16); ring(player.x, player.y, 60, '#8fdf6a', 0.5); SFX.heal(); }
 }
-// the scribe: cast any spell you know and she writes it into your book (then you can name it)
+// the scribe: trace any pattern and she writes it into your book under a name you give it.
+// She can't tell a spell from a fizzle, so it's for you to try it out in the world.
 function scribeLine() {
   const n = unwritten().length;
-  return `Cast any spell you know and I’ll write it into your book, and you can give it a name of your own.${n ? ` You’ve found ${n} that ${n > 1 ? 'aren’t' : 'isn’t'} written in yet.` : ''}`;
+  return `Trace a pattern and I’ll write it into your book, under any name you like. I can’t tell a spell from a fizzle, mind: try it out in the world.${n ? ` You’ve found ${n} spell${n > 1 ? 's' : ''} that ${n > 1 ? 'aren’t' : 'isn’t'} written in yet.` : ''}`;
 }
 function scribeWrites(key) {
-  const fresh = !inBook(key);
-  if (fresh) { ADV.written.push(key); advSave(); SFX.discover(); floatText(SCRIBE.x, SCRIBE.y - 70, 'Written in!', '#ffd24a', 15); }
-  openNaming(key, fresh);
+  SFX.buff();
+  openNaming(key, !inBook(key));
 }
 
 // ── the Spell School: as many duellists as you care to fight ──
@@ -2772,6 +2891,9 @@ function duelDown(f) {
   foes.forEach(o => { if (o.owner === f && !o.dead) { o.dead = true; burst(o.x, o.y, '#ccc', 10, 160); } });   // its wisps and drones go with it
   floatText(f.x, f.y - 50, `${f.name} yields!`, '#ffd24a', 15);
   if (WLD.duel) WLD.duel.beaten++;
+  const key = spellOrTokens(null, f.elem, f.tier < 2 ? 3 : 4);
+  if (key) { orbs.push({ x: f.x, y: f.y, key, title: `${f.name.toUpperCase()} YIELDS`, t: 0 }); floatText(f.x, f.y - 72, 'They dropped a spell!', '#ffd24a', 14); }
+  else { giveTokens(f.x, f.y, TOKENS_RIVAL); floatText(f.x, f.y - 72, `+${TOKENS_RIVAL} tokens`, '#ffd24a', 14); }
   // now and then one leaves you a little health or mana
   if (Math.random() < 0.4) pickups.push({ x: f.x, y: f.y, kind: Math.random() < 0.5 ? 'hp' : 'mana', t: 14 });
 }
@@ -3102,6 +3224,7 @@ function drawOrbsAndPickups() {
     ctx.fillStyle = '#fff'; ctx.font = `bold 10px ${SERIF}`; ctx.textAlign = 'center'; ctx.fillText(p.kind === 'hp' ? '+' : '✦', p.x, y + 3.5);
     ctx.globalAlpha = 1;
   }
+  drawCoins();
 }
 
 // ── drawing the wide world ──
@@ -3714,6 +3837,7 @@ function drawQuestThing(q, done, x, y) {
 // the folk of Hollowbrook, and the signposts at the crossroads
 function drawFolk(camX, camY) {
   drawHallFolk(camX, camY);
+  if (inView(STALL.x, STALL.y - 60, 220, camX, camY)) drawStall();
   drawQuests(camX, camY);
   for (const v of VILLAGERS) {
     const p = v.at || v;
@@ -3771,7 +3895,7 @@ function drawTalk() {
   if (mode !== 'adventure' || state !== 'play' || !WLD || !WLD.talk) return;
   const v = WLD.talk, maxW = Math.min(W - 28, 420), more = v.pages > 1;
   ctx.font = `14px ${SERIF}`;
-  const lines = wrapLines(v.line, maxW - 24), bh = 30 + lines.length * 18 + (more ? 18 : 0), bx = (W - maxW) / 2, by = panelTop - 36 - bh;
+  const lines = wrapLines(v.line, maxW - 24), bh = 30 + lines.length * 18 + (more || v.shop ? 18 : 0), bx = (W - maxW) / 2, by = panelTop - 36 - bh;
   roundRect(bx, by, maxW, bh, 10); ctx.fillStyle = 'rgba(255,250,236,0.96)'; ctx.fill(); ctx.strokeStyle = '#6b4a2e'; ctx.lineWidth = 2; ctx.stroke();
   ctx.textAlign = 'left'; ctx.fillStyle = '#7a3a2a'; ctx.font = `bold 13px ${SERIF}`; ctx.fillText(v.name, bx + 12, by + 19);
   ctx.fillStyle = '#2a2018'; ctx.font = `14px ${SERIF}`;
@@ -3781,10 +3905,16 @@ function drawTalk() {
     ctx.fillText(`${v.page + 1} of ${v.pages} · tap for ${v.page + 1 < v.pages ? 'more' : 'the start'} ▸`, bx + maxW - 12, by + bh - 10);
     talkBox = { x: bx, y: by, w: maxW, h: bh, teacher: v.teacher };
   }
+  if (v.shop) {
+    ctx.textAlign = 'right'; ctx.font = `bold 12px ${SERIF}`; ctx.fillStyle = '#9a6a3a';
+    ctx.fillText('tap to see his spells ▸', bx + maxW - 12, by + bh - 10);
+    talkBox = { x: bx, y: by, w: maxW, h: bh, shop: true };
+  }
 }
 function talkHit(x, y) {
   const b = talkBox;
   if (!b || state !== 'play' || x < b.x || x > b.x + b.w || y < b.y || y > b.y + b.h) return false;
+  if (b.shop) { openShop(); return true; }
   b.teacher.page = (b.teacher.page + 1) % b.teacher.pages.length;
   WLD.talk = null; talkBox = null; SFX.buff();
   return true;
@@ -4138,17 +4268,19 @@ function drawBook() {
   ctx.fillText('YOUR SPELL BOOK', W / 2, 46);
   ctx.save(); ctx.beginPath(); ctx.rect(0, top, W, bottom - top); ctx.clip();
   let y = top + 4 - bookScroll;
-  const entry = key => {
+  const entry = (key, own) => {
     const sp = SPELLS[key], gs = 15, mine = ADV.names[key];
     let x = L + maxW - key.length * (gs + 3);
-    ctx.textAlign = 'left'; ctx.fillStyle = TIER_COLOR[key.length]; ctx.font = `bold 15px ${SERIF}`;
-    ctx.fillText(spellName(key), L, y + 13, x - L - 8);
+    ctx.textAlign = 'left'; ctx.fillStyle = TIER_COLOR[Math.min(7, key.length)]; ctx.font = `bold 15px ${SERIF}`;
+    ctx.fillText(bookName(key) || '(no name)', L, y + 13, x - L - 8);
     for (const r of key) { roundRect(x, y + 1, gs, gs, 3); ctx.fillStyle = 'rgba(30,20,50,0.9)'; ctx.fill(); ctx.strokeStyle = ELEMENTS[r].color; ctx.lineWidth = 1.5; ctx.stroke(); drawGlyph(r, x + gs / 2, y + 1 + gs / 2, gs * 0.8, ELEMENTS[r].color); x += gs + 3; }
-    if (mine) { ctx.fillStyle = '#999'; ctx.font = `italic 12px ${SERIF}`; ctx.fillText(sp.name, L, y + 29); y += 14; }
+    if (mine && !own) { ctx.fillStyle = '#999'; ctx.font = `italic 12px ${SERIF}`; ctx.fillText(sp.name, L, y + 29); y += 14; }   // (one you were taught, renamed)
     ctx.fillStyle = '#ddd'; ctx.font = `13px ${SERIF}`;
-    y = wrapText(bookTip(key), L, y + 32, maxW, 17) + 6;
+    const tip = !own ? bookTip(key) : sp && ADV.known.has(key) ? bookTip(key) : ADV.fizzled.includes(key) ? 'It fizzled when you tried it.' : 'You haven’t tried it out yet.';
+    if (own && !(sp && ADV.known.has(key))) ctx.fillStyle = '#9a90b0';
+    y = wrapText(tip, L, y + 32, maxW, 17) + 6;
   };
-  const section = (title, sub, keys) => {
+  const section = (title, sub, keys, own) => {
     ctx.textAlign = 'left'; ctx.fillStyle = '#ffd24a'; ctx.font = `bold 16px ${SERIF}`; ctx.fillText(title, L, y + 20);
     ctx.fillStyle = 'rgba(255,210,74,0.4)'; ctx.fillRect(L, y + 28, maxW, 1.5);
     ctx.fillStyle = '#aaa'; ctx.font = `italic 13px ${SERIF}`; y = wrapText(sub, L, y + 48, maxW, 17) + 4;
@@ -4157,12 +4289,13 @@ function drawBook() {
       if (!ks.length) continue;
       ctx.textAlign = 'left'; ctx.fillStyle = TYPE_COLOR[e]; ctx.font = `bold 12px ${SERIF}`; ctx.fillText(ELEM_NAME[e].toUpperCase(), L, y + 14);
       y += 22;
-      for (const k of ks) entry(k);
+      for (const k of ks) entry(k, own);
     }
     y += 10;
   };
   section('TAUGHT TO YOU', 'Given by the altars, the titans, the rivals and the elder.', ADV.taught.filter(k => SPELLS[k]));
-  section('IN YOUR OWN HAND', ADV.written.length ? 'Spells you worked out yourself, written in at the Scribe’s House.' : 'Nothing yet. Spells you work out for yourself go here once you’ve cast them for the scribe in Hollowbrook.', ADV.written.filter(k => SPELLS[k] && !ADV.taught.includes(k)));
+  const mineK = ADV.written.filter(k => !ADV.taught.includes(k));
+  section('IN YOUR OWN HAND', mineK.length ? 'Patterns you traced for the scribe, under your own names.' : 'Nothing yet. Trace a pattern for the scribe in Hollowbrook and she’ll write it in here, under any name you give it.', mineK, true);
   const u = unwritten().length;
   if (u) { ctx.textAlign = 'left'; ctx.fillStyle = '#ffb04a'; ctx.font = `14px ${SERIF}`; y = wrapText(`You’ve found ${u} more spell${u > 1 ? 's' : ''} that ${u > 1 ? 'aren’t' : 'isn’t'} written in yet. Remember ${u > 1 ? 'them' : 'it'} till you reach the Scribe’s House in Hollowbrook!`, L, y + 6, maxW, 19) + 6; }
   bookMax = Math.max(0, y + bookScroll - bottom + 10);
@@ -4182,37 +4315,201 @@ function namingCard() {
   el.style.cssText = 'position:fixed;inset:0;display:none;align-items:center;justify-content:center;z-index:30;background:rgba(5,3,10,0.55)';
   const btn = 'flex:1;font:bold 15px Georgia,serif;padding:11px 8px;border-radius:10px;cursor:pointer;';
   el.innerHTML = '<div style="background:#1a1428;border:2px solid #ffd24a;border-radius:14px;padding:18px;width:min(86vw,360px);font-family:Georgia,serif;color:#eee;text-align:center;box-shadow:0 8px 30px rgba(0,0,0,.6)">'
-    + '<div class="t" style="color:#ffd24a;font-weight:bold;font-size:19px;margin-bottom:6px"></div><div class="s" style="color:#bbb;font-size:14px;margin-bottom:12px"></div>'
-    + '<input maxlength="24" autocomplete="off" style="width:100%;box-sizing:border-box;font:16px Georgia,serif;padding:10px 12px;border-radius:9px;border:1px solid #6a5a8a;background:#0e0a18;color:#fff;outline:none">'
-    + `<div style="display:flex;gap:10px;margin-top:14px"><button class="k" style="${btn}background:#2a2238;color:#ccc;border:1px solid #5a5070">Keep its name</button><button class="ok" style="${btn}background:#ffd24a;color:#2a1a00;border:none">Write it</button></div></div>`;
+    + '<div class="t" style="color:#ffd24a;font-weight:bold;font-size:19px;margin-bottom:8px"></div><div class="r" style="display:flex;gap:4px;justify-content:center;margin-bottom:8px"></div><div class="s" style="color:#bbb;font-size:14px;margin-bottom:12px"></div>'
+    + '<input maxlength="24" autocomplete="off" placeholder="Your name for it" style="width:100%;box-sizing:border-box;font:16px Georgia,serif;padding:10px 12px;border-radius:9px;border:1px solid #6a5a8a;background:#0e0a18;color:#fff;outline:none">'
+    + '<div class="w" style="color:#ffb04a;font-size:13px;margin-top:6px;min-height:16px"></div>'
+    + `<div style="display:flex;gap:10px;margin-top:8px"><button class="k" style="${btn}background:#2a2238;color:#ccc;border:1px solid #5a5070">Cancel</button><button class="ok" style="${btn}background:#ffd24a;color:#2a1a00;border:none">Write it</button></div>`
+    + `<button class="x" style="${btn}width:100%;margin-top:10px;background:none;color:#ff8a7a;border:1px solid #6a3a3a">Cross it out</button></div>`;
   document.body.appendChild(el);
   el.querySelector('.k').onclick = () => closeNaming(false);
   el.querySelector('.ok').onclick = () => closeNaming(true);
+  el.querySelector('.x').onclick = () => closeNaming('cross');
   el.querySelector('input').addEventListener('keydown', e => { if (e.key === 'Enter') closeNaming(true); if (e.key === 'Escape') closeNaming(false); });
+  el.querySelector('input').addEventListener('input', () => { el.querySelector('.w').textContent = ''; });
   return el;
 }
+// a rune pattern as little glyphs, for the cards over the game
+function glyphSvg(r, col, s) {
+  const h = s * 0.42, c = s / 2, lw = Math.max(1.6, s * 0.1);
+  if (r === 'S') return `<svg width="${s}" height="${s}"><circle cx="${c}" cy="${c}" r="${h * 0.85}" fill="none" stroke="${col}" stroke-width="${lw}"/><circle cx="${c}" cy="${c}" r="${h * 0.3}" fill="none" stroke="${col}" stroke-width="${lw}"/></svg>`;
+  const k = r === 'F' || r === 'A' ? 1 : -1;
+  let d = `M${c} ${c - h * k} L${c + h * 0.95} ${c + h * 0.72 * k} L${c - h * 0.95} ${c + h * 0.72 * k} Z`;
+  if (r === 'A' || r === 'E') d += ` M${c - h * 0.85} ${c + h * 0.1 * k} L${c + h * 0.85} ${c + h * 0.1 * k}`;
+  return `<svg width="${s}" height="${s}"><path d="${d}" fill="none" stroke="${col}" stroke-width="${lw}" stroke-linejoin="round" stroke-linecap="round"/></svg>`;
+}
+const runesHtml = (key, s = 20) => [...key].map(r => `<span style="display:inline-flex;width:${s + 6}px;height:${s + 6}px;align-items:center;justify-content:center;border:1.5px solid ${ELEMENTS[r].color};border-radius:5px;background:#1e1830">${glyphSvg(r, ELEMENTS[r].color, s)}</span>`).join('');
+// what your book calls an entry: your name for it, else (for one you were taught) its own
+const bookName = k => ADV.names[k] || (SPELLS[k] ? SPELLS[k].name : '');
 function openNaming(key, fresh) {
-  naming = { key }; state = 'naming';
+  const own = !ADV.taught.includes(key);
+  naming = { key, fresh, own }; state = 'naming';
   movePtr = null; movePos = null; moveStart = null; castPtr = null; finger = null; seq = [];
   const el = namingCard(), inp = el.querySelector('input');
-  el.querySelector('.t').textContent = fresh ? `${SPELLS[key].name}: written in!` : `${spellName(key)} is in your book`;
-  el.querySelector('.s').textContent = fresh ? 'Give it a name of your own, or keep this one.' : 'Give it a new name?';
-  inp.value = spellName(key);
+  el.querySelector('.t').textContent = fresh ? 'Write it in your book' : `“${bookName(key)}” is in your book`;
+  el.querySelector('.r').innerHTML = runesHtml(key);
+  el.querySelector('.s').textContent = fresh ? 'What will you call it? Any name you like.' : 'Give it a new name?';
+  el.querySelector('.ok').textContent = fresh ? 'Write it' : 'Rename';
+  el.querySelector('.x').style.display = !fresh && own ? 'block' : 'none';
+  el.querySelector('.w').textContent = '';
+  inp.value = fresh ? '' : bookName(key);
   el.style.display = 'flex';
-  setTimeout(() => { try { inp.focus(); inp.select(); } catch (_) {} }, 60);
+  try { inp.focus(); inp.select(); } catch (_) {}            // (at once, so the phone's keyboard comes up with the tap)
+  setTimeout(() => { try { if (document.activeElement !== inp) { inp.focus(); inp.select(); } } catch (_) {} }, 60);
 }
 function closeNaming(save) {
   const el = namingCard();
-  if (naming && save) {
+  if (naming && save === 'cross') {
+    // crossed out: gone from your book (and its name with it)
+    const k = naming.key;
+    ADV.written = ADV.written.filter(w => w !== k); delete ADV.names[k];
+    ADV.fizzled = ADV.fizzled.filter(w => w !== k);
+    advSave(); SFX.fizzle();
+    floatText(SCRIBE.x, SCRIBE.y - 70, 'Crossed out', '#ff8a7a', 15);
+  } else if (naming && save) {
     const k = naming.key, v = el.querySelector('input').value.replace(/\s+/g, ' ').trim().slice(0, 24);
-    if (v && v !== SPELLS[k].name) ADV.names[k] = v; else delete ADV.names[k];
+    if (!v) { el.querySelector('.w').textContent = naming.fresh ? 'Give it a name first' : 'Give it a name, or tap Cancel'; try { el.querySelector('input').focus(); } catch (_) {} return; }
+    if (naming.fresh) { ADV.written.push(k); SFX.discover(); floatText(SCRIBE.x, SCRIBE.y - 70, 'Written in!', '#ffd24a', 15); }
+    if (naming.own || v !== SPELLS[k].name) ADV.names[k] = v; else delete ADV.names[k];
     advSave();
-    floatText(SCRIBE.x, SCRIBE.y - 96, `“${spellName(k)}”`, '#ffd24a', 15);
+    floatText(SCRIBE.x, SCRIBE.y - 96, `“${v}”`, '#ffd24a', 15);
   }
   el.style.display = 'none';
   try { el.querySelector('input').blur(); } catch (_) {}
   naming = null;
   if (state === 'naming') state = 'play';
+}
+// ── Barnaby's stall: what kind of spell, then which sort, then how strong. He only sells spells you don't know yet
+//    (not ones you've found, been taught, or had written in your book) ──
+const SHOP = [
+  { id: 'attack', name: 'Attack', say: 'Hurts your foes.', subs: [
+    { id: 'bolt', name: 'A bolt', say: 'A shot you aim at one foe.' },
+    { id: 'blast', name: 'A blast', say: 'Hits a whole group at once.' }] },
+  { id: 'creature', name: 'Creature', say: 'A helper that fights beside you.', subs: [
+    { id: 'fighter', name: 'A fighter', say: 'Goes after your foes for you.' },
+    { id: 'healer', name: 'A healer', say: 'Fights by your side and heals you as it goes.' },
+    { id: 'guard', name: 'A guard', say: 'Takes the hits so you don’t.' }] },
+  { id: 'wall', name: 'Wall', say: 'A wall that stops foes and their shots.', subs: [
+    { id: 'wfire', name: 'Fire', say: 'Burns whatever touches it.' },
+    { id: 'wwater', name: 'Ice', say: 'Slows and chills whatever touches it.' },
+    { id: 'wearth', name: 'Stone', say: 'Knocks back whatever runs into it.' },
+    { id: 'wair', name: 'Storm', say: 'Shocks whatever touches it.' },
+    { id: 'wspirit', name: 'Spirit', say: 'Drains whatever touches it.' }] },
+  { id: 'trap', name: 'Trap', say: 'Something on the ground that hurts whatever steps in it.', subs: [
+    { id: 'patch', name: 'A patch', say: 'Ground that hurts whatever stands in it.' },
+    { id: 'mine', name: 'A mine', say: 'Bursts when something steps on it.' }] },
+  { id: 'defence', name: 'Defence', say: 'Keeps you safe.', subs: [
+    { id: 'shield', name: 'A shield', say: 'Blocks or softens the hits you take.' },
+    { id: 'mirror', name: 'A mirror', say: 'Sends shots back at whoever fired them.' },
+    { id: 'ring', name: 'A ring of fire', say: 'Burns anything that comes close.' },
+    { id: 'life', name: 'A second life', say: 'Rise again if you fall.' }] },
+  { id: 'buff', name: 'Buff', say: 'Makes you faster or stronger for a while.', subs: [
+    { id: 'speed', name: 'Speed', say: 'Run faster, or jump out of trouble.' },
+    { id: 'power', name: 'Power', say: 'Your spells hit harder.' },
+    { id: 'time', name: 'Time', say: 'Slows or stops everything but you.' },
+    { id: 'blessing', name: 'A blessing', say: 'Heals you and makes you stronger for a while.' }] },
+  { id: 'heal', name: 'Healing', say: 'Heals you.', subs: [
+    { id: 'now', name: 'All at once', say: 'Heals you straight away.' },
+    { id: 'slow', name: 'Bit by bit', say: 'Heals you over a while.' }] },
+  { id: 'control', name: 'Control', say: 'Holds your foes back.', subs: [
+    { id: 'stop', name: 'Stop them', say: 'Roots them, freezes them or turns them to stone.' },
+    { id: 'turn', name: 'Turn them', say: 'Scares them off, or turns them on each other.' },
+    { id: 'drag', name: 'Shake and drag', say: 'Shakes the ground, or drags them into a heap.' }] },
+];
+// which sort each named spell is (the woven ones sort themselves by their shape)
+const SHOP_NAMED = {
+  FF: 'bolt', WA: 'bolt', EF: 'bolt', EW: 'bolt', SE: 'bolt', SEW: 'bolt',
+  AA: 'blast', ASA: 'blast', FFA: 'blast', FAF: 'blast', WAEF: 'blast', ASAW: 'blast', FFAF: 'blast', FEFEF: 'blast', WAEFW: 'blast', SFWEASS: 'blast',
+  FFSAFF: 'fighter', SAS: 'healer', FSE: 'guard', EFSE: 'guard', EFS: 'wearth', EWS: 'patch', FE: 'mine',
+  ES: 'shield', SWS: 'shield', SWA: 'mirror', FFAFF: 'ring', FSFSFS: 'life',
+  AS: 'speed', SA: 'speed', FSF: 'power', SAFEWS: 'power', ASSA: 'time', SEWAF: 'time',
+  WS: 'now', SWWWS: 'now', SSW: 'slow', WWSS: 'slow',
+  WE: 'stop', WAE: 'stop', EFSEE: 'stop', SFS: 'turn', EWE: 'turn', SEWA: 'turn', EEA: 'drag', AEEA: 'drag', ASAWA: 'drag',
+};
+function shopSortOf(k) {
+  if (SHOP_NAMED[k]) return SHOP_NAMED[k];
+  const s = SPELLS[k] && SPELLS[k].woven;
+  if (!s) return null;
+  if (s.form === 'creature') return s.heal ? 'healer' : 'fighter';
+  if (s.form === 'pool') return s.mine ? 'mine' : 'patch';
+  if (s.form === 'wall') return 'w' + s.elem;
+  if (s.form === 'burst') return SPELLS[k].kind === 'buff' ? 'blessing' : 'blast';
+  return 'bolt';
+}
+const shopStock = sort => Object.keys(SPELLS).filter(k => freshSpell(k) && shopSortOf(k) === sort);
+const RUNE_WORD = { 2: 'Two runes', 3: 'Three runes', 4: 'Four runes', 5: 'Five runes', 6: 'Six runes', 7: 'Seven runes' };
+let shop = null;
+function shopCard() {
+  let el = document.getElementById('shop');
+  if (el) return el;
+  el = document.createElement('div'); el.id = 'shop';
+  el.style.cssText = 'position:fixed;inset:0;display:none;align-items:center;justify-content:center;z-index:30;background:rgba(5,3,10,0.55)';
+  el.addEventListener('click', e => {
+    const b = e.target.closest('[data-go]');
+    if (!b || b.dataset.off) return;
+    const [what, v] = b.dataset.go.split(':');
+    if (what === 'close') { closeShop(); return; }
+    if (what === 'back') { shop.step = shop.step === 'size' ? 'sub' : 'kind'; SFX.buff(); drawShop(); return; }
+    if (what === 'kind') { shop.kind = v; shop.step = 'sub'; SFX.buff(); drawShop(); return; }
+    if (what === 'sub') { shop.sub = v; shop.step = 'size'; SFX.buff(); drawShop(); return; }
+    if (what === 'buy') buySpell(+v);
+  });
+  document.body.appendChild(el);
+  return el;
+}
+const coinSvg = s => `<svg width="${s}" height="${s}" viewBox="0 0 16 16" style="vertical-align:-2px"><circle cx="8" cy="9" r="6.6" fill="#9a6a14"/><circle cx="8" cy="8" r="6.6" fill="#ffd24a" stroke="#c8901a" stroke-width="1.2"/><circle cx="8" cy="8" r="4.3" fill="none" stroke="rgba(170,110,20,.8)" stroke-width="1"/></svg>`;
+function openShop() {
+  shop = { step: 'kind' }; state = 'shop';
+  movePtr = null; movePos = null; moveStart = null; castPtr = null; finger = null; seq = [];
+  SFX.buff(); drawShop();
+}
+function closeShop() {
+  shopCard().style.display = 'none';
+  shop = null;
+  if (state === 'shop') state = 'play';
+}
+function drawShop() {
+  const el = shopCard(), have = ADV.world.tokens || 0;
+  const opt = (go, title, say, off, right) => `<div data-go="${go}"${off ? ' data-off="1"' : ''} style="display:flex;align-items:center;gap:10px;text-align:left;padding:10px 12px;margin-top:8px;border-radius:10px;cursor:pointer;background:#241c34;border:1.5px solid ${off ? '#3a3248' : '#6a5a8a'};opacity:${off ? 0.45 : 1}">`
+    + `<div style="flex:1;min-width:0"><div style="color:#ffd24a;font-weight:bold;font-size:16px">${title}</div><div style="color:#ccc;font-size:13px;margin-top:2px">${say}</div></div>${right || ''}</div>`;
+  let ask = '', body = '';
+  if (shop.step === 'kind') {
+    ask = 'What kind of spell are you after?';
+    for (const K of SHOP) {
+      const left = K.subs.some(S => shopStock(S.id).length);
+      body += opt(`kind:${K.id}`, K.name, left ? K.say : 'You know every one I’ve got of these.', !left);
+    }
+  } else if (shop.step === 'sub') {
+    const K = SHOP.find(K => K.id === shop.kind);
+    ask = `What sort of ${K.name.toLowerCase()}?`;
+    for (const S of K.subs) {
+      const left = shopStock(S.id).length;
+      body += opt(`sub:${S.id}`, S.name, left ? S.say : 'None left that you don’t know.', !left);
+    }
+  } else {
+    const K = SHOP.find(K => K.id === shop.kind), S = K.subs.find(S => S.id === shop.sub), stock = shopStock(S.id);
+    ask = `${S.name}: how strong? More runes make a stronger spell.`;
+    for (const n of [2, 3, 4, 5, 6, 7]) {
+      if (!stock.some(k => k.length === n)) continue;
+      const price = SHOP_PRICE[n], short = price - have;
+      body += opt(`buy:${n}`, RUNE_WORD[n], short > 0 ? `${short.toLocaleString()} more tokens` : 'Tap to buy', short > 0,
+        `<div style="background:${short > 0 ? '#3a3248' : '#ffd24a'};color:${short > 0 ? '#999' : '#2a1a00'};border-radius:9px;padding:7px 10px;font-weight:bold;font-size:14px;white-space:nowrap">${coinSvg(14)} ${price.toLocaleString()}</div>`);
+    }
+  }
+  const btn = 'flex:1;padding:10px;border-radius:10px;font-weight:bold;cursor:pointer;background:#2a2238;color:#ccc;border:1px solid #5a5070';
+  el.innerHTML = `<div style="background:#1a1428;border:2px solid #ffd24a;border-radius:14px;padding:16px 16px 14px;width:min(88vw,370px);max-height:88vh;overflow-y:auto;box-sizing:border-box;font-family:Georgia,serif;color:#eee;text-align:center;box-shadow:0 8px 30px rgba(0,0,0,.6)">`
+    + `<div style="color:#ffd24a;font-weight:bold;font-size:20px">Barnaby’s Spell Stall</div><div style="color:#ffd24a;font-size:15px;margin-top:4px">${coinSvg(16)} ${have.toLocaleString()} tokens</div>`
+    + `<div style="color:#bbb;font-size:14px;margin:10px 0 2px">${ask}</div>` + body
+    + `<div style="display:flex;gap:10px;margin-top:14px">${shop.step !== 'kind' ? `<div data-go="back" style="${btn}">Back</div>` : ''}<div data-go="close" style="${btn}">Close</div></div></div>`;
+  el.style.display = 'flex';
+}
+// he finds you one you don't know, of the sort and size you asked for
+function buySpell(n) {
+  const pool = shopStock(shop.sub).filter(k => k.length === n), price = SHOP_PRICE[n];
+  if (!pool.length || (ADV.world.tokens || 0) < price) return;
+  const key = pool[Math.floor(Math.random() * pool.length)];
+  ADV.world.tokens -= price;
+  closeShop();
+  learnSpell(key, 'FROM BARNABY’S STALL');
 }
 // in the Spell School: how many you've beaten, how long you've lasted, and when the next one comes
 function drawSchoolBar() {
@@ -4535,7 +4832,7 @@ function makeFoe(kind, x, y) {
 }
 
 function clearCombat() {
-  hazards = []; pickups = [];
+  hazards = []; pickups = []; coins = [];
   shots = []; enemyShots = []; allies = []; zones = []; waves = []; meteors = [];
   storms = []; traps = []; tempSolids = [];
   timeWarp = 0; timeStop = 0;
@@ -5562,15 +5859,16 @@ function castSequence() {
     SFX.fizzle();
     return;
   }
+  // in the Scribe's House nothing is cast: she writes down whatever you trace, and can't tell a spell from a fizzle
+  if (mode === 'adventure' && player === hostP && WLD && WLD.hall && WLD.hall.id === 'scribe') { scribeWrites(key); return; }
   if (sp && mode === 'adventure' && player === hostP && !ADV.known.has(key)) {
     // any spell you can weave works from the start; one you've found for yourself counts toward the spells you know
     ADV.known.add(key); advSave();
     floatText(player.x, player.y - 50, 'New spell!', '#ffd24a', 14);
     if (!ADV.world.scribeTip && worldOpen()) { ADV.world.scribeTip = true; tipMsg('Remember it! The scribe in Hollowbrook can write it into your book', '#ffd24a', 5); }
   }
-  // in the Scribe's House a spell isn't cast: it's written into your book
-  if (sp && mode === 'adventure' && player === hostP && WLD && WLD.hall && WLD.hall.id === 'scribe') { scribeWrites(key); return; }
   if (!sp) {
+    if (mode === 'adventure' && player === hostP && ADV.written.includes(key) && !ADV.fizzled.includes(key)) { ADV.fizzled.push(key); advSave(); }
     player.mana = Math.max(0, player.mana - 1);
     castMessage('…fizzle', '#888');
     if (player === hostP) SFX.fizzle();
@@ -9579,7 +9877,7 @@ canvas.addEventListener('pointerdown', e => {
     if (b) b.go(); else howtoDrag = { id: e.pointerId, y, s: howtoScroll };
     return;
   }
-  if (state === 'naming') return;
+  if (state === 'naming' || state === 'shop') return;
   if (state === 'book') { howtoDrag = { id: e.pointerId, y, s: bookScroll, book: true, y0: y, last: y }; return; }
   if (state === 'map') { mapTap(x, y); return; }
   if (tapOverlay(x, y)) return;
@@ -9664,7 +9962,7 @@ canvas.addEventListener('wheel', e => {
 }, { passive: false });
 
 window.addEventListener('keydown', e => {
-  if (e.target && e.target.closest && e.target.closest('#lobby, #naming')) return; // typing a room code, or a spell's name
+  if (e.target && e.target.closest && e.target.closest('#lobby, #naming, #shop')) return; // typing a room code, or a spell's name
   audioInit();
   if (paused) { e.preventDefault(); resumeGame(); return; }
   if (e.code === 'KeyM') toggleSound();
@@ -9677,6 +9975,7 @@ window.addEventListener('keydown', e => {
     else if (confirm) tapOverlay();
     return;
   }
+  if (state === 'shop') { if (e.code === 'Escape') closeShop(); return; }
   if (state !== 'play') { if (confirm) tapOverlay(); return; }
   const el = KEY_TO_EL[e.code];
   if (el && castPtr === null && seq.length < MAX_SEQ) {
@@ -10131,7 +10430,7 @@ function drawCastles(camX, camY) {
     ctx.fillText(c.name, c.x, c.y - c.h - 14);
   }
   for (const w of walls) {
-    if (w.hall || w.quest) continue;              // (drawn with their halls, or with the folk who need help)
+    if (w.hall || w.quest || w.stall) continue;              // (drawn with their halls, or with the folk who need help)
     if (!inView(w.x + w.w / 2, w.y + w.h / 2, Math.max(w.w, w.h), camX, camY)) continue;
     if (w.house) { drawHouse(w); continue; }
     if (w.ruin) { drawRuinWall(w); continue; }
@@ -11762,6 +12061,7 @@ function drawHUD() {
     ctx.fillStyle = '#ffd24a';
     ctx.font = 'bold 16px "Big Caslon", "Libre Caslon Text", Georgia, serif';
     ctx.fillText(`Score ${score.toLocaleString()}`, 14, 72);
+    if (mode === 'adventure' && ADV) drawPurse(14 + ctx.measureText(`Score ${score.toLocaleString()}`).width + 24, 66);
   }
   ctx.fillStyle = '#ccc';
   ctx.font = '12px "Big Caslon", "Libre Caslon Text", Georgia, serif';
@@ -12537,7 +12837,8 @@ const HOWTO = [
   ['p', 'Beat all five challenges and the World Gate below the court opens on the wide world: a village, hills you can only climb by their ramps, old castles, forests, rivers and a lake full of islands. From then on, The Wide World on the Adventure menu takes you straight there.'],
   ['p', 'Nine titans out there guard the world’s great spells, and fight with the very spell they guard: beat one and it shows you how to cast it. Rival wizards and astronauts camp in the wilds; beat one and they teach you their own spell.'],
   ['p', 'Waystones keep your place: touch one and you’ll rise there if you fall. Stand on one to travel to any other you’ve woken. Crystals in chests make your health and mana grow.'],
-  ['p', 'In Hollowbrook: walk into the Healing House and the nurse fills your health and mana. In the Scribe’s House, cast any spell you know and it’s written into your book, and you can give it a name of your own. The teachers outside the Spell School explain how the spells of each element differ: tap their words to turn the page.'],
+  ['p', 'In Hollowbrook: walk into the Healing House and the nurse fills your health and mana. In the Scribe’s House, trace any pattern and she writes it into your book under a name you choose. She can’t tell a spell from a fizzle, so try it out in the world. The teachers outside the Spell School explain how the spells of each element differ: tap their words to turn the page.'],
+  ['p', 'Tokens: beat a rival or a duellist and one time in three they show you a spell; otherwise they drop 100 tokens. Every twentieth minion drops a coin worth 50 (the ring by your score fills up as you go). Spend them at Barnaby’s stall on the square: tell him what kind of spell you want and he finds you one you don’t know yet. Three runes cost 300, four 500, five 700, six 1,000 and seven 2,500.'],
   ['p', 'Inside the Spell School the duellists never stop coming: one at a time at first, then faster and faster. Fight as long as you like and leave by the door, or fall and get carried out. Your best count is kept.'],
   ['p', 'The boat waits at the village jetty: walk into it to sail the lake and up the rivers. You can fight from it, but serpents rise from deep water. You can’t swim, so sail to land to step off.'],
   ['p', 'Tap the little map (top right) to see the whole world.'],
@@ -13137,8 +13438,12 @@ function drawReveal() {
   ctx.fillText(`TIER ${combo.length} · ${TIERS[combo.length].toUpperCase()} · COMPLEXITY ${complexityOf(combo).toFixed(1)} · POWER ×${potencyOf(combo).toFixed(2)}`, W / 2, y);
   y += 40;
   ctx.fillStyle = '#fff';
-  ctx.font = `bold ${Math.min(36, W / 11)}px "Big Caslon", "Libre Caslon Display", "Libre Caslon Text", Georgia, serif`;
-  ctx.fillText(reveal.name, W / 2, y);
+  // (a long woven name shrinks to fit the screen)
+  let fs = Math.min(36, W / 11);
+  ctx.font = `bold ${fs}px "Big Caslon", "Libre Caslon Display", "Libre Caslon Text", Georgia, serif`;
+  const nw = ctx.measureText(reveal.name).width;
+  if (nw > W - 32) { fs = Math.max(16, fs * (W - 32) / nw); ctx.font = `bold ${fs}px "Big Caslon", "Libre Caslon Display", "Libre Caslon Text", Georgia, serif`; }
+  ctx.fillText(reveal.name, W / 2, y, W - 24);
   y += 28;
   ctx.fillStyle = '#bbb';
   ctx.font = '14px "Big Caslon", "Libre Caslon Text", Georgia, serif';
@@ -13543,7 +13848,7 @@ function render() {
   if (state === 'lore') { drawLore(); return; }
   if (state === 'map') { drawMapOverlay(); return; }
   if (state === 'book') { drawBook(); return; }
-  if (state === 'naming') { dim(0.35); return; }
+  if (state === 'naming' || state === 'shop') { dim(0.35); return; }
   drawHUD();
   if (mode !== 'battle') drawTitanBar();
   drawPentagram();
