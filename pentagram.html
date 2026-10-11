@@ -401,8 +401,63 @@ function viewSize() {
   };
 }
 
+// ── style: colour, pixels and swing ──
+// Three dials for how the game looks and moves, with presets. Colour is a
+// filter over the whole screen: saturated like an old Sega cartridge, or
+// punchier still. Pixels draws the game at a lower resolution and blows it up
+// without smoothing, so every pixel is a crisp little block. Swing bends the
+// game's clock the way a drummer swings: the first half of every beat runs a
+// touch slow and the second half a touch fast, so everything that moves has a
+// faint lilt, while over each beat time keeps perfect pace.
+const STYLE_COLOUR = { natural: '', sega: 'saturate(1.32) contrast(1.07) brightness(1.02)', punchy: 'saturate(1.6) contrast(1.13) brightness(1.03)' };
+const STYLE_PIXELS = { off: 0, slight: 3, retro: 4, chunky: 5 };   // device pixels per block, on a sharp phone screen
+const STYLE_SWING = { off: 0, slight: 0.1, light: 0.18, groove: 0.3 };
+const STYLE_PRESETS = {
+  classic: { colour: 'natural', pixels: 'off', swing: 'off', scan: false },
+  mega:    { colour: 'sega', pixels: 'slight', swing: 'slight', scan: false },
+  arcade:  { colour: 'punchy', pixels: 'retro', swing: 'light', scan: true },
+  bit16:   { colour: 'sega', pixels: 'chunky', swing: 'groove', scan: false },
+};
+const STYLE = { ...STYLE_PRESETS.classic };
+try { const s = JSON.parse(localStorage.getItem('pentagram-style')); if (s) for (const k of Object.keys(STYLE)) if (k in s) STYLE[k] = s[k]; } catch (_) {}
+function setStyle(changes) {
+  Object.assign(STYLE, changes);
+  try { localStorage.setItem('pentagram-style', JSON.stringify(STYLE)); } catch (_) {}
+  applyStyle();
+}
+function applyStyle() {
+  canvas.style.filter = STYLE_COLOUR[STYLE.colour] || '';
+  canvas.style.imageRendering = STYLE_PIXELS[STYLE.pixels] ? 'pixelated' : 'auto';
+  resize();
+}
+// how sharply to draw: blocky styles draw fewer, bigger pixels
+function styleDPR() {
+  const dev = window.devicePixelRatio || 1, block = STYLE_PIXELS[STYLE.pixels];
+  if (!block) return Math.min(dev, 2);
+  return dev / (dev >= 2 ? block : Math.max(2, block - 1));
+}
+// the swung clock: rate 1 − A·sin(2π·beat phase), integrated exactly over each step so it never drifts
+const SWING_BEAT = 0.5;   // seconds per beat (120 a minute)
+let swingPh = 0;
+const swingF = (p, A) => p + A * (Math.cos(TAU * p) - 1) / TAU;
+function swingDt(dt) {
+  const A = STYLE_SWING[STYLE.swing];
+  if (!A || !(dt > 0)) return dt;
+  const p0 = swingPh, p1 = p0 + dt / SWING_BEAT;
+  swingPh = p1 % 1;
+  return (swingF(p1, A) - swingF(p0, A)) * SWING_BEAT;
+}
+// faint scanlines, like an old television
+let scanCv = null;
+function drawScanlines() {
+  if (!scanCv) { scanCv = document.createElement('canvas'); scanCv.width = 1; scanCv.height = 2; const g = scanCv.getContext('2d'); g.fillStyle = 'rgba(0,0,0,0.14)'; g.fillRect(0, 1, 1, 1); }
+  ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.fillStyle = ctx.createPattern(scanCv, 'repeat'); ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.restore();
+}
+
 function resize() {
-  DPR = Math.min(window.devicePixelRatio || 1, 2);
+  DPR = styleDPR();
   const v = viewSize();
   W = v.w;
   H = v.h;
@@ -424,7 +479,7 @@ function resize() {
 }
 window.addEventListener('resize', resize);
 if (window.ResizeObserver) new ResizeObserver(resize).observe(document.body);
-resize();
+applyStyle();
 
 function nodePos(i) {
   const a = -Math.PI / 2 + i * TAU / 5;
@@ -11903,6 +11958,51 @@ function drawHowTo(y, bx, bw) {
   menuButton(titleButtons[0]);
 }
 
+// the Style page: four looks to try, and each dial on its own
+const STYLE_ROWS = [
+  ['Colour', 'colour', [['natural', 'Natural'], ['sega', 'Sega'], ['punchy', 'Punchy']]],
+  ['Pixels', 'pixels', [['off', 'Off'], ['slight', 'Slight'], ['retro', 'Retro'], ['chunky', 'Chunky']]],
+  ['Swing', 'swing', [['off', 'Off'], ['slight', 'Slight'], ['light', 'Light'], ['groove', 'Groove']]],
+  ['Scanlines', 'scan', [[false, 'Off'], [true, 'On']]],
+];
+const PRESET_NAMES = [['classic', 'Classic'], ['mega', 'Mega'], ['arcade', 'Arcade'], ['bit16', '16-Bit']];
+function drawStylePage(y, bx, bw) {
+  const gap = 8, isPreset = k => Object.entries(STYLE_PRESETS[k]).every(([key, v]) => STYLE[key] === v);
+  ctx.textAlign = 'center'; ctx.fillStyle = '#d6d0e4'; ctx.font = `14px ${SERIF}`;
+  y = wrapText('Pick a look, then play: it changes the whole game. Swing is a lilt in how everything moves; watch the dots below.', W / 2, y + 2, bw, 18) + 8;
+  // the four looks
+  const ph = Math.min(40, Math.max(30, H * 0.045)), half = (bw - gap) / 2;
+  titleButtons = PRESET_NAMES.map(([k, name], i) => ({ title: name, color: isPreset(k) ? '#ffd24a' : '#8a84a8', selected: isPreset(k),
+    x: bx + (i % 2) * (half + gap), y: y + Math.floor(i / 2) * (ph + gap), w: half, h: ph, go: () => { setStyle(STYLE_PRESETS[k]); SFX.buff(); } }));
+  y += 2 * (ph + gap) + 6;
+  // each dial
+  const ch = Math.min(28, Math.max(22, H * 0.032));
+  for (const [label, key, opts] of STYLE_ROWS) {
+    ctx.textAlign = 'left'; ctx.fillStyle = '#bdb6cc'; ctx.font = `bold 13px ${SERIF}`;
+    ctx.fillText(label.toUpperCase(), bx, y + 12);
+    y += 18;
+    const cw = (bw - gap * (opts.length - 1)) / opts.length;
+    opts.forEach(([v, name], i) => titleButtons.push({ title: name, color: STYLE[key] === v ? '#8fd0ff' : '#5a5470', selected: STYLE[key] === v,
+      x: bx + i * (cw + gap), y, w: cw, h: ch, go: () => { setStyle({ [key]: v }); SFX.node(NODE_ORDER[i % 5], 1); } }));
+    y += ch + 12;
+  }
+  // the swing, shown: beads gliding along a line on the swung clock, with a beat mark
+  const t = performance.now() / 1000, A = STYLE_SWING[STYLE.swing], swungT = swingF(t / SWING_BEAT, A) * SWING_BEAT;
+  const ly = y + 22, L = bx + 10, R = bx + bw - 10;
+  ctx.strokeStyle = 'rgba(255,255,255,0.25)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(L, ly); ctx.lineTo(R, ly); ctx.stroke();
+  for (let i = 0; i < 8; i++) {
+    const x = L + (((swungT * 70 + i * (R - L) / 8) % (R - L)) + (R - L)) % (R - L);
+    circle(x, ly, 6, ELEMENTS[NODE_ORDER[i % 5]].color, '#fff', 1.5);
+  }
+  const beatOn = (t / SWING_BEAT) % 1 < 0.12;
+  circle(W / 2, ly + 22, beatOn ? 6 : 4, beatOn ? '#ffd24a' : 'rgba(255,210,74,0.35)');
+  ctx.textAlign = 'center'; ctx.fillStyle = '#8a84a8'; ctx.font = `12px ${SERIF}`;
+  ctx.fillText(A ? 'the beads lilt: a touch slow, then a touch fast, every beat' : 'swing is off: the beads glide evenly', W / 2, ly + 46);
+  y = ly + 60;
+  titleButtons.push({ title: 'Back', color: '#c9c3d8', x: bx + bw / 2 - 70, y: Math.min(y, H - 50), w: 140, h: 40, go: () => goMenu('main') });
+  for (const b of titleButtons) menuButton(b);
+}
+
 let lastTitleT = 0;
 function drawTitle() {
   const now = performance.now() / 1000, dt = Math.min(0.05, lastTitleT ? now - lastTitleT : 0.016);
@@ -11923,6 +12023,7 @@ function drawTitle() {
   y = wrapText('Parallel universes are converging. Fight to preserve yours.', W / 2, y, bw, 19) + 14;
 
   if (menuPage === 'howto') { drawHowTo(y, bx, bw); return; }
+  if (menuPage === 'style') { drawStylePage(y, bx, bw); return; }
   if (menuPage === 'adventure') {
     // carry on (or begin), go straight out to the wide world once the Sanctum's five challenges are beaten, or start again
     y += 10;
@@ -11996,7 +12097,8 @@ function drawTitle() {
   ];
   const modeButtons = modes.map((o, i) => ({ ...o, x: bx, y: y + i * (bh + gap), w: bw, h: bh }));
   y += modes.length * (bh + gap) + 4;
-  modeButtons.push({ title: 'How to Play', color: '#ffd24a', x: bx + bw * 0.12, y, w: bw * 0.76, h: Math.max(30, bh * 0.5), go: () => { howtoScroll = 0; howtoT0 = elapsed; goMenu('howto'); } });
+  modeButtons.push({ title: 'How to Play', color: '#ffd24a', x: bx, y, w: bw * 0.6, h: Math.max(30, bh * 0.5), go: () => { howtoScroll = 0; howtoT0 = elapsed; goMenu('howto'); } },
+                   { title: 'Style', color: '#8fd0ff', x: bx + bw * 0.66, y, w: bw * 0.34, h: Math.max(30, bh * 0.5), go: () => goMenu('style') });
   // Adventure first, so Enter starts it
   titleButtons = [...modeButtons, ...lookButtons, heroButton];
   for (const b of modeButtons.concat(lookButtons)) menuButton(b);
@@ -12371,6 +12473,7 @@ function drawPaused() {
 // ── loop ─────────────────────────────────────────────────────────────────────
 function tick(dt) {
   if (paused) return; // everything waits: clocks, foes, spells, messages
+  dt = swingDt(dt);
   overlayT += dt;
   if (state !== 'title') updateCam(dt);
   for (let i = 0; i < 5; i++) nodePulse[i] = Math.max(0, nodePulse[i] - dt * 4);
@@ -12394,6 +12497,10 @@ function tick(dt) {
 }
 
 function render() {
+  renderFrame();
+  if (STYLE.scan) drawScanlines();
+}
+function renderFrame() {
   // start every frame from a clean context, in case a previous frame threw mid-draw
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
   ctx.globalAlpha = 1;
