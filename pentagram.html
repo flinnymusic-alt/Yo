@@ -13,8 +13,7 @@
   html, body { height: 100%; margin: 0; overflow: hidden; overscroll-behavior: none; touch-action: none; }
   body { position: fixed; inset: 0; }
   body { background: #0b0a12; color: #e6e0f0; }
-  canvas { display: block; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
-           filter: saturate(1.9) contrast(1.12) brightness(1.03); image-rendering: pixelated; }
+  canvas { display: block; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
 </style>
 </head>
 <body>
@@ -403,16 +402,25 @@ function viewSize() {
 }
 
 // ── the look: Sega-bright colour, crisp pixels and a swing in time ──
-// The colours are turned up like an old Sega cartridge (a filter on the
-// canvas, in the stylesheet above). The game draws at a lower resolution and
-// is blown up without smoothing, so every pixel is a crisp little block. And
-// the game's clock swings the way a drummer does: the first half of every beat
-// runs a touch slow and the second half a touch fast, so everything that moves
-// has a faint lilt, while over each beat time keeps perfect pace.
+// In the game the colours are turned up like an old Sega cartridge (a filter
+// on the canvas), and the game draws at a lower resolution, blown up without
+// smoothing, so every pixel is a crisp little block. The title and menu pages
+// stay smooth and a little softer in colour. And the game's clock swings the
+// way a drummer does: the first half of every beat runs a touch slow and the
+// second half a touch fast, so everything that moves has a faint lilt, while
+// over each beat time keeps perfect pace.
+const GAME_FILTER = 'saturate(1.9) contrast(1.12) brightness(1.03)';
+const MENU_FILTER = 'saturate(1.5) contrast(1.08) brightness(1.02)';
 const PIXEL_BLOCK = 3;    // screen pixels per game pixel, on a sharp phone screen
 const SWING = 0.1;        // the clock runs between 0.9× and 1.1× within each beat
 const SWING_BEAT = 0.5;   // seconds per beat (120 a minute)
-function lookDPR() { const dev = window.devicePixelRatio || 1; return dev / (dev >= 2 ? PIXEL_BLOCK : PIXEL_BLOCK - 1); }
+let lookMenu = true;      // showing the title and menu pages (the game opens on them)
+function lookDPR() { const dev = window.devicePixelRatio || 1; return lookMenu ? Math.min(dev, 2) : dev / (dev >= 2 ? PIXEL_BLOCK : PIXEL_BLOCK - 1); }
+function applyLook() {
+  canvas.style.filter = lookMenu ? MENU_FILTER : GAME_FILTER;
+  canvas.style.imageRendering = lookMenu ? 'auto' : 'pixelated';
+  resize();
+}
 // the swung clock: rate 1 − A·sin(2π·beat phase), integrated exactly over each step so it never drifts
 let swingPh = 0;
 const swingF = (p, A) => p + A * (Math.cos(TAU * p) - 1) / TAU;
@@ -446,7 +454,7 @@ function resize() {
 }
 window.addEventListener('resize', resize);
 if (window.ResizeObserver) new ResizeObserver(resize).observe(document.body);
-resize();
+applyLook();
 
 function nodePos(i) {
   const a = -Math.PI / 2 + i * TAU / 5;
@@ -12417,6 +12425,8 @@ function tick(dt) {
 }
 
 function render() {
+  // the menus and the game each have their own look
+  if ((state === 'title') !== lookMenu) { lookMenu = state === 'title'; applyLook(); }
   // start every frame from a clean context, in case a previous frame threw mid-draw
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
   ctx.globalAlpha = 1;
