@@ -4312,7 +4312,9 @@ function namingCard() {
   let el = document.getElementById('naming');
   if (el) return el;
   el = document.createElement('div'); el.id = 'naming';
-  el.style.cssText = 'position:fixed;inset:0;display:none;align-items:center;justify-content:center;z-index:30;background:rgba(5,3,10,0.55)';
+  el.style.cssText = 'position:fixed;inset:0;display:none;align-items:center;justify-content:center;z-index:30;background:rgba(5,3,10,0.55);touch-action:manipulation';
+  // (the page swallows every touch to keep swipes in the game, which would stop a tap here from ever becoming a click)
+  for (const ev of ['touchstart', 'touchmove', 'pointerdown']) el.addEventListener(ev, e => e.stopPropagation(), { passive: true });
   const btn = 'flex:1;font:bold 15px Georgia,serif;padding:11px 8px;border-radius:10px;cursor:pointer;';
   el.innerHTML = '<div style="background:#1a1428;border:2px solid #ffd24a;border-radius:14px;padding:18px;width:min(86vw,360px);font-family:Georgia,serif;color:#eee;text-align:center;box-shadow:0 8px 30px rgba(0,0,0,.6)">'
     + '<div class="t" style="color:#ffd24a;font-weight:bold;font-size:19px;margin-bottom:8px"></div><div class="r" style="display:flex;gap:4px;justify-content:center;margin-bottom:8px"></div><div class="s" style="color:#bbb;font-size:14px;margin-bottom:12px"></div>'
@@ -4442,7 +4444,11 @@ function shopCard() {
   let el = document.getElementById('shop');
   if (el) return el;
   el = document.createElement('div'); el.id = 'shop';
-  el.style.cssText = 'position:fixed;inset:0;display:none;align-items:center;justify-content:center;z-index:30;background:rgba(5,3,10,0.55)';
+  el.style.cssText = 'position:fixed;inset:0;display:none;align-items:center;justify-content:center;z-index:30;background:rgba(5,3,10,0.55);touch-action:pan-y;user-select:none;-webkit-user-select:none;-webkit-tap-highlight-color:transparent';
+  for (const ev of ['touchstart', 'touchmove', 'pointerdown']) el.addEventListener(ev, e => e.stopPropagation(), { passive: true });
+  const st = document.createElement('style');
+  st.textContent = '#shop [data-go]:active{filter:brightness(1.4)}';
+  document.head.appendChild(st);
   el.addEventListener('click', e => {
     const b = e.target.closest('[data-go]');
     if (!b || b.dataset.off) return;
@@ -4496,7 +4502,7 @@ function drawShop() {
     }
   }
   const btn = 'flex:1;padding:10px;border-radius:10px;font-weight:bold;cursor:pointer;background:#2a2238;color:#ccc;border:1px solid #5a5070';
-  el.innerHTML = `<div style="background:#1a1428;border:2px solid #ffd24a;border-radius:14px;padding:16px 16px 14px;width:min(88vw,370px);max-height:88vh;overflow-y:auto;box-sizing:border-box;font-family:Georgia,serif;color:#eee;text-align:center;box-shadow:0 8px 30px rgba(0,0,0,.6)">`
+  el.innerHTML = `<div style="background:#1a1428;border:2px solid #ffd24a;border-radius:14px;padding:16px 16px 14px;width:min(88vw,370px);max-height:88vh;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;box-sizing:border-box;font-family:Georgia,serif;color:#eee;text-align:center;box-shadow:0 8px 30px rgba(0,0,0,.6)">`
     + `<div style="color:#ffd24a;font-weight:bold;font-size:20px">Barnaby’s Spell Stall</div><div style="color:#ffd24a;font-size:15px;margin-top:4px">${coinSvg(16)} ${have.toLocaleString()} tokens</div>`
     + `<div style="color:#bbb;font-size:14px;margin:10px 0 2px">${ask}</div>` + body
     + `<div style="display:flex;gap:10px;margin-top:14px">${shop.step !== 'kind' ? `<div data-go="back" style="${btn}">Back</div>` : ''}<div data-go="close" style="${btn}">Close</div></div></div>`;
