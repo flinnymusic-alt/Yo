@@ -200,8 +200,10 @@ function complexityOf(key) {
   const n = Object.values(counts);
   return key.length + 0.6 * (n.length - 1) + 0.4 * (new Set(n).size - 1);
 }
+// the Brush Lab, while you're in it (see further down), and the extra power its brush gives a spell
+let LAB = null, brushPow = 1;
 // extra power on top of what the spell's length already gives it
-const potencyOf = key => Math.round(1.2 ** (complexityOf(key) - key.length) * 100) / 100;
+const potencyOf = key => Math.round(1.2 ** (complexityOf(key) - key.length) * brushPow * 100) / 100;
 let potency = 1; // the power multiplier of whatever spell effect is running right now
 
 // Spells that aim go on the FIRE button; everything else happens on release.
@@ -456,6 +458,7 @@ function resize() {
   PENT.slotY = PENT.cy - R - PENT.S / 2 - 16 - PENT.slot / 2;
   PENT.msgY  = PENT.slotY - PENT.slot / 2 - 16;
   panelTop   = PENT.msgY - 18;
+  if (LAB) labSize();
 }
 window.addEventListener('resize', resize);
 if (window.ResizeObserver) new ResizeObserver(resize).observe(document.body);
@@ -477,7 +480,7 @@ function inCastZone(x, y) {
   return Math.hypot(x - PENT.cx, y - PENT.cy) < PENT.R * 1.45 ||
          (y > panelTop && Math.abs(x - PENT.cx) < PENT.R * 1.6);
 }
-function playerScreenY() { return panelTop * 0.5; }
+function playerScreenY() { if (LAB) { const G = labGeom(); return (G.top + G.desk) / 2; } return panelTop * 0.5; }
 // The camera: the world point drawn where you'd normally stand, and how far it's zoomed out. In battle it
 // simply follows you. Out in the wide world it pulls back a little, and in a fight with a titan or a rival
 // it pulls back further and leans toward them, so a phone held upright still shows you both.
@@ -499,6 +502,7 @@ function updateCam(dt) {
   cam.z += (z - cam.z) * k; cam.ox += (ox - cam.ox) * k; cam.oy += (oy - cam.oy) * k;
   if (mode === 'battle' || Math.hypot(cam.ox, cam.oy) > 600) { cam.z = z; cam.ox = ox; cam.oy = oy; }
   cam.x = player.x + cam.ox; cam.y = player.y + cam.oy;
+  if (LAB) { const G = labGeom(); cam.z = clamp((G.desk - G.top) / 430, 0.45, 1.05); cam.ox = cam.oy = 0; cam.x = LAB_SPOT.x; cam.y = LAB_SPOT.y - 150; }
 }
 // where a spot on the screen is in the world, and where you are on the screen
 function screenToWorld(sx, sy) { return { x: cam.x + (sx - W / 2) / cam.z, y: cam.y + (sy - playerScreenY()) / cam.z }; }
@@ -1536,7 +1540,7 @@ function advFresh() {
   return { reshaped: true, known: new Set(['SA']), taught: ['SA'], written: [], names: {}, fizzled: [], altars: [], zones: Object.fromEntries(ZONE_ELEMS.map(e => [e, { gate: false, beaten: 0, stage: 0, done: false }])), check: null, world: { titans: [], chests: [], rivals: [], ways: [], seen: '', elder: false, won: false, helped: {}, blessed: 0, tokens: 0, minions: 0, grp: 0, had: false }, boat: null };
 }
 function advSave() {
-  if (!ADV) return;
+  if (!ADV || LAB) return;              // (the Brush Lab plays with a scratch adventure, never saved)
   try { localStorage.setItem(ADV_SAVE, JSON.stringify({ ...ADV, known: [...ADV.known] })); } catch (_) {}
 }
 function advLoad() {
@@ -1930,6 +1934,7 @@ function drawStall() {
   }
 }
 function advFoeDown(f) {
+  if (f.dummy) { f.dead = true; f.downT = 1.8; SFX.kill(); burst(f.x, f.y - 14, '#d8b25a', 26, 240); floatText(f.x, f.y - 56, 'Knocked down!', '#ffd24a', 15); return; }
   if (f.rival) { if (f.phoenixUp) phoenixRise(f); else rivalDown(f); return; }
   f.dead = true;
   kills++;
@@ -1984,6 +1989,7 @@ function foeBlocked(f, x, y) {
   return landBlocks(x, y, f.r * 0.8);
 }
 function updateAdvFoe(f, dt) {
+  if (f.dummy) { f.x = f.home.x; f.y = f.home.y; f.kx = f.ky = 0; return; }   // a training dummy stands where it's put
   // a wave or a shove can carry a foe into rock or deep water: put it back where it last stood
   if (foeBlocked(f, f.x, f.y)) { if (f.gx != null) { f.x = f.gx; f.y = f.gy; } }
   else { f.gx = f.x; f.gy = f.y; }
@@ -3182,6 +3188,7 @@ function drawAdvFoe(f) {
     ctx.strokeStyle = `rgba(199,125,255,${0.5 + 0.3 * Math.sin(elapsed * 20)})`; ctx.lineWidth = 5;
     ctx.beginPath(); ctx.moveTo(player.x, player.y); ctx.quadraticCurveTo((player.x + f.x) / 2 + Math.sin(elapsed * 9) * 30, (player.y + f.y) / 2, f.x, f.y); ctx.stroke();
   }
+  if (f.dummy) { drawDummy(f); return; }
   if (f.rival) { drawRival(f); return; }
   if (f.serpent) { drawSerpent(f); return; }
   if (f.titan) {
@@ -6656,6 +6663,7 @@ function heroMove(dt) {
   const t = tiltVector();
   mx += t.x; my += t.y;
   if (player.fearT > 0 && player.fearFrom && state === 'play') { const fx0 = player.x - player.fearFrom.x, fy0 = player.y - player.fearFrom.y, fd = Math.hypot(fx0, fy0) || 1; mx = fx0 / fd; my = fy0 / fd; } // terrified: you run
+  if (LAB) mx = my = 0;              // (in the Brush Lab you stand and write)
   // analog: a gentle tilt walks slowly, anything else is capped at full speed
   let ml = Math.hypot(mx, my);
   player.moving = ml > 0.02 && !player.charging && state === 'play' && !(player.stunT > 0); // charging a big spell roots you (and so does being stunned)
@@ -6705,6 +6713,7 @@ function update(dt) {
     updateSanctum(dt);
     updateWorld(dt);
     updateHazards(dt);
+    if (LAB) updateLab(dt);
   }
   updateFoes(dt);
   potency = 1;
@@ -9971,6 +9980,7 @@ window.addEventListener('keydown', e => {
   if (e.target && e.target.closest && e.target.closest('#lobby, #naming, #shop')) return; // typing a room code, or a spell's name
   audioInit();
   if (paused) { e.preventDefault(); resumeGame(); return; }
+  if (LAB) { if (e.code === 'Escape') exitLab(); return; }   // (the Brush Lab is written with a brush, not keys)
   if (e.code === 'KeyM') toggleSound();
   if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Backspace'].includes(e.code)) e.preventDefault();
   keys[e.code] = true;
@@ -9997,6 +10007,433 @@ window.addEventListener('keydown', e => {
 });
 window.addEventListener('keyup', e => { keys[e.code] = false; });
 window.addEventListener('blur', () => { for (const k in keys) keys[k] = false; });
+
+// ── the Brush Lab ───────────────────────────────────────────────────────
+// Another way to cast, to try out. Five elements sit round a circle of paper and you write inside it with a brush:
+// hold the brush still and the ink pools thicker, sweep it fast and the line runs thin. Each stretch of a stroke
+// that heads one way is a move, and the way it heads picks its element (up Spirit, right Water, down-right Fire,
+// down-left Earth, left Air), or, read the other way, the part of the paper it's written on. Up to ten moves make
+// a phrase: the first seven are the spell's runes and any more are flourishes. A pulse keeps time: moves begun on
+// the beat make the spell stronger, and so does heavy ink. Lift the brush and let a beat go by and the phrase is
+// cast at the training dummies, or seal it with a dot to cast it at once.
+const LAB_SPOT = { x: 4700, y: 2300 };                        // a quiet meadow, far from everything
+const LAB_TEMPOS = [0, 70, 90, 120];                          // beats a minute (0: no pulse, write freely)
+const EL_ANGLE = { S: -90, W: -18, F: 54, E: 126, A: 198 };   // the way to each element on the pentagram, in degrees
+const LAB_EXAMPLES = ['FF', 'AA', 'WS', 'FFA', 'ASA', 'EFS', 'SAS'];
+const brushCv = document.createElement('canvas');               // its own layer over the game, smooth and sharp
+brushCv.style.cssText = 'position:fixed;left:0;top:0;display:none;z-index:20;touch-action:none';
+document.body.appendChild(brushCv);
+const lctx = brushCv.getContext('2d');
+let LDPR = 1, labButtons = [];
+function labSize() {
+  LDPR = Math.min(3, window.devicePixelRatio || 1);
+  brushCv.width = Math.floor(W * LDPR); brushCv.height = Math.floor(H * LDPR);
+  brushCv.style.width = W + 'px'; brushCv.style.height = H + 'px';
+}
+// the paper (centre and size), the bar at the top, and the desk under the paper
+function labGeom() {
+  const R = Math.max(110, Math.min(W * 0.42, H * 0.26, 210)), cy = H - R - 30;
+  return { R, cx: W / 2, cy, top: 88, desk: cy - R - 118 };
+}
+// the brush, sized to the paper
+function labBrush(R) { return { MIN: R * 0.01, MAX: R * 0.12, POOL: R * 0.2, VTHIN: R * 6, SEG: R * 0.09, MINLEN: R * 0.15, TURN: R * 0.11, DOT: R * 0.07 }; }
+function nearestEl(rad) {
+  const deg = rad * 180 / Math.PI;
+  let best = 'S', bd = 999;
+  for (const [el, a] of Object.entries(EL_ANGLE)) { const d = Math.abs((((deg - a) % 360) + 540) % 360 - 180); if (d < bd) { bd = d; best = el; } }
+  return best;
+}
+
+function startLab() {
+  LAB = { tempoI: 2, readI: 0, help: true, t0: performance.now(), strokes: [], moves: [], last: [], pen: null, liftT: 0,
+          result: null, burn: null, seal: null, fireT: 0, beatN: -1, pulseT: 0, dummies: [] };
+  startGame(true);                                              // (a scratch adventure: nothing in the lab is saved)
+  ADV.known = new Set(Object.keys(SPELLS)); discovered = new Set(ADV.known);
+  for (const e of ZONE_ELEMS) Object.assign(ADV.zones[e], { gate: true, stage: 3, done: true, beaten: 3 });
+  ADV.world.welcomed = true; WLD.welcomed = true; WLD.packT = 1e9; WLD.serpT = 1e9;
+  foes = []; orbs = []; pickups = []; coins = [];
+  for (const [dx, dy] of [[-150, -230], [0, -300], [150, -230]]) { const f = makeDummy(LAB_SPOT.x + dx, LAB_SPOT.y + dy); foes.push(f); LAB.dummies.push(f); }
+  player.x = LAB_SPOT.x; player.y = LAB_SPOT.y; player.face = { x: 0, y: -1 }; player.onBoat = false;
+  player.maxMana = Math.max(player.maxMana, 60); player.mana = player.maxMana;
+  banner = null; castMsg = null; brushPow = 1;
+  labSize(); brushCv.style.display = 'block';
+}
+function exitLab() {
+  LAB = null; brushPow = 1; brushCv.style.display = 'none';
+  foes = []; clearCombat(); seq = []; player.loaded = null; player.charging = null;
+  state = 'title'; menuPage = 'main'; SFX.buff();
+}
+function makeDummy(x, y) {
+  return Object.assign(makeAdvFoe('brute', 'none', x, y), { dummy: true, hp: 40, maxHp: 40, r: 15, knockK: 0, spd: 0, home: { x, y } });
+}
+// a straw training dummy on a post, a target on its head
+function drawDummy(f) {
+  const { x, y } = f, hit = f.flash > 0, wob = hit ? Math.sin(elapsed * 60) * 2.5 : 0;
+  ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.beginPath(); ctx.ellipse(x + 4, y + 15, 16, 5, 0, 0, TAU); ctx.fill();
+  ctx.fillStyle = '#6b4a2a'; ctx.fillRect(x - 3, y - 6, 6, 21);
+  ctx.save(); ctx.translate(x + wob, y);
+  ctx.fillStyle = f.stone > 0 ? '#9a9690' : f.freeze > 0 ? '#bfe6ff' : hit ? '#fff3c0' : '#d8b25a';
+  ctx.beginPath(); ctx.ellipse(0, -12, 13, 16, 0, 0, TAU); ctx.fill();
+  ctx.strokeStyle = 'rgba(140,100,40,0.8)'; ctx.lineWidth = 1.4;
+  for (let i = -1; i <= 1; i++) { ctx.beginPath(); ctx.moveTo(i * 6, -26); ctx.lineTo(i * 7, 2); ctx.stroke(); }
+  ctx.fillStyle = '#8a5a2a'; ctx.fillRect(-19, -21, 38, 5);
+  circle(0, -35, 9, hit ? '#fff' : '#ecdcb4', '#8a6a3a', 1.5);
+  circle(0, -35, 5.5, null, '#c8382a', 2); circle(0, -35, 2, '#c8382a');
+  ctx.restore();
+  if (f.burn > 0 && Math.random() < 0.3) particles.push({ x: x + rnd(-8, 8), y: y - 20, vx: rnd(-10, 10), vy: -50, r: rnd(2, 4), life: 0.5, decay: 2, color: '#ff8a3a' });
+  if (f.poison > 0 && Math.random() < 0.15) particles.push({ x: x + rnd(-8, 8), y: y - 18, vx: 0, vy: -30, r: 2.5, life: 0.6, decay: 1.6, color: '#7dff4a' });
+  const w = 34;
+  ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(x - w / 2, y - 54, w, 5);
+  ctx.fillStyle = '#ffd24a'; ctx.fillRect(x - w / 2, y - 54, w * Math.max(0, f.hp / f.maxHp), 5);
+}
+
+// ── the brush ──
+// a stroke is a list of points, each with the ink's width there; moves are stretches of a stroke
+function labDown(x, y, t, id) {
+  if (LAB.burn && LAB.burn.lone) LAB.burn = null;
+  const B = labBrush(labGeom().R), s = { pts: [{ x, y, t, w: B.MIN * 2 }], len: 0 };
+  LAB.strokes.push(s);
+  LAB.pen = { id, s, t0: t, lastMoveT: t, stepT: t, v: 0, w: B.MIN * 2, move: null, moveT: t, still: false };
+}
+function labMove(x, y, t) {
+  const P = LAB.pen, s = P.s, B = labBrush(labGeom().R), last = s.pts[s.pts.length - 1];
+  const d = Math.hypot(x - last.x, y - last.y);
+  if (d < 1.2) return;
+  if (P.still) { P.moveT = t; P.still = false; }               // moving again after a pause: the next move starts now
+  const dt = Math.max(1, t - last.t) / 1000;
+  P.v = P.v * 0.55 + (d / dt) * 0.45;
+  // the longer the brush has been down, the more ink it carries; the faster it goes, the thinner the line
+  const load = Math.min(1, (t - P.t0) / 800);
+  const target = B.MIN + (B.MAX - B.MIN) * (0.25 + 0.75 * load) * clamp(1 - P.v / B.VTHIN, 0.06, 1);
+  P.w += (target - P.w) * Math.min(1, dt * 16);
+  // (a long jump between samples is filled in, so the line stays smooth)
+  const n = Math.min(12, Math.ceil(d / 4));
+  for (let i = 1; i <= n; i++) {
+    const k = i / n, pt = { x: last.x + (x - last.x) * k, y: last.y + (y - last.y) * k, t: last.t + (t - last.t) * k, w: last.w + (P.w - last.w) * k };
+    s.pts.push(pt);
+    labRead(pt, d / n);
+  }
+  s.len += d;
+  P.lastMoveT = t;
+}
+function labUp(x, y, t) {
+  const P = LAB.pen;
+  if (!P) return;
+  labMove(x, y, t);
+  const B = labBrush(labGeom().R);
+  if (P.move && P.move.len >= B.MINLEN) labCommit(P.move);
+  LAB.pen = null; LAB.liftT = t;
+  // a dot (pressed and lifted without travelling) seals the phrase: it's cast at once, the bigger the blot the stronger
+  if (P.s.len < B.DOT && LAB.moves.length) {
+    const w = P.s.pts[P.s.pts.length - 1].w;
+    LAB.seal = { size: clamp((w - B.MAX) / (B.POOL - B.MAX), 0, 1) };
+    labCast(t);
+  }
+}
+// which element a point of the stroke reads as: the way the brush is heading there, or where on the paper it is
+function labEl(pt, s) {
+  const G = labGeom(), B = labBrush(G.R);
+  if (LAB.readI) {
+    const dx = pt.x - G.cx, dy = pt.y - G.cy;
+    return Math.hypot(dx, dy) < G.R * 0.22 ? null : nearestEl(Math.atan2(dy, dx));   // (the middle belongs to no element)
+  }
+  let j = s.pts.length - 1, back = 0;
+  while (j > 0 && back < B.SEG) { back += Math.hypot(s.pts[j].x - s.pts[j - 1].x, s.pts[j].y - s.pts[j - 1].y); j--; }
+  return back < B.SEG * 0.6 ? null : nearestEl(Math.atan2(pt.y - s.pts[j].y, pt.x - s.pts[j].x));
+}
+// moves: a stretch heading one way; a turn that holds for a little way starts the next (a wiggle doesn't)
+function labRead(pt, d) {
+  const P = LAB.pen, s = P.s, B = labBrush(labGeom().R), i = s.pts.length - 1;
+  if (LAB.moves.length >= 10) return;                          // ten moves is the most a phrase holds
+  const el = labEl(pt, s);
+  if (!el) return;
+  const M = P.move;
+  if (!M) { P.move = { el, t0: P.moveT, s: LAB.strokes.length - 1, i0: Math.max(0, i - 1), i1: i, len: d, ink: pt.w * d }; return; }
+  M.i1 = i;
+  if (el === M.el) { M.len += d; M.ink += pt.w * d; M.alt = null; return; }
+  if (!M.alt || M.alt.el !== el) M.alt = { el, len: 0, t: pt.t, i, ink: 0 };
+  M.alt.len += d; M.alt.ink += pt.w * d;
+  if (M.alt.len >= B.TURN) {
+    const A = M.alt;
+    M.i1 = A.i;
+    if (M.len >= B.MINLEN) labCommit(M);
+    P.move = { el: A.el, t0: A.t, s: M.s, i0: A.i, i1: i, len: A.len, ink: A.ink };
+  }
+}
+// how near the beat a move began: on it, near it, or off it (with no pulse, timing doesn't count)
+function labBeat(t) {
+  const bpm = LAB_TEMPOS[LAB.tempoI];
+  if (!bpm) return null;
+  const len = 60000 / bpm, ph = (t - LAB.t0) / len, off = Math.abs(ph - Math.round(ph)) * len;
+  return off < 110 ? 'on' : off < 210 ? 'near' : 'off';
+}
+function labCommit(M) {
+  if (LAB.moves.length >= 10) return;
+  const m = { el: M.el, t0: M.t0, s: M.s, i0: M.i0, i1: M.i1, len: M.len, ink: M.ink / Math.max(1, M.len), beat: labBeat(M.t0) };
+  LAB.moves.push(m);
+  if (sfxReady('labNote', 0.03)) tone(EL_NOTE[m.el], 0.26, 'triangle', 0.09);   // each move sings its element's note
+}
+// the phrase is done: read the spell, weigh the ink and the timing, and cast it
+function labCast(t) {
+  const moves = LAB.moves, key = moves.slice(0, 7).map(m => m.el).join(''), extra = moves.slice(7);
+  const bpm = LAB_TEMPOS[LAB.tempoI], B = labBrush(labGeom().R);
+  const T = bpm ? moves.reduce((a, m) => a + (m.beat === 'on' ? 1 : m.beat === 'near' ? 0.5 : 0), 0) / moves.length : null;
+  const ink = clamp(moves.reduce((a, m) => a + m.ink, 0) / moves.length / B.MAX, 0, 1.5);
+  let pow = 1;
+  if (T != null) pow *= 0.8 + 0.5 * T;                          // off the beat 0.8, all on it 1.3
+  pow *= 0.85 + 0.3 * Math.min(1, ink);                         // light ink 0.85, heavy 1.15
+  pow *= 1 + 0.1 * extra.filter(m => !bpm || m.beat === 'on').length;   // flourishes in time
+  if (LAB.seal) pow *= 1 + 0.25 * LAB.seal.size;                // a big seal
+  pow = Math.round(clamp(pow, 0.6, 2.2) * 100) / 100;
+  const sp = SPELLS[key];
+  LAB.result = { key, name: sp ? sp.name : null, pow, ink, n: moves.length, onN: bpm ? moves.filter(m => m.beat === 'on').length : null, flourish: extra.length, seal: !!LAB.seal, t };
+  LAB.burn = { t, strokes: LAB.strokes, moves, ok: !!sp };
+  LAB.last = moves; LAB.strokes = []; LAB.moves = []; LAB.seal = null;
+  if (!sp) { SFX.fizzle(); return; }
+  brushPow = pow;
+  player.mana = player.maxMana;
+  const d = LAB.dummies.filter(f => !f.dead).sort((a, b) => Math.hypot(a.x - player.x, a.y - player.y) - Math.hypot(b.x - player.x, b.y - player.y))[0];
+  if (d) { const dx = d.x - player.x, dy = d.y - player.y, dd = Math.hypot(dx, dy) || 1; player.face = { x: dx / dd, y: dy / dd }; }
+  seq = key.split(''); castSequence();
+  LAB.fireT = 0.25;
+}
+// every frame: the ink pools under a still brush, a pause ends a move, and a phrase left alone for a beat is cast
+function labStep(t) {
+  const P = LAB.pen, B = labBrush(labGeom().R), bpm = LAB_TEMPOS[LAB.tempoI];
+  if (P) {
+    const dt = Math.min(0.05, Math.max(0, (t - P.stepT) / 1000)); P.stepT = t;
+    if (t - P.lastMoveT > 40) {
+      const last = P.s.pts[P.s.pts.length - 1];
+      last.w += (B.POOL - last.w) * Math.min(1, dt * 1.6); P.w = last.w; P.v = 0;
+      // a pause in the middle of a stroke ends the move, and the next starts when the brush moves on
+      // (a press held before the first sweep is part of that move: it counts from when the brush came down)
+      if (t - P.lastMoveT > 220 && !P.still && P.move) {
+        if (P.move.len >= B.MINLEN) labCommit(P.move);
+        P.move = null; P.still = true;
+      }
+    }
+  } else if (LAB.moves.length) {
+    if (t - LAB.liftT > (bpm ? 60000 / bpm + 120 : 850) || LAB.moves.length >= 10) labCast(t);
+  } else if (LAB.strokes.length && t - LAB.liftT > 1500) {
+    LAB.burn = { t, strokes: LAB.strokes, moves: [], ok: false, lone: true }; LAB.strokes = [];   // a lone blot fades away
+  }
+  if (bpm) {
+    const n = Math.floor((t - LAB.t0) / (60000 / bpm));
+    if (n !== LAB.beatN) { LAB.beatN = n; LAB.pulseT = t; if (sfxReady('labTick', 0.05)) tone(n % 4 === 0 ? 1318 : 988, 0.05, 'sine', n % 4 === 0 ? 0.06 : 0.035); }
+  }
+}
+function updateLab(dt) {
+  if (!LAB.manual) labStep(performance.now());               // (tests drive the brush's clock by hand)
+  player.mana = player.maxMana; player.hp = player.maxHp;      // nothing runs dry here, and nothing can hurt you
+  // back to your spot (after a Blink, say)
+  const dx = LAB_SPOT.x - player.x, dy = LAB_SPOT.y - player.y;
+  if (Math.hypot(dx, dy) > 3 && !player.charging) { const k = Math.min(1, dt * 3); player.x += dx * k; player.y += dy * k; }
+  // aimed spells go off by themselves, one shot at a time, at the nearest dummy
+  if (player.loaded && !player.charging && (LAB.fireT -= dt) <= 0) { fireLoaded(); LAB.fireT = 0.3; }
+  // a dummy knocked down stands up again
+  for (const f of LAB.dummies) if (f.dead && (f.downT -= dt) <= 0) {
+    Object.assign(f, { dead: false, hp: f.maxHp, x: f.home.x, y: f.home.y, kx: 0, ky: 0, freeze: 0, stun: 0, stone: 0, burn: 0, poison: 0, hex: 0, fear: 0, confuse: 0, root: 0, slow: 0, flash: 0 });
+    if (!foes.includes(f)) foes.push(f);
+    burst(f.x, f.y - 14, '#fff6b0', 14, 160);
+  }
+}
+
+// ── drawing the lab (on its own layer) ──
+function labRound(c, x, y, w, h, r) { c.beginPath(); c.moveTo(x + r, y); c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r); c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r); c.closePath(); }
+function labCircle(c, x, y, r, fill, stroke, lw) { c.beginPath(); c.arc(x, y, r, 0, TAU); if (fill) { c.fillStyle = fill; c.fill(); } if (stroke) { c.strokeStyle = stroke; c.lineWidth = lw || 2; c.stroke(); } }
+function labGlyph(c, el, x, y, s, color) {
+  const h = s * 0.42;
+  c.save(); c.translate(x, y); c.strokeStyle = color; c.lineWidth = Math.max(1.5, s * 0.09); c.lineJoin = 'round'; c.lineCap = 'round';
+  c.beginPath();
+  if (el === 'F' || el === 'A') { c.moveTo(0, -h); c.lineTo(h * 0.95, h * 0.72); c.lineTo(-h * 0.95, h * 0.72); c.closePath(); if (el === 'A') { c.moveTo(-h * 0.85, h * 0.1); c.lineTo(h * 0.85, h * 0.1); } }
+  else if (el === 'W' || el === 'E') { c.moveTo(0, h); c.lineTo(h * 0.95, -h * 0.72); c.lineTo(-h * 0.95, -h * 0.72); c.closePath(); if (el === 'E') { c.moveTo(-h * 0.85, -h * 0.1); c.lineTo(h * 0.85, -h * 0.1); } }
+  else { c.arc(0, 0, h * 0.85, 0, TAU); c.moveTo(h * 0.3, 0); c.arc(0, 0, h * 0.3, 0, TAU); }
+  c.stroke(); c.restore();
+}
+function labArrow(c, x, y, a, len, color) {
+  const x0 = x - Math.cos(a) * len / 2, y0 = y - Math.sin(a) * len / 2, x1 = x + Math.cos(a) * len / 2, y1 = y + Math.sin(a) * len / 2;
+  c.strokeStyle = color; c.lineWidth = 2.4; c.lineCap = 'round';
+  c.beginPath(); c.moveTo(x0, y0); c.lineTo(x1, y1); c.stroke();
+  c.beginPath(); c.moveTo(x1, y1); c.lineTo(x1 - Math.cos(a - 0.5) * 6, y1 - Math.sin(a - 0.5) * 6); c.moveTo(x1, y1); c.lineTo(x1 - Math.cos(a + 0.5) * 6, y1 - Math.sin(a + 0.5) * 6); c.stroke();
+}
+function labWrap(c, text, x, y, maxW, lh) {
+  let line = '';
+  for (const w of text.split(' ')) { const t = line ? line + ' ' + w : w; if (line && c.measureText(t).width > maxW) { c.fillText(line, x, y); y += lh; line = w; } else line = t; }
+  if (line) c.fillText(line, x, y);
+  return y;
+}
+function labBtn(c, x, y, w, h, label, color, go, on) {
+  labRound(c, x, y, w, h, h / 2); c.fillStyle = on ? 'rgba(255,210,74,0.18)' : 'rgba(30,24,48,0.9)'; c.fill();
+  c.strokeStyle = color; c.lineWidth = 1.5; c.stroke();
+  c.fillStyle = color; c.font = `bold 13px ${SERIF}`; c.textAlign = 'center'; c.fillText(label, x + w / 2, y + h / 2 + 4.5, w - 10);
+  labButtons.push({ x, y, w, h, go });
+}
+// ink: a disc at every point and a band between each pair, as wide as the ink there (scaled while it burns away)
+function labInk(c, p, i0, i1, k, color) {
+  if (i1 < i0) return;
+  c.fillStyle = color;
+  c.beginPath();
+  for (let i = i0; i <= i1; i++) { const r = p[i].w * k / 2; c.moveTo(p[i].x + r, p[i].y); c.arc(p[i].x, p[i].y, r, 0, TAU); }
+  c.fill();
+  c.beginPath();
+  for (let i = i0 + 1; i <= i1; i++) {
+    const a = p[i - 1], b = p[i], dx = b.x - a.x, dy = b.y - a.y, d = Math.hypot(dx, dy) || 1, nx = -dy / d, ny = dx / d, ra = a.w * k / 2, rb = b.w * k / 2;
+    c.moveTo(a.x + nx * ra, a.y + ny * ra); c.lineTo(b.x + nx * rb, b.y + ny * rb); c.lineTo(b.x - nx * rb, b.y - ny * rb); c.lineTo(a.x - nx * ra, a.y - ny * ra); c.closePath();
+  }
+  c.fill();
+}
+function labGlow(c, p, i0, i1, color, alpha) {
+  if (i1 <= i0) return;
+  let w = 0; for (let i = i0; i <= i1; i++) w = Math.max(w, p[i].w);
+  c.save(); c.globalAlpha = alpha; c.strokeStyle = color; c.lineWidth = w + 12; c.lineCap = 'round'; c.lineJoin = 'round';
+  c.beginPath(); c.moveTo(p[i0].x, p[i0].y); for (let i = i0 + 1; i <= i1; i++) c.lineTo(p[i].x, p[i].y); c.stroke(); c.restore();
+}
+function drawLab() {
+  const c = lctx, G = labGeom(), B = labBrush(G.R), now = performance.now(), bpm = LAB_TEMPOS[LAB.tempoI], { cx, cy, R } = G;
+  c.setTransform(LDPR, 0, 0, LDPR, 0, 0); c.clearRect(0, 0, W, H);
+  labButtons = [];
+  // the desk under the paper, and the bar along the top
+  const g = c.createLinearGradient(0, G.desk - 36, 0, G.desk + 8);
+  g.addColorStop(0, 'rgba(14,10,24,0)'); g.addColorStop(1, 'rgba(14,10,24,0.95)');
+  c.fillStyle = g; c.fillRect(0, G.desk - 36, W, 44);
+  c.fillStyle = 'rgba(14,10,24,0.95)'; c.fillRect(0, G.desk + 8, W, H - G.desk);
+  c.fillStyle = 'rgba(14,10,24,0.85)'; c.fillRect(0, 0, W, G.top - 6);
+  c.textAlign = 'center'; c.fillStyle = '#ff9ad5'; c.font = `bold 20px ${SERIF_BIG}`; c.fillText('BRUSH LAB', W / 2, 33);
+  labBtn(c, 10, 12, 70, 30, '◂ Back', '#b8b0c8', exitLab);
+  labBtn(c, W - 44, 12, 34, 30, '?', '#ffd24a', () => { LAB.help = !LAB.help; }, LAB.help);
+  const pw = Math.min(160, (W - 32) / 2);
+  labBtn(c, W / 2 - pw - 4, 48, pw, 28, bpm ? `Pulse: ${bpm} a minute` : 'Pulse: off', '#8fd0ff', () => { LAB.tempoI = (LAB.tempoI + 1) % LAB_TEMPOS.length; LAB.t0 = performance.now(); LAB.beatN = -1; });
+  labBtn(c, W / 2 + 4, 48, pw, 28, LAB.readI ? 'Read: where it is' : 'Read: way it goes', '#c8f08a', () => { LAB.readI = 1 - LAB.readI; });
+  // the paper, its rim glowing on every beat
+  const pulse = bpm ? Math.exp(-(now - LAB.pulseT) / 170) : 0;
+  if (bpm) { c.strokeStyle = `rgba(255,210,74,${0.16 + 0.6 * pulse})`; c.lineWidth = 3 + 8 * pulse; c.beginPath(); c.arc(cx, cy, R + 4, 0, TAU); c.stroke(); }
+  const pg = c.createRadialGradient(cx - R * 0.3, cy - R * 0.35, R * 0.1, cx, cy, R);
+  pg.addColorStop(0, '#fbf5e4'); pg.addColorStop(1, '#e6d8b6');
+  c.fillStyle = pg; c.beginPath(); c.arc(cx, cy, R, 0, TAU); c.fill();
+  c.strokeStyle = '#6b5a3a'; c.lineWidth = 2; c.stroke();
+  c.save(); c.beginPath(); c.arc(cx, cy, R - 1, 0, TAU); c.clip();
+  // the guides: five faint ways out from the middle (or the five parts of the paper)
+  for (const [el, a] of Object.entries(EL_ANGLE)) {
+    const r = a * Math.PI / 180, col = ELEMENTS[el].color;
+    if (!LAB.readI) {
+      c.globalAlpha = 0.25;
+      labArrow(c, cx + Math.cos(r) * R * 0.5, cy + Math.sin(r) * R * 0.5, r, R * 0.62, col);
+    } else {
+      c.globalAlpha = 0.08; c.fillStyle = col; c.beginPath(); c.moveTo(cx, cy); c.arc(cx, cy, R, r - Math.PI / 5, r + Math.PI / 5); c.closePath(); c.fill();
+      c.globalAlpha = 0.22; c.strokeStyle = '#6b5a3a'; c.lineWidth = 1; const b = r + Math.PI / 5;
+      c.beginPath(); c.moveTo(cx + Math.cos(b) * R * 0.22, cy + Math.sin(b) * R * 0.22); c.lineTo(cx + Math.cos(b) * R, cy + Math.sin(b) * R); c.stroke();
+    }
+    c.globalAlpha = 1;
+  }
+  if (LAB.readI) labCircle(c, cx, cy, R * 0.22, null, 'rgba(107,90,58,0.25)', 1);
+  // the beats of the bar, small at the top of the paper
+  if (bpm) { const n = ((LAB.beatN % 4) + 4) % 4; for (let i = 0; i < 4; i++) labCircle(c, cx - 15 + i * 10, cy - R + 14, i === n ? 3.4 : 2.4, i === n ? `rgba(200,140,20,${0.45 + 0.55 * pulse})` : 'rgba(107,90,58,0.3)'); }
+  if (!LAB.strokes.length && !LAB.burn && !LAB.pen) {
+    c.textAlign = 'center'; c.fillStyle = 'rgba(90,72,44,0.55)'; c.font = `italic 15px ${SERIF}`;
+    c.fillText('Write here', cx, cy - 4); c.font = `italic 12px ${SERIF}`; c.fillText(bpm ? 'then lift, and let a beat go by' : 'then lift, and wait a moment', cx, cy + 15);
+  }
+  // the last phrase, burning away into its colours
+  if (LAB.burn) {
+    const k = (now - LAB.burn.t) / 900;
+    if (k >= 1) LAB.burn = null;
+    else {
+      const left = 1 - k;
+      for (const s of LAB.burn.strokes) labInk(c, s.pts, 0, s.pts.length - 1, left, LAB.burn.ok ? '#3a2a1a' : '#5a5060');
+      for (const m of LAB.burn.moves) { const s = LAB.burn.strokes[m.s]; if (s) labInk(c, s.pts, m.i0, Math.min(m.i1, s.pts.length - 1), left * 1.15, LAB.burn.ok ? ELEMENTS[m.el].color : '#6a6070'); }
+    }
+  }
+  // this phrase: each move glowing its element under the ink
+  for (const m of LAB.moves) { const s = LAB.strokes[m.s]; if (s) labGlow(c, s.pts, m.i0, Math.min(m.i1, s.pts.length - 1), ELEMENTS[m.el].color, 0.4); }
+  const P = LAB.pen;
+  if (P && P.move && P.move.len >= B.MINLEN * 0.5) labGlow(c, P.s.pts, P.move.i0, P.move.i1, ELEMENTS[P.move.el].color, 0.2);
+  for (const s of LAB.strokes) labInk(c, s.pts, 0, s.pts.length - 1, 1, '#16111d');
+  c.restore();
+  // the five elements round the rim
+  for (const [el, a] of Object.entries(EL_ANGLE)) {
+    const r = a * Math.PI / 180, x = cx + Math.cos(r) * (R + 15), y = cy + Math.sin(r) * (R + 15);
+    labCircle(c, x, y, 13, '#1a1428', ELEMENTS[el].color, 2);
+    labGlyph(c, el, x, y, 17, ELEMENTS[el].color);
+  }
+  // the moves so far, as little chips: element, ink (the bar under it) and timing (the dot over it)
+  const live = P && P.move && P.move.len >= B.MINLEN && LAB.moves.length < 10 ? { el: P.move.el, ink: P.move.ink / Math.max(1, P.move.len), live: true } : null;
+  const cur = LAB.moves.length || P ? LAB.moves : LAB.last, faded = !LAB.moves.length && !P;
+  const shown = live ? [...cur, live] : cur;
+  const cs = 22, gp = 5, tw = shown.length * (cs + gp) - gp, y = cy - R - 62;
+  let x = W / 2 - tw / 2;
+  shown.forEach((m, i) => {
+    const col = ELEMENTS[m.el].color;
+    c.globalAlpha = m.live ? 0.55 + 0.3 * Math.sin(now / 120) : faded ? 0.45 : 1;
+    labRound(c, x, y, cs, cs, 5); c.fillStyle = '#1e1830'; c.fill(); c.strokeStyle = col; c.lineWidth = i >= 7 ? 1 : 2; c.stroke();
+    labGlyph(c, m.el, x + cs / 2, y + cs / 2, cs * 0.75, col);
+    c.fillStyle = '#e8dcbc'; c.fillRect(x + 3, y + cs + 3, cs - 6, 1 + clamp(m.ink / B.MAX, 0.1, 1.6) * 3);
+    if (m.beat) labCircle(c, x + cs / 2, y - 5, 2.6, m.beat === 'on' ? '#ffd24a' : m.beat === 'near' ? '#a89a70' : '#4a4058');
+    if (i === 6 && shown.length > 7) { c.fillStyle = 'rgba(255,255,255,0.4)'; c.fillRect(x + cs + gp / 2 - 0.5, y - 3, 1, cs + 6); }
+    c.globalAlpha = 1;
+    x += cs + gp;
+  });
+  if (shown.length && !faded) { c.textAlign = 'left'; c.fillStyle = '#8a8498'; c.font = `11px ${SERIF}`; c.fillText(`${LAB.moves.length}/10`, W / 2 + tw / 2 + 8, y + 15); }
+  // what the last phrase did
+  const Z = LAB.result;
+  if (Z && now - Z.t < 4500) {
+    c.globalAlpha = Math.min(1, (4500 - (now - Z.t)) / 600); c.textAlign = 'center';
+    if (Z.name) { c.fillStyle = TIER_COLOR[Math.min(7, Z.key.length)]; c.font = `bold 18px ${SERIF}`; c.fillText(`${Z.name}  ·  power ×${Z.pow.toFixed(2)}`, W / 2, cy - R - 96, W - 20); }
+    else { c.fillStyle = '#a89cb8'; c.font = `bold 17px ${SERIF}`; c.fillText('…fizzle: no spell is written that way', W / 2, cy - R - 96, W - 20); }
+    const bits = [];
+    if (Z.onN != null) bits.push(`on the beat ${Z.onN} of ${Z.n}`);
+    bits.push(Z.ink > 0.7 ? 'heavy ink' : Z.ink > 0.4 ? 'steady ink' : 'light ink');
+    if (Z.flourish) bits.push(`${Z.flourish} flourish${Z.flourish > 1 ? 'es' : ''}`);
+    if (Z.seal) bits.push('sealed');
+    c.fillStyle = '#c8c0d8'; c.font = `12px ${SERIF}`; c.fillText(bits.join('  ·  '), W / 2, cy - R - 79, W - 20);
+    c.globalAlpha = 1;
+  }
+  // how it works, and a few spells to try
+  if (LAB.help) {
+    const x0 = 12, y0 = G.top + 2, w = W - 24, h = H - y0 - 12;
+    labRound(c, x0, y0, w, h, 14); c.fillStyle = 'rgba(20,14,32,0.96)'; c.fill(); c.strokeStyle = '#ff9ad5'; c.lineWidth = 1.5; c.stroke();
+    c.textAlign = 'left'; let ty = y0 + 30;
+    c.fillStyle = '#ff9ad5'; c.font = `bold 17px ${SERIF}`; c.fillText('Write a spell with a brush', x0 + 16, ty);
+    c.fillStyle = '#e8e0f0'; c.font = `14px ${SERIF}`;
+    const lines = [
+      LAB.readI ? 'Each stroke is a move, and the part of the paper you write it on is its element. A sharp turn starts the next move.'
+                : 'Each stroke that heads one way is a move, and the way it heads is its element. A turn starts the next move.',
+      'Hold the brush still and the ink pools thicker; sweep it fast and it runs thin. Heavy ink makes a stronger spell.',
+      'Start your moves on the pulse for more power. Up to ten moves: the first seven are the spell, and the rest are flourishes.',
+      'Then lift the brush and let a beat go by, or seal it with a dot to cast at once.',
+    ];
+    for (const L of lines) ty = labWrap(c, L, x0 + 16, ty + 26, w - 32, 18);
+    ty += 30; c.fillStyle = '#ffd24a'; c.font = `bold 14px ${SERIF}`; c.fillText('Try these', x0 + 16, ty);
+    for (const k of LAB_EXAMPLES) {
+      if (ty > y0 + h - 60) break;
+      ty += 26; c.fillStyle = '#ddd'; c.font = `14px ${SERIF}`; c.textAlign = 'left'; c.fillText(SPELLS[k].name, x0 + 16, ty);
+      let ax = x0 + w * 0.55;
+      for (const r of k) { labArrow(c, ax, ty - 5, EL_ANGLE[r] * Math.PI / 180, 16, ELEMENTS[r].color); ax += 26; }
+    }
+    c.textAlign = 'center'; c.fillStyle = '#8a8498'; c.font = `italic 13px ${SERIF}`; c.fillText('tap anywhere to start', W / 2, y0 + h - 16);
+  }
+}
+// the lab's own taps and strokes
+const labPos = e => { const r = brushCv.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
+const labTime = e => { const t = e.timeStamp, n = performance.now(); return t > 0 && Math.abs(t - n) < 4000 ? t : n; };
+brushCv.addEventListener('pointerdown', e => {
+  e.preventDefault(); audioInit();
+  if (!LAB) return;
+  const { x, y } = labPos(e), b = labButtons.find(b => x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h);
+  if (b) { SFX.buff(); b.go(); return; }
+  if (LAB.help) { LAB.help = false; return; }
+  const G = labGeom();
+  if (LAB.pen || Math.hypot(x - G.cx, y - G.cy) > G.R + 10) return;
+  try { brushCv.setPointerCapture(e.pointerId); } catch (_) {}
+  labDown(x, y, labTime(e), e.pointerId);
+});
+brushCv.addEventListener('pointermove', e => {
+  if (!LAB || !LAB.pen || e.pointerId !== LAB.pen.id) return;
+  const list = e.getCoalescedEvents ? e.getCoalescedEvents() : [];
+  for (const ev of list.length ? list : [e]) { const p = labPos(ev); labMove(p.x, p.y, labTime(ev)); }
+});
+const labLift = e => { if (LAB && LAB.pen && e.pointerId === LAB.pen.id) { const p = labPos(e); labUp(p.x, p.y, labTime(e)); } };
+brushCv.addEventListener('pointerup', labLift);
+brushCv.addEventListener('pointercancel', labLift);
+brushCv.addEventListener('contextmenu', e => e.preventDefault());
 
 // ── drawing helpers ──────────────────────────────────────────────────────────
 function circle(x, y, r, fill, stroke, lw) {
@@ -13418,7 +13855,9 @@ function drawTitle() {
   ];
   const modeButtons = modes.map((o, i) => ({ ...o, x: bx, y: y + i * (bh + gap), w: bw, h: bh }));
   y += modes.length * (bh + gap) + 4;
-  modeButtons.push({ title: 'How to Play', color: '#ffd24a', x: bx + bw * 0.12, y, w: bw * 0.76, h: Math.max(30, bh * 0.5), go: () => { howtoScroll = 0; howtoT0 = elapsed; goMenu('howto'); } });
+  const hw = (bw - gap) / 2, hh = Math.max(30, bh * 0.5);
+  modeButtons.push({ title: 'How to Play', color: '#ffd24a', x: bx, y, w: hw, h: hh, go: () => { howtoScroll = 0; howtoT0 = elapsed; goMenu('howto'); } });
+  modeButtons.push({ title: 'Brush Lab', color: '#ff9ad5', x: bx + hw + gap, y, w: hw, h: hh, go: startLab });
   // Adventure first, so Enter starts it
   titleButtons = [...modeButtons, ...lookButtons, heroButton];
   for (const b of modeButtons.concat(lookButtons)) menuButton(b);
@@ -13850,6 +14289,7 @@ function render() {
   if (flash > 0) { ctx.fillStyle = `rgba(255,246,176,${flash * 0.7})`; ctx.fillRect(0, 0, W, H); }
   if (state === 'play' && timeStop > 0) { ctx.fillStyle = 'rgba(200,200,220,0.28)'; ctx.fillRect(0, 0, W, H); }
   else if (state === 'play' && timeWarp > 0) { ctx.fillStyle = 'rgba(60,120,255,0.13)'; ctx.fillRect(0, 0, W, H); }
+  if (LAB) { drawLab(); return; }
   if (state === 'reveal') { drawReveal(); return; }
   if (state === 'lore') { drawLore(); return; }
   if (state === 'map') { drawMapOverlay(); return; }
