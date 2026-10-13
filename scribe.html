@@ -807,8 +807,12 @@ function setPressureOk() {
   document.getElementById('pressure').textContent = 'Pressure: on. Press harder for wider, darker ink; earth wants a firm hand, air and water a light one.';
 }
 const pf = p => (p == null ? 1 : 0.45 + 1.1 * p);
-pad.addEventListener('touchstart', e => readForce(e), { passive: true });
-pad.addEventListener('touchmove', e => readForce(e), { passive: true });
+// a finger on the pad only ever draws: it never scrolls or zooms the page (some phone browsers don't honour touch-action)
+const keepPage = e => { if (e.cancelable) e.preventDefault(); };
+pad.addEventListener('touchstart', e => { keepPage(e); readForce(e); }, { passive: false });
+pad.addEventListener('touchmove', e => { keepPage(e); readForce(e); }, { passive: false });
+pad.addEventListener('touchend', keepPage, { passive: false });
+pad.addEventListener('gesturestart', keepPage, { passive: false });
 function readForce(e) {
   const t = e.touches && e.touches[0], f = t && t.force;
   if (!(f > 0)) return;
