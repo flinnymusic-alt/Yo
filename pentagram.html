@@ -8450,7 +8450,7 @@ function startHostedBattle() {
   if (!L.links.length) return;
   for (const l of L.links) if (!list.includes(l.team)) l.team = 'red';
   net.role = 'host'; versus = true; net.sendT = 0;
-  net.send = m => { for (const l of lobby.links) l.send(m); };
+  net.send = m => { for (const l of lobby.links) if (m && m.t === 'snap') shipSnap(l, m); else l.send(m); };
   L.started = true;
   startBattle(L.diff, list, L.links.map(l => ({ id: l.id, team: l.team, skin: l.skin })));
   netEvents = []; // (the opening news is in each player's own start banner)
@@ -8502,8 +8502,9 @@ function updateHeroes(dt) {
 // A friend's actions arrive here, tagged with who sent them (positions are in
 // the host's coordinates).
 function hostReceive(m, id) {
+  if (m && typeof m.a === 'number') snapsArrived(lobby.links.find(l => l.id === id), m.a);
   const h = heroById(id);
-  if (!versus || !h || h.gone || !m) return;
+  if (!versus || !h || h.gone || !m || m.t === 'ack') return;
   const p = h.p, team = h.team, TT = teams[team], own = team === 'blue';
   const R = fn => withSide(team, fn, p);
   const num = v => (typeof v === 'number' && isFinite(v) ? v : null);
@@ -8593,7 +8594,7 @@ function makeSnapshot() {
   // things that change slowly go in every fifth picture
   const full = (net.snapN = (net.snapN || 0) + 1) % 5 === 1, r2 = v => Math.round(v * 100) / 100;
   return {
-    t: 'snap', tm: TEAMS, over,
+    t: 'snap', n: (net.picN = (net.picN || 0) + 1), tm: TEAMS, over,
     sc: TEAMS.map(t => T[t].score), time: r1(T.time), tl: TEAMS.map(t => T.tally[t] || 0),
     rs: full && T.res ? Object.fromEntries(TEAMS.map(t => [t, Object.fromEntries(Object.entries(T.res[t] || {}).map(([e, v]) => [e, r2(v)]))])) : undefined,
     ec: full ? T.eclipse : undefined,
@@ -8681,7 +8682,7 @@ function turnArena(v) {
 function startGuestBattle(m) {
   const list = Array.isArray(m.list) && (m.list.length === 2 || m.list.length === 3) ? m.list.slice() : ['blue', 'red'];
   const myTeam = list.includes(m.team) ? m.team : 'red';
-  net.role = 'guest'; versus = true; net.myId = m.id; net.ordT = 0;
+  net.role = 'guest'; versus = true; net.myId = m.id; net.ordT = 0; net.ackN = net.ackSent = 0; net.since = 0;
   setMode('battle'); setArena(list);
   Object.assign(view, viewFor(myTeam, list)); turnArena(view);
   difficulty = m.diff || 'easy';
@@ -8723,6 +8724,8 @@ function guestReceive(m) {
   if (!m || m.t === 'bye') { friendLeft(); return; }
   if (m.t !== 'snap' || net.role !== 'guest' || !teams || !Array.isArray(m.tm)) return;
   const at = (x, y) => V(x, y), canon = i => CODE_TEAM[i + 1];
+  if (typeof m.n === 'number') net.ackN = Math.max(net.ackN || 0, m.n);
+  const gap = net.since; net.since = 0;
   // you
   const mine = m.hs.find(h => h[0] === net.myId);
   if (mine) {
@@ -8743,6 +8746,7 @@ function guestReceive(m) {
     let o = guestOthers.find(g => g.heroId === id);
     const q = at(pk.x, pk.y), f = at(pk.fx, pk.fy);
     if (!o) o = { heroId: id, x: q.x, y: q.y };
+    glide(o, q, gap);
     unpackHero(pk, o);
     Object.assign(o, { team: t, tx: q.x, ty: q.y, face: { x: f.x, y: f.y }, look: sk || 'wizard', robe: HERO_LOOK[t][0], hat: HERO_LOOK[t][1] });
     if (Math.hypot(o.x - q.x, o.y - q.y) > 250 || pk.dead) { o.x = q.x; o.y = q.y; } // respawned or blinked
@@ -8777,6 +8781,7 @@ function guestReceive(m) {
     if (!def || !lists[team]) continue;
     let u = guestUnits.get(id);
     if (!u) { u = { id, unit: true, kind, def, x: q.x, y: q.y, wob: rnd(0, TAU), slot: rnd(0, TAU), kx: 0, ky: 0, structure: !!def.structure, r: def.r }; guestUnits.set(id, u); }
+    glide(u, q, gap);
     Object.assign(u, { team, tx: q.x, ty: q.y, hp, maxHp: mhp || def.hp, elem: ei >= 0 ? ELEM_CYCLE[ei] : null,
                        wall, slamT: slam, face: view.on ? -face : face, fireFlash: ff, retreat: !!ret, cd: cdf * def.cd, tired: tired || 0, dead: false });
     for (const k of STATUS_KEYS) u[k] = 0;
@@ -8831,18 +8836,38 @@ function guestReceive(m) {
   }
 }
 
+// how fast something was going between the last two pictures, so it can keep
+// going until the next (only for a moment, and not after a jump)
+function glide(o, q, gap) {
+  const dx = q.x - (o.rx ?? q.x), dy = q.y - (o.ry ?? q.y);
+  if (gap > 0.02 && gap < 0.6 && Math.hypot(dx, dy) < 120) {
+    o.vx = dx / gap; o.vy = dy / gap;
+    const sp = Math.hypot(o.vx, o.vy);
+    if (sp > 320) { o.vx *= 320 / sp; o.vy *= 320 / sp; }
+  } else o.vx = o.vy = 0;
+  o.rx = q.x; o.ry = q.y;
+}
+
 // the friend's own loop: move yourself, let everything else glide to the latest picture
 function guestUpdate(dt) {
   elapsed += dt;
   if (state === 'play' && !player.dead) heroMove(dt);
   player.arrowCd = Math.max(0, (player.arrowCd || 0) - dt);
   const k = Math.min(1, dt * 12);
+  // between pictures, things keep going the way they were for up to 0.3 s, so a slow link still looks smooth
+  const lead = net.since < 0.3 ? dt : 0;
+  net.since += dt;
   for (const u of allUnits()) {
     const ox = u.x, oy = u.y;
+    if (lead && u.vx !== undefined) { u.tx += u.vx * lead; u.ty += u.vy * lead; }
     u.x += (u.tx - u.x) * k; u.y += (u.ty - u.y) * k; u.flash = Math.max(0, (u.flash || 0) - dt);
     u.walk = (u.walk || 0) + Math.hypot(u.x - ox, u.y - oy);
   }
-  for (const o of guestOthers) if (o.tx !== undefined) { const ox = o.x; o.x += (o.tx - o.x) * k; o.y += (o.ty - o.y) * k; o.moving = Math.abs(o.x - ox) + Math.abs(o.ty - o.y) > 0.3; }
+  for (const o of guestOthers) if (o.tx !== undefined) {
+    const ox = o.x, oy = o.y;
+    if (lead && o.vx !== undefined) { o.tx += o.vx * lead; o.ty += o.vy * lead; }
+    o.x += (o.tx - o.x) * k; o.y += (o.ty - o.y) * k; o.moving = Math.abs(o.x - ox) + Math.abs(o.y - oy) > 0.3;
+  }
   for (const s of bshots) { s.x += s.vx * dt; s.y += s.vy * dt; s.spin += dt * 9; if (s.elem && !s.arrow && Math.random() < 0.5) shotTrail(s); }
   for (const s of shots) { s.x += s.vx * dt; s.y += s.vy * dt; }
   if (teams.pending) teams.pending.t = Math.max(0, teams.pending.t - dt);
@@ -8851,12 +8876,15 @@ function guestUpdate(dt) {
   teams.terrRecalc -= dt;
   if (teams.terrRecalc <= 0) { teams.terrRecalc = 0.5; computeTerritory(); }
   decayVisuals(dt);
-  // tell the host where you are (in their coordinates)
+  // tell the host where you are (in their coordinates), and which picture you've got up to
   net.posT -= dt;
-  if (net.posT <= 0 && state === 'play') {
+  if (net.posT <= 0) {
     net.posT = lobby.guestPath && lobby.guestPath.relay ? 0.1 : 0.05; // (half as often on the slower backup route)
-    const q = V(player.x, player.y), f = V(player.face.x, player.face.y);
-    net.send({ t: 'pos', x: q.x, y: q.y, fx: f.x, fy: f.y, tp: player.tp });
+    if (state === 'play') {
+      const q = V(player.x, player.y), f = V(player.face.x, player.face.y);
+      net.send({ t: 'pos', x: q.x, y: q.y, fx: f.x, fy: f.y, tp: player.tp, a: net.ackN });
+      net.ackSent = net.ackN;
+    } else if (net.ackN !== net.ackSent) { net.send({ t: 'ack', a: net.ackN }); net.ackSent = net.ackN; }
   }
 }
 
@@ -8977,7 +9005,7 @@ function reloadFresh() {
 }
 
 // the host: a message arrived from `key` (a connection or a peer id) on some path
-function hostData(m, key, send, close) {
+function hostData(m, key, send, close, busy) {
   if (!m || typeof m !== 'object' || lobby.role !== 'host') return;
   const known = lobby.links.find(l => l.key === key);
   if (known) {
@@ -8994,7 +9022,9 @@ function hostData(m, key, send, close) {
   if (lobby.started) { send({ t: 'started' }); return; }
   const id = ['g1', 'g2'].find(g => !lobby.links.some(l => l.id === g));
   if (!id) { send({ t: 'full' }); return; }
-  const link = { id, tok: m.tok, key, send, close, skin: m.sk === 'space' ? 'space' : 'wizard', team: id === 'g1' ? 'red' : lobby.three ? 'green' : 'blue' };
+  const link = { id, tok: m.tok, key, send, close, busy, skin: m.sk === 'space' ? 'space' : 'wizard', team: id === 'g1' ? 'red' : lobby.three ? 'green' : 'blue',
+                 // (the backup route zips on its own)
+                 zip: canZip && m.z === 1 && !(key && key.relay), acks: m.ak === 1 };
   lobby.links.push(link);
   send({ t: 'welcome', id });
   if (lobby.soft) { lobby.note = null; lobby.soft = false; } // (news of a friend connecting: here they are)
@@ -9007,8 +9037,18 @@ function hostLost(key) { const l = lobby.links.find(x => x.key === key); if (l) 
 function roomInfo() { return { t: 'room', three: lobby.three, diff: lobby.diff, players: [{ id: 'host', team: 'blue' }, ...lobby.links.map(l => ({ id: l.id, team: l.team }))] }; }
 function sendRoom() { if (lobby.role === 'host' && !lobby.started) for (const l of lobby.links) l.send(roomInfo()); }
 
-// a friend: a message from the host
+// a friend: a message from the host. Zipped battle pictures are unzipped in
+// turn, and anything that comes meanwhile waits its turn behind them.
+let guestQ = null, guestWaiting = 0;
 function guestData(m, path) {
+  if (!(m && m.t === 'zs') && !guestWaiting) { guestMsg(m, path); return; }
+  guestWaiting++;
+  guestQ = (guestQ || Promise.resolve())
+    .then(async () => guestMsg(m && m.t === 'zs' ? JSON.parse(await unzipText(unb64(m.d))) : m, path))
+    .catch(() => {})
+    .then(() => { guestWaiting--; });
+}
+function guestMsg(m, path) {
   if (!m || typeof m !== 'object' || lobby.role !== 'guest') return;
   if (!lobby.guestPath) {
     if (m.t === 'welcome') {
@@ -9037,7 +9077,7 @@ function guestData(m, path) {
   else if (m.t === 'bye') friendLeft();
 }
 function guestPathClosed(path) { if (lobby.role === 'guest' && path === lobby.guestPath) friendLeft(); }
-const hello = () => ({ t: 'hello', v: NET_V, tok: lobby.tok, sk: mySkin });
+const hello = () => ({ t: 'hello', v: NET_V, tok: lobby.tok, sk: mySkin, z: canZip ? 1 : 0, ak: 1 });
 
 // how each path is doing, shown under the code
 function pathState(name, st) {
@@ -9105,7 +9145,8 @@ async function viaPeerJS(code, role, tryId) {
     const send = m => { try { if (conn.open) conn.send(m); } catch (_) {} };
     const tok = conn.metadata && conn.metadata.tok, inAlready = () => lobby.links.some(l => l.key === conn || (tok && l.tok === tok));
     if (live() && !lobby.started && !inAlready()) lobbyNote('A friend is connecting…', true);
-    conn.on('data', m => hostData(m, conn, send, () => { try { conn.close(); } catch (_) {} }));
+    const busy = () => { const dc = conn.dataChannel; return !!(conn.bufferSize || (dc && dc.bufferedAmount > BUSY_BYTES)); };
+    conn.on('data', m => hostData(m, conn, send, () => { try { conn.close(); } catch (_) {} }, busy));
     conn.on('close', () => hostLost(conn));
     const failed = () => { if (live() && !lobby.started && !inAlready()) lobbyNote(NO_DIRECT_HOST, true); };
     conn.on('iceStateChanged', st => { if (st === 'failed') failed(); });
@@ -9143,7 +9184,13 @@ async function viaTrystero(code, role, tryId) {
     room = joinRoom(Object.assign({ appId: TRYSTERO_APP, turnConfig: TURN, relayConfig: { redundancy: 8, warnOnRelayFailure: false } }, window.TRYSTERO_OPTS), 'room-' + code);
   } catch (_) { pathState('nostr', 'down'); return; }
   const act = room.makeAction('m');
-  const to = (m, peer) => { try { const r = act.send(m, { target: peer }); if (r && r.catch) r.catch(() => {}); } catch (_) {} };
+  const going = new Map(); // (host) sends to each friend still under way
+  const to = (m, peer) => {
+    try {
+      const r = act.send(m, { target: peer });
+      if (r && r.then) { going.set(peer, (going.get(peer) || 0) + 1); r.catch(() => {}).then(() => going.set(peer, going.get(peer) - 1)); }
+    } catch (_) {}
+  };
   // a friend's path leads to the host (whichever peer welcomed them)
   const path = { name: 'nostr', host: null,
     send: m => { if (path.host) to(m, path.host); },
@@ -9164,7 +9211,7 @@ async function viaTrystero(code, role, tryId) {
   act.onMessage = (m, meta) => {
     const from = meta && meta.peerId;
     if (!from) return;
-    if (role === 'host') { hostData(m, from, x => to(x, from), () => {}); return; }
+    if (role === 'host') { hostData(m, from, x => to(x, from), () => {}, () => (going.get(from) || 0) > 0); return; }
     if (!lobby.guestPath && m && (m.t === 'welcome' || m.t === 'start')) path.host = from;
     if (from === path.host || (m && (m.t === 'full' || m.t === 'started' || m.t === 'version' || m.t === 'start'))) guestData(m, path);
   };
@@ -9195,6 +9242,7 @@ function mqttClient(url, on) {
   const subscribe = topic => { pid = pid % 65535 + 1; raw(packet(0x82, [pid >> 8, pid & 255], str(topic), [0])); };
   c.sub = topic => { if (!c.subs.includes(topic)) c.subs.push(topic); if (c.up) subscribe(topic); };
   c.pub = (topic, payload) => c.up && raw(packet(0x30, str(topic), payload));
+  c.buffered = () => (ws && ws.bufferedAmount) || 0;
   const report = () => { if (on.state) on.state(c.up ? 'ok' : c.fails >= 2 ? 'down' : 'wait'); };
   // the link dropped (or never came up): try again in a moment, waiting longer each time
   const lost = s => {
@@ -9283,7 +9331,7 @@ const unzipText = bytes => new Response(new Blob([bytes]).stream().pipeThrough(n
 const SNAP_SOMETIMES = ['rs', 'ec', 'tg', 'od'];
 function holdSnap(held, m) {
   const h = held || { ev: [] };
-  if (m.ev && m.ev.length) h.ev = h.ev.concat(m.ev);
+  if (m.ev && m.ev.length) h.ev = h.ev.concat(m.ev).slice(-240);
   for (const k of SNAP_SOMETIMES) if (m[k] !== undefined) h[k] = m[k];
   return h;
 }
@@ -9292,6 +9340,35 @@ function withHeld(h, m) {
   for (const k of SNAP_SOMETIMES) if (out[k] === undefined && h[k] !== undefined) out[k] = h[k];
   return out;
 }
+
+// Battle pictures to one friend. A picture never queues behind another: while
+// the path is still busy with the last ones, the next waits, and its news and
+// slow-changing parts ride with the one after. A friend who acknowledges
+// pictures has at most a few on the way at once (one that's never acknowledged
+// counts as lost after a while). So a slow link gets fewer pictures, but always
+// the newest, and the friend never falls behind. Pictures go zipped where the
+// friend can unzip them: about a fifth of the size.
+const BUSY_BYTES = 6000;   // a path with more than this still to send is busy
+const SNAP_WINDOW = 3;     // pictures on their way to one friend at once, at most
+const SNAP_LOST = 1500;    // ms before an unacknowledged picture counts as lost
+const zipped = new WeakMap(); // (a picture zipped once for every friend it goes to unchanged)
+const b64 = bytes => { let s = ''; for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000)); return btoa(s); };
+const unb64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+function shipSnap(l, m) {
+  const P = l.pipe || (l.pipe = { held: null, work: 0, q: Promise.resolve(), out: [] }), now = performance.now();
+  if (l.acks) P.out = P.out.filter(o => now - o.at < SNAP_LOST);
+  const busy = P.work > 0 || (l.acks && P.out.length >= SNAP_WINDOW) || (l.busy && l.busy());
+  if (busy && !m.end) { P.held = holdSnap(P.held, m); return; }
+  if (P.held) { m = withHeld(P.held, m); P.held = null; }
+  if (l.acks) P.out.push({ n: m.n, at: now });
+  if (!l.zip) { l.send(m); return; }
+  P.work++;
+  const z = zipped.get(m) || zipText(JSON.stringify(m)).then(b64);
+  zipped.set(m, z);
+  P.q = P.q.then(() => z).then(d => l.send({ t: 'zs', d }), () => l.send(m)).finally(() => { P.work--; });
+}
+// the friend has every picture up to number a
+function snapsArrived(l, a) { if (l && l.pipe) l.pipe.out = l.pipe.out.filter(o => o.n > a); }
 
 // One message server on the backup route. The host listens on <code>/h/+;
 // each friend listens on <code>/g/<their token> and sends on <code>/h/<their token>.
@@ -9304,14 +9381,17 @@ function viaRelay(code, role, tryId, url, n) {
   // messages out to one topic, in order (big ones zipped if the other side can unzip them)
   const outbox = (topic, zip) => {
     let q = Promise.resolve();
-    return m => {
+    const post = m => {
       const text = JSON.stringify(m);
+      post.waiting++;
       q = q.then(async () => {
         let zipped = null;
         if (zip && text.length > 500) try { zipped = joinBytes([1], await zipText(text)); } catch (_) {}
         client.pub(topic, zipped || joinBytes([0], utf8.encode(text)));
-      }).catch(() => {});
+      }).catch(() => {}).then(() => { post.waiting--; });
     };
+    post.waiting = 0;
+    return post;
   };
   // and messages in, in order
   let inQ = Promise.resolve();
@@ -9329,22 +9409,19 @@ function viaRelay(code, role, tryId, url, n) {
     if (!f) {
       if (m.t !== 'hello') return;
       const post = outbox(base + 'g/' + ft, canZip && m.z === 1);
-      f = { key: { relay: name, tok: ft }, heard: 0, sent: 0, snapAt: 0, held: null };
+      f = { key: { relay: name, tok: ft }, heard: 0, sent: 0, snapAt: 0 };
       f.send = x => {
         const now = performance.now();
-        // battle pictures go half as often on this slower route
-        if (x && x.t === 'snap') {
-          if (!x.end && now - f.snapAt < RELAY_SNAP * 1000 - 50) { f.held = holdSnap(f.held, x); return; }
-          if (f.held) { x = withHeld(f.held, x); f.held = null; }
-          f.snapAt = now;
-        }
+        if (x && x.t === 'snap') f.snapAt = now;
         f.sent = now;
         post(x);
       };
+      // battle pictures go half as often on this slower route, and never while the last is still going out
+      f.busy = () => performance.now() - f.snapAt < RELAY_SNAP * 1000 - 50 || post.waiting > 0 || client.buffered() > BUSY_BYTES;
       friends.set(ft, f);
     }
     f.heard = performance.now();
-    if (m.t !== 'ka') hostData(m, f.key, f.send, () => friends.delete(ft));
+    if (m.t !== 'ka') hostData(m, f.key, f.send, () => friends.delete(ft), f.busy);
   };
   // (friend) the host's message
   const fromHost = m => { heard = performance.now(); if (m.t !== 'ka') guestData(m, path); };
