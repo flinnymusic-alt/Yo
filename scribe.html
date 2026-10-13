@@ -1,0 +1,1060 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Scribing Dojo</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Yuji+Syuku&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap">
+<style>
+/* Layout: one column dojo, phone first. The pad and its verdict on top, the five styles below, the sources last. */
+:root {
+  --ink: #120f19;        /* the page: night ink */
+  --ink-2: #1b1725;      /* raised surfaces */
+  --ink-3: #272136;      /* tracks, pressed buttons */
+  --line: #362e4a;       /* hairlines */
+  --paper: #efe6d0;      /* the pad's rice paper */
+  --sumi: #19141f;       /* ink on the paper */
+  --fg: #ece6f4;
+  --muted: #a99fbc;
+  --seal: #c63f2e;       /* cinnabar, for the seal on a finished glyph */
+  --gold: #e9bb52;
+  --rough: #d9935a;
+  --fizzle: #8b8398;
+  --spirit: #c77dff;
+  --water: #4ab4ff;
+  --fire: #ff6a3a;
+  --earth: #c9a35c;
+  --air: #f1dc6a;
+  --display: "Yuji Syuku", "Hiragino Mincho ProN", "Songti SC", Georgia, serif;
+  --body: "Zen Kaku Gothic New", "Hiragino Sans", "Segoe UI", system-ui, sans-serif;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--ink); color: var(--fg); font: 15px/1.6 var(--body); }
+.wrap { max-width: 760px; margin: 0 auto; padding-inline: 16px; padding-block: 28px 56px; display: flex; flex-direction: column; gap: 40px; }
+h1, h2, h3, h4 { font-family: var(--display); font-weight: 400; text-wrap: balance; margin: 0; }
+h1 { font-size: clamp(40px, 11vw, 62px); line-height: 1.05; letter-spacing: 0.01em; }
+h2 { font-size: clamp(27px, 6.5vw, 36px); line-height: 1.2; }
+h3 { font-size: 25px; line-height: 1.2; }
+p { margin: 0; }
+.lede { color: var(--muted); max-width: 60ch; margin-top: 10px; }
+.label { font-size: 12px; letter-spacing: 0.09em; text-transform: uppercase; color: var(--muted); }
+button, select { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+
+.bar { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; justify-content: space-between; width: min(100%, 540px); }
+.seg { display: inline-flex; padding: 3px; gap: 2px; border: 1px solid var(--line); border-radius: 999px; background: var(--ink-2); }
+.seg button { border: 0; background: none; color: var(--muted); padding: 6px 14px; border-radius: 999px; cursor: pointer; font-size: 14px; }
+.seg button[aria-pressed="true"] { background: var(--ink-3); color: var(--fg); }
+.pick { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; color: var(--muted); min-width: 0; }
+.pick select { background: var(--ink-2); border: 1px solid var(--line); border-radius: 10px; padding: 7px 10px; color: var(--fg); max-width: 58vw; }
+
+.stage { display: grid; gap: 14px; justify-items: center; }
+#pad { width: min(100%, 540px); aspect-ratio: 1; max-width: 100%; display: block; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; cursor: crosshair; }
+.under { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; justify-content: space-between; width: min(100%, 540px); font-size: 13px; color: var(--muted); }
+.under span { min-width: 0; flex: 1 1 220px; }
+.under button { background: none; border: 1px solid var(--line); border-radius: 999px; padding: 5px 14px; cursor: pointer; color: var(--fg); }
+
+.result { width: min(100%, 540px); display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 16px; align-items: start; padding: 18px; border-radius: 16px; background: var(--ink-2); border: 1px solid var(--line); }
+.seal { width: 64px; height: 64px; border-radius: 10px; background: var(--seal); display: grid; place-items: center; }
+.seal.fizzle { background: var(--ink-3); }
+.rtop { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
+.rname { font-family: var(--display); font-size: 28px; line-height: 1.15; }
+.rstyle { color: var(--muted); font-size: 14px; }
+.verdict { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: 8px; }
+.pill { font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; padding: 3px 10px; border-radius: 999px; font-weight: 700; color: var(--ink); }
+.pill.clean { background: var(--gold); }
+.pill.rough { background: var(--rough); }
+.pill.fizzle { background: var(--fizzle); }
+.power { font-variant-numeric: tabular-nums; font-weight: 700; }
+.tag { font-size: 12px; color: var(--muted); border: 1px dashed var(--line); border-radius: 999px; padding: 1px 10px; }
+.rdance { margin-top: 10px; max-width: 60ch; }
+.again { margin-top: 10px; background: none; border: 1px solid var(--line); border-radius: 999px; padding: 5px 14px; cursor: pointer; color: var(--fg); font-size: 13px; }
+.meters { display: grid; grid-template-columns: auto minmax(0, 1fr) 3.4em; gap: 6px 10px; margin-top: 14px; font-size: 13px; align-items: center; }
+.meters .m { height: 6px; border-radius: 3px; background: var(--ink-3); overflow: hidden; }
+.meters .m i { display: block; height: 100%; border-radius: 3px; background: var(--fg); }
+.meters .v { color: var(--muted); font-variant-numeric: tabular-nums; text-align: right; }
+.hint { margin-top: 12px; color: var(--muted); font-size: 14px; }
+
+.style { display: flex; flex-direction: column; gap: 14px; padding-top: 24px; border-top: 1px solid var(--line); }
+.style .head { display: flex; align-items: center; gap: 14px; }
+.style .mark { width: 48px; height: 48px; border-radius: 50%; border: 2px solid var(--el); display: grid; place-items: center; flex: none; }
+.style h3 { color: var(--el); }
+.style .who { color: var(--muted); font-size: 14px; }
+.style .blurb { max-width: 62ch; }
+.style .inkline { color: var(--muted); font-size: 14px; }
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(205px, 1fr)); gap: 14px; }
+.card { display: flex; flex-direction: column; gap: 8px; padding: 14px; border-radius: 14px; background: var(--ink-2); border: 1px solid var(--line); min-width: 0; }
+.card canvas { width: 100%; aspect-ratio: 1; max-width: 100%; display: block; }
+.card h4 { font-size: 21px; line-height: 1.2; }
+.card .how { font-size: 13px; color: var(--muted); }
+.card .dance { font-size: 14px; }
+.card button { align-self: flex-start; background: none; border: 1px solid var(--el); color: var(--el); border-radius: 999px; padding: 5px 14px; cursor: pointer; font-size: 13px; margin-top: auto; }
+
+.notes ul { margin: 14px 0 0; padding-left: 1.1em; display: grid; gap: 10px; max-width: 64ch; }
+.notes a { color: var(--fg); text-decoration-color: var(--muted); text-underline-offset: 3px; }
+</style>
+</head>
+<body>
+
+<main class="wrap">
+  <header>
+    <span class="label">Space Wizard · a second way to cast</span>
+    <h1>Scribing Dojo</h1>
+    <p class="lede">Write a spell with a brush. The shape you draw is the spell, and how big it is, where it sits on the pad and where you pool the ink all count. Draw it a little off and it still works, only weaker. Draw it far off and nothing happens. When it takes, the ink lifts off the page and dances the spell.</p>
+  </header>
+
+  <section class="stage" aria-label="The pad">
+    <div class="bar">
+      <div class="seg" role="group" aria-label="Names">
+        <button id="nmA" type="button" aria-pressed="true">Five Animals</button>
+        <button id="nmF" type="button" aria-pressed="false">Five Fighters</button>
+      </div>
+      <label class="pick" for="guide">Guide <select id="guide"></select></label>
+    </div>
+    <canvas id="pad" aria-label="The pad: draw a glyph with your finger or a pen"></canvas>
+    <div class="under"><span id="pressure">Hold the brush still to pool ink. Lift, and wait a moment for the verdict.</span><button id="clear" type="button">Clear the pad</button></div>
+    <div class="result" id="result" aria-live="polite"></div>
+  </section>
+
+  <section id="styles" aria-label="The five styles">
+    <h2>The five styles</h2>
+    <p class="lede">Each element writes like a fighting style moves. The glyphs are movements, not pictures: a stance, a turn, a kick. Every spell is that style's energy, danced out in front of you.</p>
+    <div id="styleList"></div>
+  </section>
+
+  <section class="notes" aria-label="Sources">
+    <h2>Where it comes from</h2>
+    <ul>
+      <li>The Tang calligrapher Zhang Xu is said to have found his wild cursive by watching Lady Gongsun's sword dance: writing as a dance on paper. (<a href="https://en.wikipedia.org/wiki/Zhang_Xu" target="_blank" rel="noopener">Zhang Xu</a>, <a href="https://allenartcollection.oberlin.edu/objects/9239/grasping-calligraphy-through-the-sword-dance-from-the-album" target="_blank" rel="noopener">Grasping Calligraphy through the Sword Dance</a>)</li>
+      <li>Brushwork is lifting and pressing: lift for thin strokes, press for thick ones, with pauses and weight at the ends and turns. Fast, dry strokes split into streaks called flying white. (<a href="https://pressbooks.library.virginia.edu/xizhiwangbrushstrokemethods/?p=170" target="_blank" rel="noopener">Wang Xizhi's brush methods</a>, <a href="https://lcchineseschool.com/?p=15564" target="_blank" rel="noopener">brush techniques</a>)</li>
+      <li>The ensō is a circle drawn in one stroke, in one breath, with no corrections. Left open it means growth; closed, completeness. (<a href="https://www.wikipedia.com/wiki/Enso" target="_blank" rel="noopener">Ensō</a>, <a href="https://asianart.emuseum.com/objects/19254/enso" target="_blank" rel="noopener">Asian Art Museum</a>)</li>
+      <li>In Shaolin's five animals, the dragon trains spirit, the snake energy, the tiger bones, the leopard strength and the crane essence. (<a href="https://shaolin.org/general-3/research/shaolin-five-animals/five-animals01.html" target="_blank" rel="noopener">Shaolin Wahnam</a>)</li>
+      <li>Xingyi boxing has five element fists, among them a corkscrew drilling fist, a rising cannon fist and a fist that crosses the centre line; they shaped the Water, Fire and Earth glyphs. (<a href="https://www.wayofleastresistance.net/2008/11/5-elements-and-martial-arts.html" target="_blank" rel="noopener">The five elements and martial arts</a>)</li>
+      <li>Aikido turns an attack aside in circles and spirals: irimi enters, tenkan turns. (<a href="https://www.nipponbudokan.or.jp/pdf/english/201608/Introduction-of-Budo-Disciplines%203.pdf" target="_blank" rel="noopener">Nippon Budokan</a>, <a href="https://www.stenudd.com/aikido/iriminage-aikido-technique.htm" target="_blank" rel="noopener">Iriminage</a>)</li>
+      <li>Muay Thai fighters dance the Wai Kru Ram Muay round the ring before a fight; capoeira's half-moon kick swings round a planted foot; Hung Gar is built on a deep horse stance. (<a href="https://asia.yokkao.com/pages/wai-khru-ram-muay" target="_blank" rel="noopener">Wai Khru Ram Muay</a>, <a href="https://akban.org/wiki/Meia_Lua_de_compasso" target="_blank" rel="noopener">Meia lua de compasso</a>, <a href="https://en.wikipedia.org/wiki/Hung_Ga" target="_blank" rel="noopener">Hung Ga</a>)</li>
+      <li>Musashi, swordsman and ink painter, used the brush as he used the sword: directly, with no wasted motion. (<a href="https://journals.vu.lt/acta-orientalia-vilnensia/article/view/18324" target="_blank" rel="noopener">Learning to See</a>)</li>
+      <li>Pressure: a pen, and the few screens that sense it, report how hard you press; most phone screens don't, so the ink then follows speed and holding instead. (<a href="https://developer.mozilla.org/docs/Web/API/PointerEvent/pressure" target="_blank" rel="noopener">MDN: PointerEvent.pressure</a>)</li>
+    </ul>
+  </section>
+</main>
+
+<script>
+(() => {
+'use strict';
+const TAU = Math.PI * 2;
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+
+// ── the five styles ──
+const STYLES = {
+  spirit: { color: '#c77dff', animal: 'Dragon', fighter: 'Aikido', word: 'Spirit',
+    blurb: 'Circles that come back round. In Shaolin the dragon trains the spirit, and aikido meets an attack by turning it in circles and spirals instead of blocking it. Its glyphs are the ensō, the Zen circle drawn in one breath, and the spiral.',
+    ink: 'Steady, unbroken ink, in one breath.' },
+  water: { color: '#4ab4ff', animal: 'Snake', fighter: 'Tai Chi', word: 'Water',
+    blurb: 'Yield and flow. The snake trains energy, and tai chi has been called a dancing meditation, stillness in motion. No corners, no lifting the brush, nothing sudden.',
+    ink: 'Light, continuous ink.' },
+  fire: { color: '#ff6a3a', animal: 'Leopard', fighter: 'Muay Thai', word: 'Fire',
+    blurb: 'Press, then strike. The leopard trains strength and speed, and a Muay Thai fighter dances the Ram Muay round the ring before the first bell. Pool the ink, then sweep so fast the brush splits into flying white.',
+    ink: 'A pooled start, then quick and thin.' },
+  earth: { color: '#c9a35c', animal: 'Tiger', fighter: 'Hung Gar', word: 'Earth',
+    blurb: 'Root and press. The tiger trains the bones, and Hung Gar students once sat in horse stance for hours before they learned a single form. Slow, heavy strokes with pooled ends, square like seal script.',
+    ink: 'Heavy, slow, pressed ink.' },
+  air: { color: '#f1dc6a', animal: 'Crane', fighter: 'Capoeira', word: 'Air',
+    blurb: 'Sway and sweep. The crane trains essence and keeps every movement to the bare minimum; capoeira sways in the ginga and swings the half-moon kick round a planted foot. Big light arcs, quick hands.',
+    ink: 'Light, fast ink.' },
+};
+const ORDER = ['spirit', 'water', 'fire', 'earth', 'air'];
+
+// ── shapes, in pad units: the pad is a circle of radius 1, x to the right, y down ──
+const arc = (cx, cy, r, a0, a1, n = 72) => Array.from({ length: n + 1 }, (_, i) => { const a = (a0 + (a1 - a0) * i / n) * Math.PI / 180; return { x: cx + Math.cos(a) * r, y: cy + Math.sin(a) * r }; });
+const spiral = (cx, cy, r0, r1, a0, turns, n = 140) => Array.from({ length: n + 1 }, (_, i) => { const k = i / n, a = (a0 + 360 * turns * k) * Math.PI / 180, r = r0 + (r1 - r0) * k; return { x: cx + Math.cos(a) * r, y: cy + Math.sin(a) * r }; });
+const poly = (...v) => { const o = []; for (let i = 0; i < v.length; i += 2) o.push({ x: v[i], y: v[i + 1] }); return o; };
+const quad = (x0, y0, x1, y1, x2, y2, n = 40) => Array.from({ length: n + 1 }, (_, i) => { const t = i / n, u = 1 - t; return { x: u * u * x0 + 2 * u * t * x1 + t * t * x2, y: u * u * y0 + 2 * u * t * y1 + t * t * y2 }; });
+const join = (...parts) => parts.flatMap((p, i) => (i ? p.slice(1) : p));
+
+// ── the glyphs: [Five Animals name, Five Fighters name], strokes, closed loops, where the ink must pool (0 start, 1 end), and the ink ──
+const GLYPHS = [
+  { id: 'pearl', el: 'spirit', names: ['Dragon Pearl', 'Kokyu Breath'], strokes: [arc(0, 0, 0.3, -90, 270)], closed: [true], pools: [[0]], ink: 'steady',
+    how: 'A small closed circle round the centre, in one breath. Pool the ink where you begin.',
+    dance: 'Your breath becomes a pearl of light. It swells and settles, and each slow breath out rolls away in a ring that mends you and calms whatever it touches.' },
+  { id: 'opensky', el: 'spirit', names: ['Open Sky', 'Tenkan'], strokes: [arc(0, 0, 0.78, 130, 445)], closed: [false], loose: true, pools: [[0]], ink: 'steady',
+    how: 'A big circle near the rim, started anywhere and left a little open. Pool the ink where you begin.',
+    dance: 'A wide ring of light turns round you, left open on one side. Anything thrown at you is caught in the turn and carried back out.' },
+  { id: 'rising', el: 'spirit', names: ['Dragon Rising', 'Irimi Spiral'], strokes: [join(spiral(0, 0, 0.04, 0.5, 0, 1.5), quad(-0.5, 0, -0.58, -0.62, 0.06, -0.92))], closed: [false], pools: [[0]], ink: 'steady',
+    how: 'Pool the ink in the centre, spiral out one and a half turns, then climb to the top of the pad.',
+    dance: 'Three ribbons of light uncoil from your centre and climb away like a dragon, sweeping up whatever is in their path.' },
+  { id: 'parting', el: 'water', names: ['Snake Parts the Reeds', 'Part the Horse’s Mane'], strokes: [join(arc(0, -0.33, 0.33, -90, 90), arc(0, 0.33, 0.33, -90, -270))], closed: [false], pools: [[]], ink: 'light',
+    how: 'A tall S through the centre, like the line inside a yin-yang. Light and smooth, no pooling.',
+    dance: 'A light runs down through a bed of reeds and they part round it, then slowly close. Foes are eased aside the same way, and slowed.' },
+  { id: 'pushhands', el: 'water', names: ['Coil and Release', 'Push Hands'], strokes: [Array.from({ length: 121 }, (_, i) => { const t = i / 120 * TAU; return { x: 0.62 * Math.sin(t), y: 0.3 * Math.sin(2 * t) }; })], closed: [true], pools: [[]], ink: 'light',
+    how: 'A sideways figure of eight across the middle, without lifting the brush.',
+    dance: 'Two lights chase each other round a figure of eight, yielding and coiling, then let go together and push everything outward.' },
+  { id: 'clouds', el: 'water', names: ['Snake Drills the Deep', 'Cloud Hands'], strokes: [spiral(0, 0, 0.85, 0.1, 0, 2)], closed: [false], pools: [[1]], ink: 'steady',
+    how: 'From the right-hand rim, spiral inward two turns and let the ink pool in the centre.',
+    dance: 'Motes of light are drawn in and round in a slow spiral, quickening as they gather, and foes are drawn round with them until it lets go.' },
+  { id: 'combo', el: 'fire', names: ['Leopard’s Feint', 'Jab, Cross, Hook'], strokes: [poly(-0.4, -0.62, 0.3, -0.62, -0.3, -0.2, 0.4, -0.2)], closed: [false], pools: [[0]], ink: 'light',
+    how: 'High on the pad: pool the ink, then three quick strikes in a Z. Fast enough to split the brush.',
+    dance: 'Strikes of light snap out in a fighter’s rhythm, one, two, three, then again from the other side. Each beat stings the nearest foe.' },
+  { id: 'rise', el: 'fire', names: ['Leopard Leaps', 'Rising Knee'], strokes: [poly(0, 0.78, 0, -0.82)], closed: [false], pools: [[0]], ink: 'any',
+    how: 'Pool the ink at the bottom of the pad, then shoot straight up to the top.',
+    dance: 'Embers crouch low, gathering, then spring straight up the field in one surge and drift back down. Whatever is in their line is knocked off its feet.' },
+  { id: 'rammuay', el: 'fire', names: ['Leopard Circles', 'Ram Muay'], strokes: [join(arc(0, 0.42, 0.28, 180, 540), poly(-0.28, 0.42, 0.1, 0.02, -0.06, -0.1, 0.55, -0.62))], closed: [false], pools: [[1]], ink: 'any',
+    how: 'Circle once low on the pad, then break out upward in a zigzag and stop hard: pool the ink at the end.',
+    dance: 'Embers walk a slow circle round you, pausing and bowing like the Ram Muay before a bout, then break out in a flurry.' },
+  { id: 'stance', el: 'earth', names: ['Tiger Settles', 'Horse Stance'], strokes: [poly(-0.75, 0.45, 0.75, 0.45)], closed: [false], pools: [[0, 1]], ink: 'heavy',
+    how: 'A long, low, level stroke below the centre. Press and pool the ink at both ends, like two planted feet.',
+    dance: 'Your two planted feet glow, the stance sinks between them, and the ground answers in heavy waves that stagger everything near.' },
+  { id: 'seal', el: 'earth', names: ['Tiger’s Den', 'Iron Wire'], strokes: [poly(-0.45, -0.45, 0.45, -0.45, 0.45, 0.45, -0.45, 0.45, -0.45, -0.45)], closed: [true], pools: [[0]], ink: 'heavy',
+    how: 'A square round the centre, corners pressed firm, like a seal. Pool the ink where you start.',
+    dance: 'A square of light is drawn round you corner by corner, with wires pulled taut from its corners. You are rooted, and foes inside it grow heavy.' },
+  { id: 'descend', el: 'earth', names: ['Tiger’s Weight', 'Tiger Descends the Mountain'], strokes: [poly(-0.6, -0.55, 0.42, -0.55, 0.42, 0.78)], closed: [false], pools: [[1]], ink: 'heavy',
+    how: 'Across the top, then turn and come straight down. Press hard and pool the ink where you land.',
+    dance: 'A knot of light crosses the top of the field, gathers itself, and comes down hard on the strongest foe.' },
+  { id: 'ginga', el: 'air', names: ['Crane Steps', 'Ginga'], strokes: [Array.from({ length: 61 }, (_, i) => { const u = i / 60; return { x: -0.45 + 0.9 * u, y: 0.52 - 0.14 * Math.sin(TAU * u) }; })], closed: [false], pools: [[]], ink: 'light',
+    how: 'A small sway, one wave, low on the pad. Light and quick.',
+    dance: 'Light steps sway back and forth in the ginga’s triangle, the body leaning against each step. For a few seconds every shot slips past you.' },
+  { id: 'halfmoon', el: 'air', names: ['Crane’s Arc', 'Meia-lua'], strokes: [arc(0, 0.12, 0.8, 200, 340)], closed: [false], pools: [[0]], ink: 'light',
+    how: 'A wide arc over the top of the pad, left to right. Pool the ink at the start: the planted foot.',
+    dance: 'From the planted foot, wind swings round in a half-moon, and the air it leaves drifts out and rocks every foe back on its heels.' },
+  { id: 'wings', el: 'air', names: ['Crane Spreads Its Wings', 'Aú'], strokes: [quad(-0.06, 0.25, -0.62, 0.3, -0.82, -0.42), quad(0.06, 0.25, 0.62, 0.3, 0.82, -0.42)], closed: [false, false], pools: [[], []], ink: 'light',
+    how: 'Two strokes from just below the centre, sweeping out and up: one wing, then the other.',
+    dance: 'Wings of light open on both sides of you, beat once, then turn over like a cartwheel and throw their feathers clear, and foes with them.' },
+];
+
+// ── the recogniser: each stroke resampled to N points; shape compared after centring and sizing, then size, place, pooling and ink ──
+const N = 48;
+const pathLen = p => { let L = 0; for (let i = 1; i < p.length; i++) L += Math.hypot(p[i].x - p[i - 1].x, p[i].y - p[i - 1].y); return L; };
+function resample(pts, n) {
+  const p = pts.map(q => ({ x: q.x, y: q.y })), I = pathLen(p) / (n - 1);
+  if (!(I > 0)) return Array.from({ length: n }, () => ({ x: p[0].x, y: p[0].y }));
+  const out = [{ x: p[0].x, y: p[0].y }];
+  let D = 0;
+  for (let i = 1; i < p.length; i++) {
+    const d = Math.hypot(p[i].x - p[i - 1].x, p[i].y - p[i - 1].y);
+    if (d > 0 && D + d >= I) {
+      const k = (I - D) / d, q = { x: p[i - 1].x + k * (p[i].x - p[i - 1].x), y: p[i - 1].y + k * (p[i].y - p[i - 1].y) };
+      out.push(q); p.splice(i, 0, q); D = 0;
+    } else D += d;
+  }
+  while (out.length < n) out.push({ x: p[p.length - 1].x, y: p[p.length - 1].y });
+  return out.slice(0, n);
+}
+function frame(ps) {
+  let cx = 0, cy = 0;
+  for (const q of ps) { cx += q.x; cy += q.y; }
+  cx /= ps.length; cy /= ps.length;
+  let r = 0;
+  for (const q of ps) r += (q.x - cx) ** 2 + (q.y - cy) ** 2;
+  r = Math.sqrt(r / ps.length) || 1e-6;
+  return { cx, cy, r, n: ps.map(q => ({ x: (q.x - cx) / r, y: (q.y - cy) / r })) };
+}
+// sharp turns (a square has four, a circle none): the turning over three steps, counted at its peaks
+function corners(r, cyclic) {
+  const n = r.length, dir = [];
+  for (let i = 0; i < n - 1; i++) dir.push(Math.atan2(r[i + 1].y - r[i].y, r[i + 1].x - r[i].x));
+  if (cyclic) dir.push(Math.atan2(r[1].y - r[n - 1].y, r[1].x - r[n - 1].x));
+  const m = dir.length, turn = [];
+  for (let i = 0; i < m; i++) { const j = i + 1 < m ? i + 1 : cyclic ? 0 : -1; turn.push(j < 0 ? 0 : (((dir[j] - dir[i]) + 3 * Math.PI) % TAU) - Math.PI); }
+  const win = [];
+  for (let i = 0; i < m; i++) { let a = 0; for (let k = -1; k <= 1; k++) { const j = i + k; if (j >= 0 && j < m) a += turn[j]; else if (cyclic) a += turn[(j + m) % m]; } win.push(Math.abs(a)); }
+  let count = 0, last = -9;
+  for (let i = 0; i < m; i++) {
+    const prev = win[(i - 1 + m) % m], next = win[(i + 1) % m];
+    if (win[i] > 1.0 && win[i] >= prev && win[i] >= next && (i - last > 3 || (cyclic && false))) { count++; last = i; }
+  }
+  return count;
+}
+const prepOf = (g, strokes) => strokes.map((s, i) => { const r = resample(s, N); return { f: frame(r), closed: g.closed[i], cyc: g.closed[i] || !!g.loose, pools: g.pools[i], corners: corners(r, g.closed[i]) }; });
+// (an ensō can be left open anywhere: that glyph is tried turned every way round the pad's centre)
+const turned = (s, a) => s.map(p => ({ x: p.x * Math.cos(a) - p.y * Math.sin(a), y: p.x * Math.sin(a) + p.y * Math.cos(a) }));
+for (const g of GLYPHS) { g.prep = prepOf(g, g.strokes); g.preps = g.loose ? Array.from({ length: 12 }, (_, k) => prepOf(g, g.strokes.map(s => turned(s, k * TAU / 12)))) : [g.prep]; }
+const INK = { MIN: 0.008, MAX: 0.06, POOL: 0.12, VTHIN: 4, VDRY: 2.6, POOLT: 0.28 };
+const median = a => { const s = [...a].sort((x, y) => x - y); return s.length ? s[s.length >> 1] : 0; };
+// the drawn strokes, ready to compare: resampled, framed, with where the ink pooled (as a share of the way along)
+function prepDrawn(strokes) {
+  return strokes.map(s => {
+    const L = s.len || pathLen(s.pts) || 1e-6;
+    const pr = s.pts.map(p => p.p).filter(v => v != null);
+    const r = resample(s.pts, N), f = frame(r), shut = Math.hypot(r[0].x - r[N - 1].x, r[0].y - r[N - 1].y) < 0.6 * f.r;
+    return { f, pools: s.pools.map(p => clamp(p.s / L, 0, 1)), ink: median(s.pts.map(p => p.w)) / INK.MAX, pr: pr.length ? pr.reduce((a, b) => a + b, 0) / pr.length : null, pts: s.pts, len: L,
+             corners: corners(r, false), cornersShut: shut ? corners(r, true) : corners(r, false) };
+  });
+}
+// one drawn stroke against one template stroke. Shape: half how closely it follows the glyph point by point, in the same flow
+// (either direction, and from any start on a loop), half how close its outline lies regardless of order; small glyphs judged a
+// little more gently, since a hand wobbles the same amount whatever the size
+function fitStroke(d, t) {
+  const A = d.f.n, B = t.f.n;
+  let best = { err: Infinity, rev: false, k: 0 };
+  for (const rev of [false, true]) {
+    const P = rev ? A.slice().reverse() : A;
+    const steps = t.cyc ? N : 1;
+    for (let k = 0; k < steps; k += t.cyc ? 2 : 1) {
+      let e = 0;
+      for (let i = 0; i < N; i++) { const p = P[(i + k) % N], q = B[i]; e += Math.hypot(p.x - q.x, p.y - q.y); }
+      e /= N;
+      if (e < best.err) best = { err: e, rev, k };
+    }
+  }
+  let ch = 0;
+  for (const p of A) { let m = Infinity; for (const q of B) m = Math.min(m, (p.x - q.x) ** 2 + (p.y - q.y) ** 2); ch += Math.sqrt(m); }
+  for (const q of B) { let m = Infinity; for (const p of A) m = Math.min(m, (p.x - q.x) ** 2 + (p.y - q.y) ** 2); ch += Math.sqrt(m); }
+  ch /= 2 * N;
+  const shape = (0.5 * best.err + 0.5 * ch) * clamp(t.f.r / 0.42, 0.55, 1);
+  // the pools the glyph asks for: at the start or end of the stroke as drawn (a loop's start is wherever you began it)
+  let need = 0, hit = 0;
+  const used = new Set();
+  for (const tp of t.pools) {
+    need++;
+    const want = t.cyc ? tp : best.rev ? 1 - tp : tp;
+    let found = -1;
+    d.pools.forEach((dp, i) => { if (Math.abs(dp - want) <= 0.13 && !used.has(i)) found = i; });
+    if (found >= 0) { hit++; used.add(found); }
+  }
+  const dc = t.cyc ? d.cornersShut : d.corners;
+  // (one corner more or less is forgiven: a hand rounds some corners and sharpens some curves)
+  return { shape, place: Math.hypot(d.f.cx - t.f.cx, d.f.cy - t.f.cy), size: Math.abs(Math.log(d.f.r / t.f.r)), need, hit, extra: d.pools.length - used.size, corners: Math.max(0, Math.abs(dc - t.corners) - 1) };
+}
+// strokes drawn with a lift in the middle still count as one, with a small cost, if the brush came down near where it left off
+function joined(D) {
+  const pts = [], pools = [];
+  let L = 0, gap = 0;
+  D.forEach((d, i) => {
+    if (i) gap = Math.max(gap, Math.hypot(d.pts[0].x - pts[pts.length - 1].x, d.pts[0].y - pts[pts.length - 1].y));
+    for (const p of d.pools) pools.push({ s: L + p * d.len });
+    pts.push(...d.pts); L += d.len;
+  });
+  const one = prepDrawn([{ pts, pools, len: L }])[0];
+  return { one, gap };
+}
+function inkMiss(level, want) {
+  if (want === 'light') return clamp((level - 0.55) / 0.4, 0, 1);
+  if (want === 'heavy') return clamp((0.55 - level) / 0.35, 0, 1);
+  if (want === 'steady') return level < 0.3 ? clamp((0.3 - level) / 0.25, 0, 1) : clamp((level - 0.95) / 0.4, 0, 1);
+  return 0;
+}
+function scoreGlyph(g, D) {
+  let pairs = null, joinCost = 0;
+  if (g.prep.length === D.length) {
+    // two strokes may come in either order (one wing, then the other)
+    pairs = D.length === 2 ? [[0, 1], [1, 0]] : [D.map((_, i) => i)];
+  } else if (g.prep.length === 1 && D.length > 1 && D.length <= 3) {
+    const J = joined(D);
+    if (J.gap > 0.25) return null;
+    D = [J.one]; pairs = [[0]]; joinCost = 0.05 * (J.gap > 0.1 ? 2 : 1);
+  } else return null;
+  let best = null;
+  for (const prep of g.preps) for (const order of pairs) {
+    const fits = prep.map((t, i) => fitStroke(D[order[i]], t));
+    const avg = k => fits.reduce((a, f) => a + f[k], 0) / fits.length, sum = k => fits.reduce((a, f) => a + f[k], 0);
+    const r = { shape: avg('shape'), place: avg('place'), size: avg('size'), need: sum('need'), hit: sum('hit'), extra: sum('extra'), corners: sum('corners') };
+    if (!best || r.shape + r.place < best.shape + best.place) best = r;
+  }
+  const level = D.reduce((a, d) => a + d.ink, 0) / D.length, miss = inkMiss(level, g.ink);
+  const prs = D.map(d => d.pr).filter(v => v != null), pr = prs.length ? prs.reduce((a, b) => a + b, 0) / prs.length : null;
+  const missing = best.need - best.hit;
+  const q = 1 - 1.05 * best.shape - 1.2 * best.place - 0.6 * best.size - 0.12 * Math.min(3, best.corners) - 0.26 * missing - 0.06 * Math.min(3, Math.max(0, best.extra)) - 0.07 * miss - joinCost;
+  return {
+    g, q, level, pr,
+    parts: {
+      shape: clamp(1 - best.shape / 0.5 - 0.15 * Math.min(3, best.corners), 0, 1),
+      size: clamp(1 - best.size / 0.7, 0, 1),
+      place: clamp(1 - best.place / 0.4, 0, 1),
+      pooling: best.need ? clamp((best.hit - 0.34 * Math.max(0, best.extra)) / best.need, 0, 1) : clamp(1 - 0.34 * Math.max(0, best.extra), 0, 1),
+      ink: 1 - miss,
+    },
+    missing, extra: best.extra,
+  };
+}
+const CLEAN = 0.8, ROUGH = 0.42;
+function recognize(strokes) {
+  const D = prepDrawn(strokes.filter(s => s.pts.length > 1));
+  if (!D.length) return null;
+  const all = GLYPHS.map(g => scoreGlyph(g, D)).filter(Boolean).sort((a, b) => b.q - a.q);
+  if (!all.length) return { verdict: 'fizzle', best: null, all };
+  const b = all[0];
+  const verdict = b.q >= CLEAN ? 'clean' : b.q >= ROUGH ? 'rough' : 'fizzle';
+  // pressing to suit the style (light for air and water, firm for earth) adds a little, where the screen can tell
+  let pbonus = 0;
+  if (b.pr != null) { const want = { light: 0.3, steady: 0.55, heavy: 0.85, any: b.pr }[b.g.ink]; pbonus = 0.08 * (1 - 2 * Math.min(0.5, Math.abs(b.pr - want))); b.parts.pressure = clamp(1 - 2 * Math.abs(b.pr - want), 0, 1); }
+  // the closer to the glyph, the stronger: full power near a perfect copy, down to two fifths at the edge of fizzling
+  const power = verdict === 'fizzle' ? 0 : clamp(0.4 + 0.6 * (b.q - ROUGH) / (0.95 - ROUGH), 0.4, 1) + pbonus;
+  return { verdict, best: b, power: Math.max(0, power), all };
+}
+
+// ── a believable hand, for the example and the moving pictures: the template, written at the speed its ink wants ──
+const SPEED = { light: 2.6, steady: 1.35, heavy: 0.7, any: 1.4 };
+function writeOut(g, o = {}) {
+  const off = o.off || { x: 0, y: 0 }, sc = o.scale || 1, wob = o.wobble ?? 0.012;
+  return g.strokes.map((tp, si) => {
+    const base = resample(tp, 110), ph = (si + 1) * 1.7 + (o.seed || 0);
+    const pts = base.map((q, i) => ({ x: q.x * sc + off.x + wob * Math.sin(i * 0.11 + ph), y: q.y * sc + off.y + wob * Math.cos(i * 0.09 + ph * 1.3) }));
+    const want = g.pools[si] || [], pools = [], L = pathLen(pts);
+    let t = 0, w = INK.MIN * 2, s = 0, load = 0;
+    const out = [], dwells = [];
+    pts.forEach((p, i) => {
+      const prev = pts[i - 1], next = pts[i + 1];
+      let turn = 0;
+      if (prev && next) { const a1 = Math.atan2(p.y - prev.y, p.x - prev.x), a2 = Math.atan2(next.y - p.y, next.x - p.x); turn = Math.abs(((a2 - a1 + 3 * Math.PI) % TAU) - Math.PI); }
+      const v = SPEED[g.ink] * (turn > 0.6 ? 0.35 : turn > 0.3 ? 0.7 : 1) * (o.speed || 1);
+      const d = prev ? Math.hypot(p.x - prev.x, p.y - prev.y) : 0;
+      t += d / v; s += d; load = Math.min(1, load + d / v / 0.8);
+      const target = INK.MIN + (INK.MAX - INK.MIN) * (0.25 + 0.75 * load) * clamp(1 - v / INK.VTHIN, 0.06, 1);
+      w += (target - w) * 0.35;
+      const pt = { x: p.x, y: p.y, t, w, p: o.pressure ?? null, dry: v > INK.VDRY && i > 3, seed: (i * 37 + si * 11) % 997 };
+      // pool where the glyph wants it (and only there), unless told to leave the pools out
+      const k = i / (pts.length - 1);
+      for (const tp of want) if (!o.noPools && Math.abs(k - tp) < 0.5 / (pts.length - 1) + 1e-9) {
+        dwells.push({ i: out.length, t0: t, t1: t + 0.45 });
+        pools.push({ s, dwell: 0.45, w: INK.POOL });
+        t += 0.45; w = INK.POOL * 0.9;
+      }
+      out.push(pt);
+    });
+    return { pts: out, pools, len: L, dwells, dur: t };
+  });
+}
+
+// ── drawing ink ──
+const SUMI = '#19141f';
+// a band of ink from a to b, a disc at b; when the brush runs fast and dry it splits into hairs (flying white)
+function seg(c, M, a, b, color) {
+  const ax = M.cx + a.x * M.r, ay = M.cy + a.y * M.r, bx = M.cx + b.x * M.r, by = M.cy + b.y * M.r;
+  const wa = Math.max(0.6, a.w * M.r), wb = Math.max(0.6, b.w * M.r);
+  const dx = bx - ax, dy = by - ay, d = Math.hypot(dx, dy) || 1e-6, nx = -dy / d, ny = dx / d;
+  c.fillStyle = color;
+  if (b.dry) {
+    const lanes = [-0.36, -0.13, 0.1, 0.33];
+    for (let k = 0; k < 4; k++) {
+      if ((b.seed + k * 3) % 7 === 0) continue;
+      const o = lanes[k], h = 0.085;
+      c.beginPath();
+      c.moveTo(ax + nx * wa * (o - h), ay + ny * wa * (o - h)); c.lineTo(bx + nx * wb * (o - h), by + ny * wb * (o - h));
+      c.lineTo(bx + nx * wb * (o + h), by + ny * wb * (o + h)); c.lineTo(ax + nx * wa * (o + h), ay + ny * wa * (o + h)); c.closePath(); c.fill();
+    }
+    return;
+  }
+  c.beginPath(); c.arc(bx, by, wb / 2, 0, TAU); c.fill();
+  c.beginPath();
+  c.moveTo(ax + nx * wa / 2, ay + ny * wa / 2); c.lineTo(bx + nx * wb / 2, by + ny * wb / 2);
+  c.lineTo(bx - nx * wb / 2, by - ny * wb / 2); c.lineTo(ax - nx * wa / 2, ay - ny * wa / 2); c.closePath(); c.fill();
+}
+// a pool of ink: a soft, slightly ragged blot
+function blot(c, M, p, w, color) {
+  const x = M.cx + p.x * M.r, y = M.cy + p.y * M.r, r = w * M.r / 2;
+  c.fillStyle = color;
+  c.beginPath(); c.arc(x, y, r, 0, TAU); c.fill();
+  for (let k = 0; k < 6; k++) { const a = k * TAU / 6 + (p.seed || 0) * 0.37, rr = r * (0.28 + 0.12 * ((p.seed + k * 5) % 4)); c.beginPath(); c.arc(x + Math.cos(a) * r * 0.82, y + Math.sin(a) * r * 0.82, rr, 0, TAU); c.fill(); }
+}
+// the paper: a disc of rice paper with a faint circular grid (rings at a third and two thirds, and eight spokes)
+function paper(c, M, faint) {
+  const g = c.createRadialGradient(M.cx - M.r * 0.3, M.cy - M.r * 0.35, M.r * 0.1, M.cx, M.cy, M.r);
+  g.addColorStop(0, '#f6efdc'); g.addColorStop(1, '#e4d6b4');
+  c.fillStyle = g; c.beginPath(); c.arc(M.cx, M.cy, M.r, 0, TAU); c.fill();
+  c.strokeStyle = 'rgba(80,60,40,0.55)'; c.lineWidth = Math.max(1, M.r * 0.008); c.stroke();
+  c.strokeStyle = `rgba(80,60,40,${faint ? 0.1 : 0.16})`; c.lineWidth = 1;
+  for (const k of [1 / 3, 2 / 3]) { c.beginPath(); c.arc(M.cx, M.cy, M.r * k, 0, TAU); c.stroke(); }
+  for (let i = 0; i < 8; i++) { const a = i * TAU / 8; c.beginPath(); c.moveTo(M.cx + Math.cos(a) * M.r * 0.06, M.cy + Math.sin(a) * M.r * 0.06); c.lineTo(M.cx + Math.cos(a) * M.r, M.cy + Math.sin(a) * M.r); c.stroke(); }
+  c.fillStyle = 'rgba(80,60,40,0.3)'; c.beginPath(); c.arc(M.cx, M.cy, Math.max(1.5, M.r * 0.012), 0, TAU); c.fill();
+}
+// a glyph as a guide or a ghost: a thin dashed path, its pools as rings and its start as a dot
+function ghost(c, M, g, color, alpha) {
+  c.save(); c.globalAlpha = alpha; c.strokeStyle = color; c.fillStyle = color; c.lineWidth = Math.max(1.5, M.r * 0.012); c.setLineDash([M.r * 0.04, M.r * 0.03]); c.lineCap = 'round';
+  g.strokes.forEach((s, si) => {
+    c.beginPath(); s.forEach((p, i) => (i ? c.lineTo : c.moveTo).call(c, M.cx + p.x * M.r, M.cy + p.y * M.r)); c.stroke();
+    c.beginPath(); c.arc(M.cx + s[0].x * M.r, M.cy + s[0].y * M.r, M.r * 0.022, 0, TAU); c.fill();
+    for (const tp of g.pools[si]) { const p = s[Math.round(tp * (s.length - 1))]; c.setLineDash([]); c.beginPath(); c.arc(M.cx + p.x * M.r, M.cy + p.y * M.r, M.r * 0.06, 0, TAU); c.stroke(); c.setLineDash([M.r * 0.04, M.r * 0.03]); }
+  });
+  c.restore();
+}
+function glyphSvg(el, s, color) {
+  const h = s * 0.4, c = s / 2, lw = Math.max(1.6, s * 0.09);
+  if (el === 'spirit') return `<svg width="${s}" height="${s}" aria-hidden="true"><circle cx="${c}" cy="${c}" r="${h * 0.85}" fill="none" stroke="${color}" stroke-width="${lw}"/><circle cx="${c}" cy="${c}" r="${h * 0.3}" fill="none" stroke="${color}" stroke-width="${lw}"/></svg>`;
+  const up = el === 'fire' || el === 'air', k = up ? 1 : -1;
+  let d = `M${c} ${c - h * k} L${c + h * 0.95} ${c + h * 0.72 * k} L${c - h * 0.95} ${c + h * 0.72 * k} Z`;
+  if (el === 'air' || el === 'earth') d += ` M${c - h * 0.85} ${c + h * 0.1 * k} L${c + h * 0.85} ${c + h * 0.1 * k}`;
+  return `<svg width="${s}" height="${s}" aria-hidden="true"><path d="${d}" fill="none" stroke="${color}" stroke-width="${lw}" stroke-linejoin="round" stroke-linecap="round"/></svg>`;
+}
+
+// ── the dances: once a glyph takes, its ink lifts off the page and dances. Not a fireball or a wall: the style's energy, moving.
+// Every mote is a function of time alone, so a frame can be drawn at any moment, and a mote's trail is the same mote a moment earlier ──
+const DANCE = 3.4;
+const ease = k => (k <= 0 ? 0 : k >= 1 ? 1 : k * k * (3 - 2 * k));
+const snap = k => 1 - (1 - clamp(k, 0, 1)) ** 2;
+const rnd = (i, k = 0) => { const x = Math.sin(i * 127.1 + k * 311.7) * 43758.5453; return x - Math.floor(x); };
+const pol = (r, a) => ({ x: Math.cos(a) * r, y: Math.sin(a) * r });
+const tri = x => 2 * Math.abs(x - Math.floor(x + 0.5));
+const sprites = {};
+function sprite(col) {
+  if (sprites[col]) return sprites[col];
+  const cv = document.createElement('canvas'); cv.width = cv.height = 64;
+  const c = cv.getContext('2d'), g = c.createRadialGradient(32, 32, 0, 32, 32, 32), [r, gg, b] = [1, 3, 5].map(k => parseInt(col.slice(k, k + 2), 16));
+  g.addColorStop(0, '#fff'); g.addColorStop(0.16, `rgba(${r},${gg},${b},0.95)`); g.addColorStop(0.45, `rgba(${r},${gg},${b},0.3)`); g.addColorStop(1, `rgba(${r},${gg},${b},0)`);
+  c.fillStyle = g; c.fillRect(0, 0, 64, 64);
+  return (sprites[col] = cv);
+}
+// one of the three ribbons of Dragon Rising: out from the centre in a spiral, then up and away
+function dragon(k, t) {
+  const u = (t - k * 0.28) / 1.9, a0 = k * TAU / 3;
+  if (u < 0 || u > 1.15) return null;
+  if (u < 0.5) { const v = u / 0.5; return { ...pol(0.52 * v, a0 + v * 1.5 * TAU), s: 0.06 + 0.02 * v, a: 1 }; }
+  const e = pol(0.52, a0 + 1.5 * TAU), v = (u - 0.5) / 0.5, w = 1 - v, cx = e.x * 1.25, cy = e.y - 0.7, ex = 0.15 * (k - 1), ey = -1.35;
+  return { x: w * w * e.x + 2 * w * v * cx + v * v * ex + 0.06 * Math.sin(v * 9 + k), y: w * w * e.y + 2 * w * v * cy + v * v * ey, s: 0.08, a: 1 };
+}
+// the S of Snake Parts the Reeds, k from 0 (top) to 1 (bottom), and where it crosses a height
+const sPath = k => { const top = k < 0.5, a = (top ? -90 + 360 * k : -90 - 360 * (k - 0.5)) * Math.PI / 180; return { x: 0.33 * Math.cos(a), y: (top ? -0.33 : 0.33) + 0.33 * Math.sin(a) }; };
+const hxAt = y => (Math.abs(y) > 0.66 ? 0 : (y < 0 ? 1 : -1) * 0.33 * Math.sqrt(Math.max(0, 1 - ((y - (y < 0 ? -0.33 : 0.33)) / 0.33) ** 2)));
+// Leopard's Feint: the beats, and each strike's line (jab, cross, hook; then the same from the other side)
+const BEATS = [0.3, 0.52, 0.8, 1.45, 1.62, 1.86, 2.4, 2.52, 2.66];
+function strike(b, u) {
+  const k = b % 3, f = Math.floor(b / 3) % 2 ? -1 : 1;
+  if (k === 0) return { x: f * (-0.15 + 0.75 * u), y: -0.25 + 0.05 * u };
+  if (k === 1) return { x: f * (0.15 - 0.8 * u), y: -0.05 - 0.15 * u };
+  const a = (200 + 150 * u) * Math.PI / 180;
+  return { x: f * Math.cos(a) * 0.55, y: 0.1 + Math.sin(a) * 0.55 };
+}
+// Tiger's Weight: across the top, a breath, then down hard
+function weight(t) {
+  if (t < 1) return { x: -0.6 + 1.02 * ease(t), y: -0.55 };
+  if (t < 1.35) return { x: 0.42, y: -0.55 - 0.04 * Math.sin((t - 1) / 0.35 * Math.PI) };
+  if (t < 1.75) { const k = (t - 1.35) / 0.4; return { x: 0.42, y: -0.55 + 1.33 * k * k }; }
+  return t < 2.3 ? { x: 0.42, y: 0.78 } : null;
+}
+const GINGA = [{ x: 0, y: 0.3 }, { x: -0.45, y: 0.62 }, { x: 0.45, y: 0.62 }];
+const moon = (deg, r) => ({ x: Math.cos(deg * Math.PI / 180) * r, y: 0.12 + Math.sin(deg * Math.PI / 180) * r });
+const wingPt = u => { const v = 1 - u; return { x: v * v * 0.06 + 2 * v * u * 0.62 + u * u * 0.82, y: v * v * 0.25 + 2 * v * u * 0.3 - u * u * 0.42 }; };
+// each dance: n motes (the first `core` always danced, the rest fewer on a weaker cast), each a function of (mote, time), with a trail;
+// and what's drawn under them
+const DANCES = {
+  // a pearl that breathes; each breath out rolls away in a ring, and motes drift in on each breath in
+  pearl: { n: 60, core: 40, trail: 1, gap: 0, f(i, t) {
+    if (i < 40) {
+      const ring = i % 2, j = i >> 1, age = t - 0.6 - ring * 1.25;
+      if (age < 0 || age > 1.9) return null;
+      const k = age / 1.9;
+      return { ...pol(0.16 + 0.82 * (1 - (1 - k) ** 2) + 0.015 * Math.sin(j * 2.3 + age * 5), j / 20 * TAU + ring * 0.16 + 0.25 * age), s: 0.05 * (1 - 0.5 * k), a: 0.9 * (1 - k) };
+    }
+    const ph = (t * 0.42 + rnd(i)) % 1;
+    return { ...pol(0.95 * (1 - ph), rnd(i, 1) * TAU + ph * 1.4), s: 0.03, a: 0.55 * Math.sin(ph * Math.PI) };
+  }, under(t, X) {
+    const br = 0.5 + 0.5 * Math.sin((t - 0.15) * TAU / 1.25 - Math.PI / 2);
+    X.dot({ x: 0, y: 0 }, 0.2 + 0.08 * br, 0.55 + 0.35 * br);
+    X.dot({ x: 0, y: 0 }, 0.07 + 0.02 * br, 1);
+  } },
+  // an open ring turning round you; whatever comes in is caught by the turn and carried back out
+  opensky: { n: 44, core: 34, trail: 7, gap: 0.035, f(i, t) {
+    if (i < 34) return { ...pol(0.78 + 0.012 * Math.sin(i * 1.7 + t * 3), i / 34 * TAU * 0.86 + t * 0.7), s: 0.04, a: 0.75 * ease(t / 0.5) };
+    const m = i - 34, age = t - 0.45 - m * 0.17, a0 = rnd(m, 3) * TAU;
+    if (age < 0) return null;
+    if (age < 0.4) return { ...pol(1.3 - 0.52 * age / 0.4, a0), s: 0.06, a: age / 0.4 };
+    if (age < 1.2) return { ...pol(0.78, a0 + 3.6 * (age - 0.4)), s: 0.065, a: 1 };
+    const a1 = a0 + 2.88, p = pol(0.78, a1), d = (age - 1.2) * 2.4;
+    return d > 1.4 ? null : { x: p.x - Math.sin(a1) * d, y: p.y + Math.cos(a1) * d, s: 0.065, a: 1 - d / 1.4 };
+  } },
+  // three ribbons uncoil from your centre and climb away, shedding scales of light
+  rising: { n: 27, core: 3, trail: 16, gap: 0.03, f(i, t) {
+    if (i < 3) return dragon(i, t);
+    const m = i - 3, born = 0.3 + rnd(m, 8) * 1.9, age = t - born, p = dragon(m % 3, born);
+    if (age < 0 || age > 1.1 || !p) return null;
+    return { x: p.x + (rnd(m, 2) - 0.5) * 0.4 * age, y: p.y + 0.12 * age, s: 0.025, a: 0.7 * (1 - age / 1.1) };
+  } },
+  // a light runs down the S through a bed of reeds; they part round it and slowly close again
+  parting: { n: 1, core: 1, trail: 14, gap: 0.03, f(i, t) {
+    const k = (t - 0.3) / 1.6;
+    return k < 0 || k > 1 ? null : { ...sPath(k), s: 0.07, a: 1 };
+  }, under(t, X) {
+    for (let j = 0; j < 13; j++) {
+      const x0 = -0.84 + j * 0.14, pts = [];
+      for (let s = 0; s <= 16; s++) {
+        const y = 0.8 - 0.1 * s, h = s / 16, hx = hxAt(y), tp = 0.3 + 1.6 * clamp((y + 0.66) / 1.32, 0, 1);
+        const part = ease((t - tp) / 0.4) * (1 - ease((t - tp - 0.8) / 1.2));
+        pts.push({ x: x0 + 0.035 * Math.sin(t * 1.7 + j * 0.8) * h * h + (x0 >= hx ? 1 : -1) * 0.22 * Math.exp(-((x0 - hx) ** 2) / 0.12) * part * Math.min(1, h * 3), y });
+      }
+      X.line(pts, 0.4, 0.007);
+      X.dot(pts[16], 0.03, 0.6);
+    }
+  } },
+  // two lights chase round a figure of eight, yielding and coiling, then let go together and push the water out
+  pushhands: { n: 22, core: 2, trail: 22, gap: 0.03, f(i, t) {
+    if (i < 2) {
+      const tt = Math.min(t, 2.3), s = 1.7 * tt - 0.25 * Math.sin(3.4 * tt) + i * Math.PI, A = 0.3 + 0.34 * ease(tt / 1.6), B = A * 0.48;
+      let x = A * Math.sin(s), y = B * Math.sin(2 * s);
+      if (t > 2.3) { const dx = A * Math.cos(s), dy = 2 * B * Math.cos(2 * s), L = Math.hypot(dx, dy) || 1, d = (t - 2.3) * 1.8; x += dx / L * d; y += dy / L * d; }
+      return { x, y, s: 0.065, a: i ? 0.7 : 1 };
+    }
+    const m = i - 2, push = t > 2.3 ? 0.5 * ease((t - 2.3) / 0.7) : 0;
+    return { ...pol(0.25 + 0.6 * rnd(m, 1) + push + 0.03 * Math.sin(t * 2 + m), rnd(m) * TAU + 0.15 * Math.sin(t * 0.8 + m)), s: 0.028, a: 0.45 };
+  } },
+  // motes drawn in and round in a slow spiral, quickening as they gather, then let go
+  clouds: { n: 44, core: 20, trail: 7, gap: 0.04, f(i, t) {
+    const r0 = 0.55 + 0.42 * rnd(i), g = ease(Math.min(t, 2.3) / 2.3);
+    let r = r0 * (1 - 0.78 * g);
+    if (t > 2.3) r += (t - 2.3) * (0.55 + 0.3 * rnd(i, 2));
+    return { ...pol(r, rnd(i, 1) * TAU + t + g * 2.6), s: 0.032 + 0.02 * g, a: 0.85 };
+  } },
+  // strikes of light in a fighter's rhythm, one-two-three, again from the other side, and once more, quicker; bouncing in between
+  combo: { n: 63, core: 9, trail: 9, gap: 0.016, f(i, t) {
+    if (i < 9) { const age = t - BEATS[i]; return age < 0 || age > 0.16 ? null : { ...strike(i, snap(age / 0.14)), s: 0.065, a: 1 }; }
+    const m = i - 9, b = m % 9, e = t - BEATS[b] - 0.12;
+    if (e < 0 || e > 0.55) return null;
+    const end = strike(b, 1), sa = rnd(m) * TAU, d = (0.5 + 0.8 * rnd(m, 1)) * 0.3 * snap(e / 0.55);
+    return { x: end.x + Math.cos(sa) * d, y: end.y + Math.sin(sa) * d + 0.12 * e * e, s: 0.026, a: 1 - e / 0.55 };
+  }, under(t, X) { X.dot({ x: 0, y: 0.08 - 0.05 * Math.abs(Math.sin(t * 5.5)) }, 0.12, 0.45); } },
+  // embers crouch low, gathering, then spring straight up the field and drift back down
+  rise: { n: 36, core: 14, trail: 8, gap: 0.03, f(i, t) {
+    const lo = { x: (rnd(i, 2) - 0.5) * 0.12, y: 0.7 };
+    if (t < 0.85) { const s0 = pol(0.5 + 0.4 * rnd(i), rnd(i, 1) * TAU), k = ease(t / 0.85); return { x: s0.x + (lo.x - s0.x) * k, y: s0.y + (lo.y - s0.y) * k, s: 0.03 + 0.02 * k, a: 0.4 + 0.6 * k }; }
+    const u = t - 0.85, vy = 2.4 + 0.9 * rnd(i, 3), G = 3.2, top = vy / G;
+    let x = lo.x + (rnd(i, 4) - 0.5) * 0.5 * u, y;
+    if (u < top) y = lo.y - vy * u + 0.5 * G * u * u;
+    else { y = lo.y - vy * vy / (2 * G) + 0.22 * (u - top); x += 0.06 * Math.sin((u - top) * 3 + i); }
+    return { x, y, s: 0.04, a: u < top ? 1 : Math.max(0, 1 - (u - top) / 1.6) };
+  }, under(t, X) { if (t < 1) X.dot({ x: 0, y: 0.7 }, 0.08 + 0.12 * ease(t / 0.85), 0.9 * (1 - ease((t - 0.85) / 0.15))); } },
+  // embers walk a slow circle round you, pausing and bowing like the Ram Muay, then break out in a flurry
+  rammuay: { n: 40, core: 10, trail: 10, gap: 0.04, f(i, t) {
+    const T = 1.9, ang = tt => i / 10 * TAU + 0.9 * tt + 0.35 * Math.sin(2.2 * tt);
+    if (i < 10) {
+      if (t < T) return { ...pol(0.36 + 0.05 * Math.sin(4.4 * t + i), ang(t)), s: 0.05, a: 0.95 };
+      const a1 = ang(T), p = pol(0.36 + 0.05 * Math.sin(4.4 * T + i), a1), e = t - T, d = e * 1.6, off = 0.08 * (tri(e * 5 + i * 0.3) - 0.5);
+      return { x: p.x + Math.cos(a1) * d - Math.sin(a1) * off, y: p.y + Math.sin(a1) * d + Math.cos(a1) * off, s: 0.05, a: Math.max(0, 1 - e / 1.2) };
+    }
+    const m = i - 10, e = t - T - rnd(m, 3) * 0.6;
+    if (e < 0 || e > 0.7) return null;
+    const b = pol(0.36 + e * 1.2, rnd(m, 2) * TAU), a = rnd(m) * TAU, d = (0.3 + 0.6 * rnd(m, 1)) * e;
+    return { x: b.x + Math.cos(a) * d, y: b.y + Math.sin(a) * d, s: 0.025, a: 1 - e / 0.7 };
+  } },
+  // two planted feet glow, the stance sinks between them, and the ground answers in heavy waves that make the dust jump
+  stance: { n: 30, core: 0, trail: 4, gap: 0.03, f(i, t) {
+    const x = -0.9 + 1.8 * rnd(i, 7);
+    let y = 0.5 + 0.03 * rnd(i);
+    for (const tw of [0.7, 1.7]) { const e = t - tw - Math.abs(x) * 0.5; if (e > 0 && e < 0.5) y -= 0.18 * Math.sin(e / 0.5 * Math.PI) * (1 - Math.abs(x) * 0.4); }
+    return { x, y, s: 0.026, a: 0.55 };
+  }, under(t, X) {
+    const y = 0.45 + 0.04 * ease(t / 0.6);
+    for (const fx of [-0.62, 0.62]) X.dot({ x: fx, y }, 0.13 + 0.03 * Math.sin(t * 3), 0.85);
+    X.line([{ x: -0.62, y }, { x: 0.62, y }], 0.5, 0.012);
+    for (const tw of [0.7, 1.7]) { const k = (t - tw) / 1.3; if (k > 0 && k < 1) X.ellipse(0, y, 0.2 + 1.1 * k, 0.05 + 0.3 * k, 1 - k, 0.004 + 0.02 * (1 - k)); }
+  } },
+  // a square of light drawn round you corner by corner; wires pulled taut from its corners hum, and the motes inside grow heavy and settle
+  seal: { n: 26, core: 0, trail: 3, gap: 0.05, f(i, t) {
+    const y0 = -0.38 + 0.6 * rnd(i, 1), k = ease((t - 0.6) / 1.6);
+    return { x: -0.38 + 0.76 * rnd(i) + 0.02 * Math.sin(t * 2 + i) * (1 - k), y: y0 + (0.4 - y0) * k, s: 0.03, a: 0.6 };
+  }, under(t, X) {
+    const draw = ease(t / 0.8), e = Math.max(0, t - 0.8), h = 0.45 * (1 + 0.05 * Math.sin(e * 4) * Math.exp(-e * 0.6));
+    const C = [{ x: -h, y: -h }, { x: h, y: -h }, { x: h, y: h }, { x: -h, y: h }, { x: -h, y: -h }], pts = [C[0]];
+    for (let s = 0; s < 4 && s < 4 * draw; s++) { const k = Math.min(1, 4 * draw - s); pts.push({ x: C[s].x + (C[s + 1].x - C[s].x) * k, y: C[s].y + (C[s + 1].y - C[s].y) * k }); }
+    X.line(pts, 0.9, 0.016);
+    for (let s = 0; s < 4; s++) {
+      X.dot(C[s], 0.08, clamp(4 * draw - s, 0, 1));
+      if (!e) continue;
+      // iron wire: plucked, it hums and stills, and is plucked again
+      const v = 0.035 * Math.sin(e * 38 + s) * Math.exp(-(e % 1.1) * 2.5), L = Math.hypot(C[s].x, C[s].y);
+      X.line([C[s], { x: C[s].x / 2 - C[s].y / L * v, y: C[s].y / 2 + C[s].x / L * v }, { x: 0, y: 0 }], 0.5 * ease(e / 0.3), 0.006);
+    }
+  } },
+  // a knot of light crosses the top of the field, gathers itself and comes down hard; the ground shakes the motes loose
+  descend: { n: 46, core: 22, trail: 6, gap: 0.03, f(i, t) {
+    if (i < 22) { const W = weight(t), a = rnd(i) * TAU + t * (1.5 + rnd(i, 1)), r = 0.03 + 0.06 * rnd(i, 2); return W ? { x: W.x + Math.cos(a) * r, y: W.y + Math.sin(a) * r, s: 0.04, a: 0.9 } : null; }
+    const m = i - 22, e = t - 1.75;
+    if (e < 0) return null;
+    const sp = 0.4 + 0.7 * rnd(m);
+    return { x: 0.42 + (m % 2 ? 1 : -1) * sp * 0.9 * (1 - Math.exp(-e * 3)), y: 0.78 - 0.25 * sp * Math.sin(Math.min(1, e / 0.6) * Math.PI), s: 0.028, a: Math.max(0, 1 - e / 1.5) };
+  }, under(t, X) {
+    const W = weight(t), k = (t - 1.75) / 1.2;
+    if (W) X.dot(W, 0.14, 0.7);
+    if (k > 0 && k < 1) { X.ellipse(0.42, 0.8, 0.1 + 0.7 * k, 0.03 + 0.15 * k, 1 - k, 0.004 + 0.02 * (1 - k)); X.dot({ x: 0.42, y: 0.78 }, 0.3 * (1 - k), 1 - k); }
+  } },
+  // the ginga's triangle: a foot steps back on one side, then the other, the body swaying against it; feathers drift down
+  ginga: { n: 3, core: 3, trail: 14, gap: 0.035, f(i, t) {
+    const ph = t / 0.6, n = Math.floor(ph), k = ease(ph - n), seq = [0, 1, 0, 2], A = GINGA[seq[n % 4]], B = GINGA[seq[(n + 1) % 4]];
+    const foot = { x: A.x + (B.x - A.x) * k, y: A.y + (B.y - A.y) * k - 0.08 * Math.sin(k * Math.PI) };
+    if (i === 0) return { ...foot, s: 0.07, a: 1 };
+    return i === 1 ? { x: -foot.x * 0.6, y: -0.1 + 0.05 * Math.sin(t * 5.2), s: 0.09, a: 0.9 } : { x: -foot.x * 0.9, y: -0.4 + 0.03 * Math.sin(t * 5.2 + 1), s: 0.06, a: 0.8 };
+  }, under(t, X) {
+    for (let m = 0; m < 16; m++) { const ph = (t * 0.22 + rnd(m, 1)) % 1; X.dot({ x: -0.8 + 1.6 * rnd(m) + 0.1 * Math.sin(t * 2.4 + m), y: -0.95 + 1.9 * ph }, 0.025, 0.5 * Math.sin(ph * Math.PI)); }
+  } },
+  // from the planted foot, three streams of wind swing round in a half-moon, and the air they leave drifts out and away
+  halfmoon: { n: 29, core: 3, trail: 18, gap: 0.022, f(i, t) {
+    if (i < 3) {
+      const k = (t - 0.35 - i * 0.04) / 0.75;
+      if (k < 0 || k > 1.25) return null;
+      return { ...moon(200 + 140 * ease(Math.min(1, k)) + 40 * Math.max(0, k - 1), 0.8 + (i - 1) * 0.07), s: 0.06 - i * 0.008, a: 1 };
+    }
+    const m = i - 3, u = rnd(m, 4), e = t - 0.35 - 0.75 * u;
+    if (e < 0) return null;
+    const p = moon(200 + 140 * u, 0.8 + 0.2 * (1 - Math.exp(-e * 1.5)));
+    return { x: p.x, y: p.y + 0.06 * Math.sin(e * 3 + m) + 0.1 * e, s: 0.026, a: 0.8 * Math.max(0, 1 - e / 1.8) };
+  }, under(t, X) { X.dot(moon(200, 0.8), 0.1, 0.8 * (1 - ease((t - 1.6) / 1))); } },
+  // two wings of light open from your centre, beat once, then turn over like a cartwheel and throw their feathers clear
+  wings: { n: 24, core: 24, trail: 5, gap: 0.035, f(i, t) {
+    const side = i % 2 ? 1 : -1, u = ((i >> 1) + 1) / 12, q = wingPt(u), open = ease(t / 0.9);
+    const flap = t > 0.9 && t < 1.7 ? 0.12 * Math.sin((t - 0.9) / 0.8 * TAU) * u : 0;
+    let x = side * (0.06 + (q.x - 0.06) * open), y = 0.25 + (q.y - 0.25) * open + flap;
+    const rot = Math.PI * ease((t - 1.7) / 0.8);
+    if (rot) { const c0 = Math.cos(rot), s0 = Math.sin(rot); [x, y] = [x * c0 - y * s0, x * s0 + y * c0]; }
+    const e = t - 2.5;
+    if (e > 0) { const d = Math.hypot(x, y) || 1, sp = e * (0.5 + 0.5 * rnd(i)); x += x / d * sp; y += y / d * sp; }
+    return { x, y, s: 0.04 + 0.02 * (1 - u), a: e > 0 ? Math.max(0, 1 - e / 0.9) : 0.95 };
+  } },
+};
+// a dance at time t (seconds) on a pad: the paper darkens, the written ink turns to light and lifts away, and the motes dance.
+// P is the cast's power: a weaker cast dances dimmer, with fewer motes
+function drawDance(c, M, g, t, P, lifted) {
+  const D = DANCES[g.id], col = STYLES[g.el].color, im = sprite(col);
+  const env = ease(t / 0.35) * (1 - ease((t - DANCE + 0.6) / 0.6)), A = (0.4 + 0.6 * Math.min(1, P)) * env;
+  c.save();
+  c.beginPath(); c.arc(M.cx, M.cy, M.r, 0, TAU); c.clip();
+  c.fillStyle = `rgba(14,11,22,${0.9 * env})`; c.fillRect(M.cx - M.r, M.cy - M.r, 2 * M.r, 2 * M.r);
+  c.globalCompositeOperation = 'lighter';
+  const glow = (path, a, w) => {
+    c.strokeStyle = col; c.lineCap = 'round'; c.lineJoin = 'round'; path();
+    c.globalAlpha = clamp(0.22 * a * A, 0, 1); c.lineWidth = Math.max(3, 3.5 * w * M.r); c.stroke();
+    c.globalAlpha = clamp(a * A, 0, 1); c.lineWidth = Math.max(1, w * M.r); c.stroke();
+  };
+  const X = {
+    dot(p, s, a) { const r = Math.max(1.2, s * M.r); c.globalAlpha = clamp(a * A, 0, 1); c.drawImage(im, M.cx + p.x * M.r - r, M.cy + p.y * M.r - r, 2 * r, 2 * r); },
+    line(pts, a, w) { glow(() => { c.beginPath(); pts.forEach((p, i) => (i ? c.lineTo : c.moveTo).call(c, M.cx + p.x * M.r, M.cy + p.y * M.r)); }, a, w); },
+    ellipse(x, y, rx, ry, a, w) { glow(() => { c.beginPath(); c.ellipse(M.cx + x * M.r, M.cy + y * M.r, rx * M.r, ry * M.r, 0, 0, TAU); }, a, w); },
+    // a trail, head first: a soft wide glow, a thin core, and a brighter half near the head, so it tapers
+    ribbon(pts) {
+      const w = pts[0].s * M.r, a = pts[0].a * A;
+      const path = m => { c.beginPath(); for (let k = 0; k < m; k++) (k ? c.lineTo : c.moveTo).call(c, M.cx + pts[k].x * M.r, M.cy + pts[k].y * M.r); };
+      c.strokeStyle = col; c.lineCap = 'round'; c.lineJoin = 'round';
+      path(pts.length);
+      c.globalAlpha = clamp(0.16 * a, 0, 1); c.lineWidth = Math.max(2, 1.6 * w); c.stroke();
+      c.globalAlpha = clamp(0.38 * a, 0, 1); c.lineWidth = Math.max(1, 0.42 * w); c.stroke();
+      path(Math.max(2, Math.ceil(pts.length / 2)));
+      c.globalAlpha = clamp(0.45 * a, 0, 1); c.lineWidth = Math.max(1, 0.75 * w); c.stroke();
+    },
+  };
+  const k = t / 0.9;
+  if (lifted && k < 1) lifted.forEach((p, i) => X.dot({ x: p.x + (rnd(i, 5) - 0.5) * 0.06 * k, y: p.y - 0.1 * k * (0.5 + rnd(i, 6)) }, 0.04, 0.85 * (1 - k)));
+  if (D.under) D.under(t, X);
+  const n = D.core + Math.ceil((D.n - D.core) * clamp(0.25 + 0.75 * P, 0.3, 1));
+  for (let i = 0; i < n; i++) {
+    const head = D.f(i, t);
+    if (D.trail > 3) {
+      // the same mote a moment ago, and before: its trail, cut where it jumps
+      const pts = [];
+      for (let j = 0; j < D.trail; j++) {
+        const tt = t - j * D.gap;
+        if (tt < 0) break;
+        const q = j ? D.f(i, tt) : head;
+        if (!q) { if (pts.length) break; continue; }
+        if (pts.length && Math.hypot(q.x - pts[pts.length - 1].x, q.y - pts[pts.length - 1].y) > 0.35) break;
+        pts.push(q);
+      }
+      if (pts.length > 1) X.ribbon(pts);
+    } else for (let j = D.trail - 1; j > 0; j--) {
+      const tt = t - j * D.gap, q = tt >= 0 && D.f(i, tt);
+      if (q) X.dot(q, q.s * (0.4 + 0.6 * (1 - j / D.trail)), q.a * (1 - j / D.trail) * 0.6);
+    }
+    if (head) X.dot(head, head.s, head.a);
+  }
+  c.restore();
+}
+
+// ── names ──
+let namesI = 0;
+try { namesI = +localStorage.getItem('scribe-names') === 1 ? 1 : 0; } catch (_) {}
+const gname = g => g.names[namesI];
+const sname = el => namesI ? STYLES[el].fighter : STYLES[el].animal;
+
+// ── the pad ──
+const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const pad = document.getElementById('pad'), pctx = pad.getContext('2d');
+let S = 0, DPR = 1, M = { cx: 0, cy: 0, r: 1 }, inkCv = null, ictx = null;
+let strokes = [], pen = null, result = null, evalT = 0, guide = null, example = false, dirty = true, dance = null, stampT = 0;
+const pressure = { ok: false, vals: new Set(), force: 0, forceVals: new Set() };
+function fit() {
+  const w = Math.round(pad.getBoundingClientRect().width) || 320;
+  if (w === S && inkCv) return;
+  S = w; DPR = Math.min(3, window.devicePixelRatio || 1);
+  pad.width = Math.round(S * DPR); pad.height = Math.round(S * DPR);
+  M = { cx: S / 2, cy: S / 2, r: S / 2 - 6 };
+  inkCv = document.createElement('canvas'); inkCv.width = pad.width; inkCv.height = pad.height;
+  ictx = inkCv.getContext('2d'); ictx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  for (const s of strokes) inkStroke(ictx, M, s, Infinity);
+  dirty = true;
+}
+// everything of a stroke up to a time: its bands, and its pools as blots
+function inkStroke(c, Mx, s, upto, color = SUMI) {
+  const P = s.pts;
+  if (!P.length) return;
+  blot(c, Mx, P[0], P[0].w, color);
+  for (let i = 1; i < P.length && P[i].t <= upto; i++) seg(c, Mx, P[i - 1], P[i], color);
+  for (const d of s.dwells || []) {
+    if (upto < d.t0) continue;
+    const k = clamp((upto - d.t0) / (d.t1 - d.t0), 0, 1), p = P[Math.min(d.i, P.length - 1)];
+    blot(c, Mx, p, INK.POOL * (0.5 + 0.5 * k), color);
+  }
+  for (const pl of s.livePools || []) blot(c, Mx, pl.p, pl.w, color);
+}
+const toPad = e => { const r = pad.getBoundingClientRect(); return { x: (e.clientX - r.left - M.cx) / M.r, y: (e.clientY - r.top - M.cy) / M.r }; };
+const evTime = e => { const t = e.timeStamp, n = performance.now(); return t > 0 && Math.abs(t - n) < 4000 ? t : n; };
+function readPressure(e) {
+  if (pressure.force > 0) return clamp(pressure.force, 0, 1);
+  const v = e.pressure;
+  if (typeof v !== 'number' || v <= 0) return null;
+  if (e.pointerType === 'pen') { setPressureOk(); return v; }
+  pressure.vals.add(Math.round(v * 100));
+  if (!pressure.ok && pressure.vals.size >= 4) setPressureOk();
+  return pressure.ok ? v : null;
+}
+function setPressureOk() {
+  if (pressure.ok) return;
+  pressure.ok = true;
+  document.getElementById('pressure').textContent = 'Pressure: on. Press harder for wider, darker ink; earth wants a firm hand, air and water a light one.';
+}
+const pf = p => (p == null ? 1 : 0.45 + 1.1 * p);
+pad.addEventListener('touchstart', e => readForce(e), { passive: true });
+pad.addEventListener('touchmove', e => readForce(e), { passive: true });
+function readForce(e) {
+  const t = e.touches && e.touches[0], f = t && t.force;
+  if (!(f > 0)) return;
+  pressure.forceVals.add(Math.round(f * 100));
+  if (pressure.forceVals.size >= 4) { pressure.force = f; setPressureOk(); }
+}
+function clearPad() {
+  strokes = []; result = null; example = false; pen = null; dance = null; stampT = 0;
+  if (ictx) ictx.clearRect(0, 0, S, S);
+  dirty = true;
+}
+pad.addEventListener('pointerdown', e => {
+  e.preventDefault();
+  const u = toPad(e);
+  if (Math.hypot(u.x, u.y) > 1.06 || pen) return;
+  clearTimeout(evalT);
+  if (result || example) clearPad();
+  try { pad.setPointerCapture(e.pointerId); } catch (_) {}
+  const t = evTime(e), p = readPressure(e);
+  const pt = { x: u.x, y: u.y, t, w: INK.MIN * 2 * pf(p), p, seed: (Math.random() * 997) | 0 };
+  const s = { pts: [pt], pools: [], len: 0, livePools: [] };
+  strokes.push(s);
+  pen = { id: e.pointerId, s, t0: t, lastMove: performance.now(), stillSince: performance.now(), v: 0, w: pt.w, dwell: 0, poolW: pt.w };
+  blot(ictx, M, pt, pt.w, SUMI);
+  dirty = true; loop();
+});
+pad.addEventListener('pointermove', e => {
+  if (!pen || e.pointerId !== pen.id) return;
+  const list = e.getCoalescedEvents ? e.getCoalescedEvents() : [];
+  for (const ev of list.length ? list : [e]) addPoint(toPad(ev), evTime(ev), readPressure(ev));
+});
+function addPoint(u, t, p) {
+  const s = pen.s, last = s.pts[s.pts.length - 1], d = Math.hypot(u.x - last.x, u.y - last.y);
+  if (d < 0.004) return;
+  // moving again after holding still: if it was held long enough, the ink pooled there
+  if (pen.dwell >= INK.POOLT) { s.pools.push({ s: s.len, dwell: pen.dwell, w: pen.poolW }); s.livePools.push({ p: { ...last }, w: pen.poolW }); }
+  pen.dwell = 0;
+  const dt = Math.max(1, t - last.t) / 1000;
+  pen.v = pen.v * 0.55 + (d / dt) * 0.45;
+  const load = Math.min(1, (t - pen.t0) / 800);
+  const target = INK.MIN + (INK.MAX - INK.MIN) * (0.25 + 0.75 * load) * clamp(1 - pen.v / INK.VTHIN, 0.06, 1) * pf(p);
+  pen.w += (target - pen.w) * Math.min(1, dt * 16);
+  const n = Math.min(10, Math.ceil(d / 0.012));
+  for (let i = 1; i <= n; i++) {
+    const k = i / n, prev = s.pts[s.pts.length - 1];
+    const pt = { x: last.x + (u.x - last.x) * k, y: last.y + (u.y - last.y) * k, t: last.t + (t - last.t) * k, w: last.w + (pen.w - last.w) * k, p, dry: pen.v > INK.VDRY && s.len > 0.08, seed: (Math.random() * 997) | 0 };
+    s.pts.push(pt);
+    seg(ictx, M, prev, pt, SUMI);
+  }
+  s.len += d;
+  pen.lastMove = performance.now(); pen.poolW = pen.w;
+  dirty = true;
+}
+function lift(e) {
+  if (!pen || e.pointerId !== pen.id) return;
+  const s = pen.s, last = s.pts[s.pts.length - 1];
+  if (pen.dwell >= INK.POOLT) { s.pools.push({ s: s.len, dwell: pen.dwell, w: pen.poolW }); s.livePools.push({ p: { ...last }, w: pen.poolW }); }
+  pen = null;
+  clearTimeout(evalT);
+  evalT = setTimeout(judge, 650);
+  dirty = true;
+}
+pad.addEventListener('pointerup', lift);
+pad.addEventListener('pointercancel', lift);
+pad.addEventListener('contextmenu', e => e.preventDefault());
+// every frame while the brush is down: held still, the ink pools wider under it
+let lastFrame = 0, looping = false;
+function loop() {
+  if (looping) return;
+  looping = true;
+  lastFrame = performance.now();
+  requestAnimationFrame(step);
+}
+function step(now) {
+  const dt = Math.min(0.05, (now - lastFrame) / 1000); lastFrame = now;
+  if (pen && now - pen.lastMove > 60) {
+    pen.dwell += dt;
+    const s = pen.s, last = s.pts[s.pts.length - 1], want = INK.POOL * pf(last.p);
+    pen.poolW += (want - pen.poolW) * Math.min(1, dt * 1.9);
+    blot(ictx, M, last, pen.poolW, SUMI);
+    dirty = true;
+  }
+  if (dance && (now - dance.t0) / 1000 > DANCE) { dance = null; stampT = now; }
+  const stamping = stampT && now - stampT < 300;
+  if (dance || stamping) dirty = true;
+  if (dirty) { render(); dirty = false; }
+  if (pen || dance || stamping) requestAnimationFrame(step); else looping = false;
+}
+// the ink lifts off the page and dances the spell; when it settles, the seal is stamped
+function startDance() {
+  if (!result || !result.best || result.verdict === 'fizzle') return;
+  stampT = 0;
+  if (still) { render(); return; }
+  dance = { g: result.best.g, t0: performance.now(), P: result.power, lifted: strokes.flatMap(s => resample(s.pts, 30)) };
+  dirty = true; loop();
+}
+function render() {
+  const c = pctx, now = performance.now();
+  c.setTransform(DPR, 0, 0, DPR, 0, 0);
+  c.clearRect(0, 0, S, S);
+  paper(c, M);
+  if (guide && !result) ghost(c, M, guide, '#5a4630', 0.5);
+  c.drawImage(inkCv, 0, 0, S, S);
+  if (dance) { drawDance(c, M, dance.g, (now - dance.t0) / 1000, dance.P, dance.lifted); return; }
+  if (result && result.best && result.verdict !== 'fizzle') {
+    ghost(c, M, result.best.g, STYLES[result.best.g.el].color, 0.65);
+    // the seal, stamped in the corner of the finished glyph
+    const sz = Math.max(30, S * 0.11), k = stampT ? clamp((now - stampT) / 260, 0, 1) : 1, grow = 1 + 0.5 * (1 - ease(k));
+    c.save(); c.translate(S - sz / 2 - 4, S - sz / 2 - 4); c.scale(grow, grow); c.globalAlpha = Math.min(1, 0.3 + k);
+    c.fillStyle = '#c63f2e'; c.beginPath(); c.roundRect ? c.roundRect(-sz / 2, -sz / 2, sz, sz, sz * 0.16) : c.rect(-sz / 2, -sz / 2, sz, sz); c.fill();
+    const img = sealImg[result.best.g.el];
+    if (img && img.complete) c.drawImage(img, -sz * 0.38, -sz * 0.38, sz * 0.76, sz * 0.76);
+    c.restore();
+  }
+}
+const sealImg = {};
+for (const el of ORDER) { const im = new Image(); im.onload = () => { dirty = true; if (!looping) render(); }; im.src = 'data:image/svg+xml;utf8,' + encodeURIComponent(glyphSvg(el, 64, '#fbeee0').replace('<svg ', '<svg xmlns="http://www.w3.org/2000/svg" ')); sealImg[el] = im; }
+
+// ── the verdict ──
+const resEl = document.getElementById('result');
+function judge() {
+  result = recognize(strokes);
+  showResult();
+  startDance();
+  render();
+}
+function meter(label, v) { const pct = Math.round(v * 100); return `<span>${label}</span><span class="m"><i style="width:${pct}%"></i></span><span class="v">${pct}%</span>`; }
+function showResult() {
+  const R = result;
+  if (!R) { resEl.innerHTML = `<div class="seal fizzle">${glyphSvg('spirit', 34, '#8b8398')}</div><div><div class="rname">Write on the pad</div><p class="hint">Try a small circle round the centre, pooling the ink where you start. Or pick a guide above and trace it.</p></div>`; return; }
+  const b = R.best;
+  if (!b || R.verdict === 'fizzle') {
+    const near = b && b.q > 0.15 ? `<p class="hint">Closest was ${gname(b.g)} (${STYLES[b.g.el].word}). ${tip(b)}</p>` : '<p class="hint">That shape doesn’t match any glyph. Pick a guide above to see one.</p>';
+    resEl.innerHTML = `<div class="seal fizzle">${glyphSvg(b ? b.g.el : 'spirit', 34, '#8b8398')}</div><div><div class="rtop"><span class="rname">The ink doesn’t take</span></div><div class="verdict"><span class="pill fizzle">Fizzle</span></div>${near}</div>`;
+    return;
+  }
+  const st = STYLES[b.g.el], pct = Math.round(R.power * 100);
+  const rows = [meter('Shape', b.parts.shape), meter('Size', b.parts.size), meter('Place', b.parts.place), meter('Pooling', b.parts.pooling), meter('Ink', b.parts.ink)];
+  if (b.parts.pressure != null) rows.push(meter('Pressure', b.parts.pressure));
+  resEl.innerHTML = `<div class="seal">${glyphSvg(b.g.el, 36, '#fbeee0')}</div>
+    <div><div class="rtop"><span class="rname">${gname(b.g)}</span>${example ? '<span class="tag">Example</span>' : ''}</div>
+    <div class="rstyle">${st.word} · ${sname(b.g.el)}</div>
+    <div class="verdict"><span class="pill ${R.verdict}">${R.verdict === 'clean' ? 'Clean' : 'Rough'}</span><span class="power">${pct}% power</span></div>
+    <p class="rdance">${b.g.dance}</p>${still ? '' : '<button type="button" class="again" data-again>Watch it dance again</button>'}
+    <div class="meters">${rows.join('')}</div>
+    ${R.verdict === 'rough' ? `<p class="hint">${tip(b)}</p>` : example ? '<p class="hint">This one was written for you. Draw on the pad to try your own.</p>' : ''}</div>`;
+}
+resEl.addEventListener('click', e => { if (e.target.closest('[data-again]')) startDance(); });
+// the one thing most worth fixing
+function tip(b) {
+  const p = b.parts;
+  if (b.missing > 0) return b.g.pools.flat().length > 1 ? 'Pool the ink at both ends: hold the brush still for a moment.' : `Pool the ink at the ${b.g.pools.flat()[0] === 0 ? 'start' : 'end'}: hold the brush still for a moment.`;
+  const worst = Object.entries({ shape: p.shape, size: p.size, place: p.place, ink: p.ink, pooling: p.pooling }).sort((x, y) => x[1] - y[1])[0][0];
+  return { shape: 'Keep closer to the shape; the guide shows it.', size: 'Mind the size: compare it with the rings on the pad.', place: 'Mind where it sits on the pad: use the rings and spokes.', ink: b.g.ink === 'heavy' ? 'Slow down and press: this one wants heavy ink.' : 'Lighter and quicker: this one wants thin ink.', pooling: 'Only pool the ink where the glyph asks for it.' }[worst];
+}
+
+// ── the controls ──
+const guideSel = document.getElementById('guide');
+function fillGuide() {
+  const v = guideSel.value;
+  guideSel.innerHTML = '<option value="">No guide</option>' + ORDER.map(el => `<optgroup label="${STYLES[el].word} · ${sname(el)}">${GLYPHS.filter(g => g.el === el).map(g => `<option value="${g.id}">${gname(g)}</option>`).join('')}</optgroup>`).join('');
+  guideSel.value = v;
+}
+guideSel.addEventListener('change', () => { guide = GLYPHS.find(g => g.id === guideSel.value) || null; if (result || example) clearPad(); showResult(); render(); });
+document.getElementById('clear').addEventListener('click', () => { clearTimeout(evalT); clearPad(); showResult(); render(); });
+function setNames(i) {
+  namesI = i;
+  try { localStorage.setItem('scribe-names', String(i)); } catch (_) {}
+  document.getElementById('nmA').setAttribute('aria-pressed', String(i === 0));
+  document.getElementById('nmF').setAttribute('aria-pressed', String(i === 1));
+  fillGuide(); buildStyles(); showResult();
+}
+document.getElementById('nmA').addEventListener('click', () => setNames(0));
+document.getElementById('nmF').addEventListener('click', () => setNames(1));
+
+// ── the five styles, each glyph writing itself in a little pad ──
+const demos = [];
+function buildStyles() {
+  const host = document.getElementById('styleList');
+  host.innerHTML = ORDER.map(el => {
+    const st = STYLES[el];
+    return `<section class="style" style="--el:${st.color}">
+      <div class="head"><div class="mark">${glyphSvg(el, 30, st.color)}</div><div><h3>${st.word}: ${sname(el)}</h3><div class="who">${namesI ? `the ${st.animal.toLowerCase()} in Shaolin's five animals` : `fights like ${st.fighter}`}</div></div></div>
+      <p class="blurb">${st.blurb}</p><p class="inkline">${st.ink}</p>
+      <div class="cards">${GLYPHS.filter(g => g.el === el).map(g => `<article class="card"><canvas data-g="${g.id}" aria-label="${gname(g)}, written out"></canvas><h4>${gname(g)}</h4><p class="how">${g.how}</p><p class="dance">${g.dance}</p><button type="button" data-practice="${g.id}">Practise on the pad</button></article>`).join('')}</div>
+    </section>`;
+  }).join('');
+  demos.length = 0;
+  host.querySelectorAll('canvas[data-g]').forEach(cv => {
+    const g = GLYPHS.find(x => x.id === cv.dataset.g), w = writeOut(g, { wobble: 0.006 });
+    demos.push({ cv, g, w, dur: w.reduce((a, s) => a + s.dur, 0) + 0.2 * (w.length - 1), lift: w.flatMap(s => resample(s.pts, 24)), visible: false });
+  });
+  host.querySelectorAll('[data-practice]').forEach(b => b.addEventListener('click', () => {
+    guideSel.value = b.dataset.practice; guide = GLYPHS.find(g => g.id === b.dataset.practice);
+    clearTimeout(evalT); clearPad(); showResult(); render();
+    pad.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'center' });
+  }));
+  if ('IntersectionObserver' in window) {
+    const io = new IntersectionObserver(es => es.forEach(en => { const d = demos.find(x => x.cv === en.target); if (d) d.visible = en.isIntersecting; }));
+    demos.forEach(d => io.observe(d.cv));
+  } else demos.forEach(d => { d.visible = true; });
+  demos.forEach(d => drawDemo(d, Infinity));
+}
+function drawDemo(d, T) {
+  const cv = d.cv, w = Math.round(cv.getBoundingClientRect().width) || 200, dpr = Math.min(2, window.devicePixelRatio || 1);
+  if (cv.width !== Math.round(w * dpr)) { cv.width = Math.round(w * dpr); cv.height = Math.round(w * dpr); }
+  const c = cv.getContext('2d'); c.setTransform(dpr, 0, 0, dpr, 0, 0); c.clearRect(0, 0, w, w);
+  const Md = { cx: w / 2, cy: w / 2, r: w / 2 - 3 };
+  paper(c, Md, true);
+  let t = T;
+  for (const s of d.w) { inkStroke(c, Md, s, t); t -= s.dur + 0.2; if (t < 0) break; }
+  const td = T - d.dur - 0.5;
+  if (td > 0 && td < DANCE) drawDance(c, Md, d.g, td, 1, d.lift);
+}
+let t0 = performance.now();
+function animate(now) {
+  if (!still) {
+    for (const d of demos) {
+      if (!d.visible) continue;
+      const show = d.dur + 0.5 + DANCE, T = ((now - t0) / 1000) % (show + 0.9);
+      drawDemo(d, T > show + 0.4 ? -1 : T);
+    }
+  }
+  requestAnimationFrame(animate);
+}
+
+// ── start: an example already written on the pad, so the page shows what it does ──
+function start() {
+  fillGuide(); buildStyles();
+  document.getElementById('nmA').setAttribute('aria-pressed', String(namesI === 0));
+  document.getElementById('nmF').setAttribute('aria-pressed', String(namesI === 1));
+  fit();
+  const g = GLYPHS.find(x => x.id === 'opensky');
+  strokes = writeOut(g, { seed: 2 }).map(s => ({ ...s, livePools: [] }));
+  ictx.clearRect(0, 0, S, S);
+  for (const s of strokes) inkStroke(ictx, M, s, Infinity);
+  result = recognize(strokes); example = true;
+  showResult(); render();
+  setTimeout(() => { if (example) startDance(); }, 700);
+  requestAnimationFrame(animate);
+}
+window.addEventListener('resize', () => { const had = S; fit(); if (S !== had) render(); demos.forEach(d => drawDemo(d, Infinity)); });
+window.SCRIBE = { GLYPHS, recognize, writeOut, INK, CLEAN, ROUGH, prepDrawn, fitStroke, DANCES, DANCE, drawDance, paper, inkStroke, resample };
+start();
+})();
+</script>
+
+</body>
+</html>
