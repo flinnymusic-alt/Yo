@@ -417,6 +417,56 @@ const SFX = {
   tap() { tone(660, 0.05, 'triangle', 0.05); },
 };
 
+// ── tilt: lean the phone to walk. However you hold it when tilt starts counts as standing still ──
+// Gravity is read in the screen's own frame (x to the right, y down the screen, z out of it), so it
+// works in either orientation and doesn't jump when the phone passes upright.
+const TILT = { on: false, asked: false, denied: false, raw: null, s: null, roll0: 0, pitch0: 0, relevel: true, paused: true,
+               x: 0, y: 0, lx: 0, ly: 0, flash: 0, DZ: 4, FULL: 18 };
+function screenAngle() {
+  const o = screen.orientation, a = o && typeof o.angle === 'number' ? o.angle : typeof window.orientation === 'number' ? window.orientation : 0;
+  return ((a % 360) + 360) % 360 * Math.PI / 180;
+}
+function tiltGravity(beta, gamma) {
+  const b = beta * Math.PI / 180, g = gamma * Math.PI / 180, a = screenAngle();
+  const dx = Math.sin(g) * Math.cos(b), dy = Math.sin(b), dz = -Math.cos(g) * Math.cos(b); // device right, device down, out of the screen
+  return { x: dx * Math.cos(a) + dy * Math.sin(a), y: -dx * Math.sin(a) + dy * Math.cos(a), z: dz };
+}
+function onTilt(e) {
+  if (e.beta == null || e.gamma == null) return;
+  TILT.raw = tiltGravity(e.beta, e.gamma);
+  if (!TILT.on) { TILT.on = true; TILT.relevel = true; TILT.s = { ...TILT.raw }; }
+}
+function tiltListen() { window.addEventListener('deviceorientation', onTilt); }
+// iPhones ask first, and only from a tap; elsewhere the readings just arrive
+function tiltAsk() {
+  const D = window.DeviceOrientationEvent;
+  if (TILT.asked || !D || typeof D.requestPermission !== 'function') return;
+  TILT.asked = true;
+  try { D.requestPermission().then(r => { if (r === 'granted') tiltListen(); else TILT.denied = true; }, () => { TILT.asked = false; }); } catch (_) { TILT.asked = false; }
+}
+if (window.DeviceOrientationEvent && typeof DeviceOrientationEvent.requestPermission !== 'function') tiltListen();
+document.addEventListener('touchend', () => { if (state === 'play') tiltAsk(); });
+const relevel = () => { TILT.relevel = true; };
+window.addEventListener('orientationchange', relevel);
+if (screen.orientation && screen.orientation.addEventListener) screen.orientation.addEventListener('change', relevel);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) relevel(); });
+// each frame: smooth the reading, then turn the lean (in degrees, from the still pose) into a walk
+function tiltTick(dt) {
+  TILT.flash = Math.max(0, TILT.flash - dt);
+  if (!TILT.on || !TILT.raw) { TILT.x = TILT.y = 0; return; }
+  const k = 1 - Math.exp(-dt / 0.07), S = TILT.s, R = TILT.raw;
+  S.x += (R.x - S.x) * k; S.y += (R.y - S.y) * k; S.z += (R.z - S.z) * k;
+  const roll = G => Math.asin(clamp(G.x / (Math.hypot(G.x, G.y, G.z) || 1), -1, 1)), pitch = G => Math.atan2(G.y, -G.z);
+  if (TILT.relevel) { TILT.relevel = false; TILT.s = { ...R }; TILT.roll0 = roll(R); TILT.pitch0 = pitch(R); TILT.flash = 0.7; }
+  let dp = pitch(TILT.s) - TILT.pitch0; if (dp > Math.PI) dp -= TAU; if (dp < -Math.PI) dp += TAU;
+  // (a phone held at an angle feels a sideways lean less, so that side is scaled back up to match)
+  const side = 1 / Math.max(0.5, Math.cos(TILT.pitch0));
+  const tx = (roll(TILT.s) - TILT.roll0) * side * 180 / Math.PI, ty = dp * 180 / Math.PI, m = Math.hypot(tx, ty);
+  const go = clamp((m - TILT.DZ) / (TILT.FULL - TILT.DZ), 0, 1);
+  TILT.x = m > 0 ? tx / m * go : 0; TILT.y = m > 0 ? ty / m * go : 0;
+  const show = Math.min(1, m / TILT.FULL); TILT.lx = m > 0 ? tx / m * show : 0; TILT.ly = m > 0 ? ty / m * show : 0;
+}
+
 // ── saved progress: your way, the fighters you've beaten, and a few numbers ──
 const SAVE_KEY = 'inkdojo-1';
 let save = null;
@@ -1409,14 +1459,17 @@ let stick = null; // { id, x0, y0, x, y }
 function update(dt) {
   T += dt;
   stepFx(dt);
+  const paused = state !== 'play' || !!overlay; if (TILT.paused && !paused) TILT.relevel = true; TILT.paused = paused;
+  tiltTick(dt);
   if (banner && (banner.life -= dt) <= 0) banner = null;
   if (overlay) { overlay.t += dt; return; }
   if (state !== 'play') return;
   const sdt = slowmo > 0 ? dt * 0.35 : dt; slowmo = Math.max(0, slowmo - dt); calm = Math.max(0, calm - dt);
   padTick(dt);
-  // you: walk with the stick (drag on the floor) or the keys
+  // you: walk by tilting the phone, or with the stick (drag on the floor), or the keys
   let mx = 0, my = 0;
   if (stick) { const dx = stick.x - stick.x0, dy = stick.y - stick.y0, d = Math.hypot(dx, dy); if (d > 6) { const k = Math.min(1, d / 50); mx = dx / d * k; my = dy / d * k; } }
+  else if (TILT.on) { mx = TILT.x; my = TILT.y; }
   if (keys.ArrowLeft || keys.KeyA) mx -= 1; if (keys.ArrowRight || keys.KeyD) mx += 1; if (keys.ArrowUp || keys.KeyW) my -= 1; if (keys.ArrowDown || keys.KeyS) my += 1;
   const mn = Math.hypot(mx, my); if (mn > 1) { mx /= mn; my /= mn; }
   const canWalk = player.hp > 0 && player.st.stun <= 0 && !(FIGHT && (FIGHT.intro > 0 || FIGHT.over)) && !(player.act && player.act.phase === 'wind');
@@ -1501,6 +1554,7 @@ function render() {
   drawHud();
   drawPanel();
   drawPad();
+  drawTiltBubble();
   if (stick) { ctx.strokeStyle = 'rgba(236,230,244,0.35)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(stick.x0, stick.y0, 50, 0, TAU); ctx.stroke(); ctx.fillStyle = 'rgba(236,230,244,0.35)'; const dx = stick.x - stick.x0, dy = stick.y - stick.y0, d = Math.min(50, Math.hypot(dx, dy)), a = Math.atan2(dy, dx); ctx.beginPath(); ctx.arc(stick.x0 + Math.cos(a) * d, stick.y0 + Math.sin(a) * d, 18, 0, TAU); ctx.fill(); }
   drawBanner();
   drawOverlay();
@@ -1578,7 +1632,19 @@ function drawPanel() {
       ctx.font = `12px ${BODY}`; ctx.fillStyle = sh.ok ? C.fg : C.rough;
       ctx.fillText(`${R.verdict === 'clean' ? 'Clean' : 'Rough'} · ${Math.round(R.power * 100)}%${sh.msg ? ' · ' + sh.msg : ''}`, mid, y + 14, maxW);
     } else lines(sh.msg, `bold 13px ${BODY}`, C.fizzle);
-  } else lines(PAD.guide ? `Trace: ${PAD.guide.name}` : FIGHT && FIGHT.on ? 'Write a move' : 'Walk: drag the floor · Write moves on the paper', `italic 13px ${BODY}`, 'rgba(214,208,228,0.6)');
+  } else lines(PAD.guide ? `Trace: ${PAD.guide.name}` : FIGHT && FIGHT.on ? 'Write a move' : TILT.on ? 'Tilt to walk · Write moves on the paper' : 'Walk: drag the floor · Write moves on the paper', `italic 13px ${BODY}`, 'rgba(214,208,228,0.6)');
+}
+function tiltBubble() { const M = L.pad, r = 17, cx = M.cx - M.r + 22, cy = M.cy + M.r - 22; return { x: cx - r, y: cy - r, w: r * 2, h: r * 2, cx, cy, r }; }
+function drawTiltBubble() {
+  if (!TILT.on) return;
+  const b = tiltBubble(), lit = TILT.flash > 0, moving = Math.hypot(TILT.x, TILT.y) > 0.01, room = b.r - 5;
+  ctx.save();
+  ctx.beginPath(); ctx.arc(b.cx, b.cy, b.r, 0, TAU); ctx.fillStyle = 'rgba(30,22,44,0.92)'; ctx.fill();
+  ctx.strokeStyle = lit ? C.gold : C.muted; ctx.lineWidth = lit ? 2 : 1.5; ctx.stroke();
+  ctx.beginPath(); ctx.arc(b.cx, b.cy, room * TILT.DZ / TILT.FULL, 0, TAU); ctx.strokeStyle = 'rgba(169,159,188,0.5)'; ctx.lineWidth = 1; ctx.stroke();
+  ctx.beginPath(); ctx.arc(b.cx + TILT.lx * room, b.cy + TILT.ly * room, 4.5, 0, TAU); ctx.fillStyle = moving ? C.gold : C.fg; ctx.fill();
+  ctx.textAlign = 'center'; ctx.font = `10px ${BODY}`; ctx.fillStyle = lit ? C.gold : C.muted; ctx.fillText(lit ? 'level!' : 'level', b.cx, b.cy + b.r + 11);
+  ctx.restore();
 }
 function pill(b, text, col) { roundRect(b.x, b.y, b.w, b.h, b.h / 2); ctx.fillStyle = 'rgba(30,22,44,0.92)'; ctx.fill(); ctx.strokeStyle = col; ctx.lineWidth = 1.5; ctx.stroke(); ctx.textAlign = 'center'; ctx.fillStyle = col; ctx.font = `bold 13px ${BODY}`; ctx.fillText(text, b.x + b.w / 2, b.y + b.h / 2 + 5); }
 const hit = (b, x, y) => b && x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h;
@@ -1751,6 +1817,7 @@ cv.addEventListener('pointerdown', e => {
   const B = panelButtons();
   if (hit(B.moves, x, y)) { overlay = { kind: 'scroll', t: 0 }; SFX.tap(); return; }
   if (hit(B.sound, x, y)) { setSound(!soundOn); SFX.tap(); return; }
+  if (TILT.on) { const b = tiltBubble(); if (Math.hypot(x - b.cx, y - b.cy) < b.r + 8) { TILT.relevel = true; SFX.tap(); return; } }
   if (inPad(x, y)) { if (!PAD.pen) { PAD.penId = e.pointerId; penDown(x, y, e); try { cv.setPointerCapture(e.pointerId); } catch (_) {} } return; }
   const inArena = x >= L.arena.x && x <= L.arena.x + L.arena.w && y >= L.arena.y && y <= L.arena.y + L.arena.h;
   if (inArena && !stick) { stick = { id: e.pointerId, x0: x, y0: y, x, y }; try { cv.setPointerCapture(e.pointerId); } catch (_) {} }
@@ -1798,6 +1865,7 @@ window.INKDOJO = {
   tapOverlay() { const b = buttons[buttons.length - 1]; if (b) b.go(); }, close() { overlay = null; },
   teleport(x, y) { player.x = x; player.y = y; updateCam(0, true); },
   koFoe() { if (FIGHT && FIGHT.on) knockedOut(FIGHT.foe, player); }, koMe() { if (FIGHT && FIGHT.on) knockedOut(player, FIGHT.foe); },
+  get tilt() { return TILT; }, tiltBubble,
   INK, ROLE, ROSTER, MOVES, learnedCount, myMoves, padJudge, startFight, setSound, spawnMaster, setupWorld, get shots() { return SHOTS; }, get waves() { return WAVES; },
 };
 })();
