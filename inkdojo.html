@@ -1,0 +1,1806 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>Ink Dojo</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Yuji+Syuku&family=Zen+Kaku+Gothic+New:wght@400;700&display=swap">
+<style>
+/* One look: a night dojo lit by lanterns. The whole page is the game's canvas. */
+:root { --night: #120f19; --paper: #efe6d0; color-scheme: dark; }
+html, body { margin: 0; height: 100%; background: var(--night); color: var(--paper); overflow: hidden; overscroll-behavior: none; }
+#game { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+#safe { position: fixed; visibility: hidden; pointer-events: none; padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px); }
+</style>
+</head>
+<body>
+<canvas id="game" aria-label="Ink Dojo: a dojo of fighters, and a pad of paper to write your moves on"></canvas>
+<div id="safe"></div>
+<script>
+// ── Ink Dojo: the four ways, their twenty moves each, and the reader that judges a written glyph ──
+const INK = (() => {
+'use strict';
+const TAU = Math.PI * 2;
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+
+// shapes, in pad units: the pad is a circle of radius 1, x to the right, y down (0° points right, 90° down, 270° up)
+const arc = (cx, cy, r, a0, a1, n = 64) => Array.from({ length: n + 1 }, (_, i) => { const a = (a0 + (a1 - a0) * i / n) * Math.PI / 180; return { x: cx + Math.cos(a) * r, y: cy + Math.sin(a) * r }; });
+const spiral = (cx, cy, r0, r1, a0, turns, n = 140) => Array.from({ length: n + 1 }, (_, i) => { const k = i / n, a = (a0 + 360 * turns * k) * Math.PI / 180, r = r0 + (r1 - r0) * k; return { x: cx + Math.cos(a) * r, y: cy + Math.sin(a) * r }; });
+const poly = (...v) => { const o = []; for (let i = 0; i < v.length; i += 2) o.push({ x: v[i], y: v[i + 1] }); return o; };
+const quad = (x0, y0, x1, y1, x2, y2, n = 40) => Array.from({ length: n + 1 }, (_, i) => { const t = i / n, u = 1 - t; return { x: u * u * x0 + 2 * u * t * x1 + t * t * x2, y: u * u * y0 + 2 * u * t * y1 + t * t * y2 }; });
+const hwave = (x0, x1, yc, amp, cycles, n = 90) => Array.from({ length: n + 1 }, (_, i) => { const u = i / n; return { x: x0 + (x1 - x0) * u, y: yc - amp * Math.sin(TAU * cycles * u) }; });
+const vwave = (y0, y1, xc, amp, cycles, n = 90) => Array.from({ length: n + 1 }, (_, i) => { const u = i / n; return { x: xc + amp * Math.sin(TAU * cycles * u), y: y0 + (y1 - y0) * u }; });
+const curve = (f, n = 120) => Array.from({ length: n + 1 }, (_, i) => f(i / n));
+const join = (...parts) => parts.flatMap((p, i) => (i ? p.slice(1) : p));
+const star = (cx, cy, r) => Array.from({ length: 6 }, (_, i) => { const a = (-90 + i * 144) * Math.PI / 180; return { x: cx + Math.cos(a) * r, y: cy + Math.sin(a) * r }; });
+
+// the four ways
+const WAYS = {
+  water: { name: 'Water', animal: 'Snake', style: 'Tai Chi', color: '#4ab4ff', beats: 'fire',
+    blurb: 'Yield and flow. No corners, nothing sudden: curves, waves and spirals in light, unbroken ink. Water heals best and slows whatever it touches.',
+    ink: 'Light, unbroken ink.' },
+  fire: { name: 'Fire', animal: 'Leopard', style: 'Muay Thai', color: '#ff6a3a', beats: 'air',
+    blurb: 'Press, then strike. Sharp angles and zigzags: pool the ink, then sweep so fast the brush splits. Fire hits hardest and leaves foes burning.',
+    ink: 'A pooled start, then quick and thin.' },
+  earth: { name: 'Earth', animal: 'Tiger', style: 'Hung Gar', color: '#c9a35c', beats: 'water',
+    blurb: 'Root and press. Straight lines and square corners, slow and heavy, ends pressed into pools. Earth takes the most punishment and its guard barely moves.',
+    ink: 'Heavy, slow, pressed ink.' },
+  air: { name: 'Air', animal: 'Crane', style: 'Capoeira', color: '#f1dc6a', beats: 'earth',
+    blurb: 'Sway and sweep. Big light arcs and swirls, quick hands. Air is the fastest on its feet, the hardest to pin down, and knocks foes flying.',
+    ink: 'Light, fast ink.' },
+};
+const WAY_ORDER = ['water', 'fire', 'earth', 'air'];
+
+// the twenty moves every way has, in the order they're learned (the first eight from the start)
+const ROLES = ['strike', 'heavy', 'projectile', 'guard', 'dash', 'evade', 'heal', 'sweep',
+               'flurry', 'launcher', 'volley', 'counter', 'push', 'pull', 'wave', 'zone', 'throw', 'empower', 'focus', 'ultimate'];
+
+// each move: its role, name, how to write it, its strokes, which strokes are closed loops, where the ink must pool
+// (0 the start, 1 the end), and the ink it wants (light, steady, heavy or any)
+const M = (role, name, how, strokes, o = {}) => ({ role, name, how, strokes: Array.isArray(strokes[0]) ? strokes : [strokes], closed: o.closed || null, pools: o.pools || null, ink: o.ink || 'any', loose: !!o.loose });
+const MOVES = {
+  water: [
+    M('strike', 'Snake Strikes', 'A small S, upward from the centre.', vwave(0.05, -0.62, 0, 0.14, 1), { ink: 'light' }),
+    M('heavy', 'Crashing Wave', 'A great arch over the pad. Pool the ink where it lands.', arc(0, 0.35, 0.68, 180, 360), { pools: [[1]], ink: 'steady' }),
+    M('projectile', 'Water Bullet', 'A small loop at the top, then a tail straight down.', join(arc(0, -0.42, 0.2, 90, 450), poly(0, -0.22, 0, 0.45)), { ink: 'light' }),
+    M('guard', 'Ensō Guard', 'A big circle near the rim, left a little open. Pool the ink where you begin.', arc(0, 0, 0.78, 130, 445), { pools: [[0]], ink: 'steady', loose: true }),
+    M('dash', 'Snake Glides', 'A long S from the bottom left to the top right.', join(quad(-0.65, 0.65, -0.65, 0, 0, 0), quad(0, 0, 0.65, 0, 0.65, -0.65)), { ink: 'light' }),
+    M('evade', 'Ripple Step', 'A small cup low on the pad.', arc(0, 0.3, 0.3, 180, 0), { ink: 'light' }),
+    M('heal', 'Still Pond', 'A small closed circle round the centre. Pool the ink where you begin.', arc(0, 0, 0.3, -90, 270), { closed: [true], pools: [[0]], ink: 'steady' }),
+    M('sweep', 'Tide Sweep', 'A long low ripple from side to side.', hwave(-0.75, 0.75, 0.52, 0.13, 1.5), { ink: 'light' }),
+    M('flurry', 'Rushing Stream', 'A tall snaking line, bottom to top, two and a half bends.', vwave(0.75, -0.75, 0, 0.2, 2.5), { ink: 'light' }),
+    M('launcher', 'Geyser', 'A J: down the right side, then curl round and up.', join(poly(0.2, -0.65, 0.2, 0.22), arc(-0.12, 0.22, 0.32, 0, 180)), { ink: 'steady' }),
+    M('volley', 'Rain of Drops', 'Three small cups in a row across the top.', join(arc(-0.4, -0.45, 0.2, 180, 0), arc(0, -0.45, 0.2, 180, 0), arc(0.4, -0.45, 0.2, 180, 0)), { ink: 'light' }),
+    M('counter', 'Push Hands', 'A sideways figure of eight across the middle, without lifting the brush.', curve(u => { const t = u * TAU; return { x: 0.62 * Math.sin(t), y: 0.3 * Math.sin(2 * t) }; }), { closed: [true], ink: 'light' }),
+    M('push', 'Part the Reeds', 'A tall S through the centre, like the line in a yin-yang.', join(arc(0, -0.33, 0.33, -90, 90), arc(0, 0.33, 0.33, -90, -270)), { ink: 'light' }),
+    M('pull', 'Undertow', 'From the top right, hook round and in to the centre.', spiral(0, 0, 0.72, 0.1, -45, 0.85), { pools: [[1]], ink: 'steady' }),
+    M('wave', 'Tidal Wave', 'A big wave across the middle: two crests.', hwave(-0.8, 0.8, 0, 0.26, 2), { ink: 'light' }),
+    M('zone', 'Whirlpool', 'From the right-hand rim, spiral in two turns and pool in the centre.', spiral(0, 0, 0.85, 0.1, 0, 2), { pools: [[1]], ink: 'steady' }),
+    M('throw', 'Scoop the Moon', 'A big cup across the pad.', arc(0, -0.25, 0.66, 180, 0), { ink: 'steady' }),
+    M('empower', 'Twin Currents', 'A standing figure of eight, without lifting the brush.', curve(u => { const t = u * TAU; return { x: 0.3 * Math.sin(2 * t), y: 0.62 * Math.sin(t) }; }), { closed: [true], ink: 'light' }),
+    M('focus', 'Moon on Water', 'A small closed circle high on the pad.', arc(0, -0.55, 0.2, 90, 450), { closed: [true], ink: 'light' }),
+    M('ultimate', 'Dragon Tsunami', 'Pool in the centre, spiral out one and a half turns, then climb to the top.', join(spiral(0, 0, 0.04, 0.5, 0, 1.5), quad(-0.5, 0, -0.58, -0.62, 0.06, -0.92)), { pools: [[0]], ink: 'steady' }),
+  ],
+  fire: [
+    M('strike', 'Jab', 'A short flick up and right from the centre. Pool the ink first.', poly(-0.15, 0.2, 0.35, -0.35), { pools: [[0]], ink: 'light' }),
+    M('heavy', 'Elbow Crash', 'A V: down to a point and up again. Pool the ink first.', poly(-0.5, -0.55, 0, 0.45, 0.5, -0.55), { pools: [[0]] }),
+    M('projectile', 'Fireball', 'A small triangle high on the pad.', poly(0, -0.72, 0.22, -0.32, -0.22, -0.32, 0, -0.72), { closed: [true], ink: 'light' }),
+    M('guard', 'Flame Guard', 'A big triangle round the centre. Pool the ink where you begin.', poly(0, -0.75, 0.66, 0.45, -0.66, 0.45, 0, -0.75), { closed: [true], pools: [[0]] }),
+    M('dash', 'Leopard Pounce', 'A long line from the bottom left to the top right. Pool the ink first.', poly(-0.6, 0.62, 0.6, -0.62), { pools: [[0]], ink: 'light' }),
+    M('evade', 'Step Back', 'A short slash down and right, low on the pad.', poly(-0.3, 0.15, 0.15, 0.62), { ink: 'light' }),
+    M('heal', 'Ember Breath', 'A small triangle round the centre.', poly(0, -0.24, 0.21, 0.14, -0.21, 0.14, 0, -0.24), { closed: [true], ink: 'steady' }),
+    M('sweep', 'Roundhouse', 'A low zigzag across the pad: down, up, down, up.', poly(-0.75, 0.35, -0.38, 0.62, 0, 0.35, 0.38, 0.62, 0.75, 0.35), { ink: 'light' }),
+    M('flurry', 'Jab, Cross, Hook', 'High on the pad: pool the ink, then three quick strikes in a Z.', poly(-0.4, -0.62, 0.3, -0.62, -0.3, -0.2, 0.4, -0.2), { pools: [[0]], ink: 'light' }),
+    M('launcher', 'Rising Knee', 'Pool the ink at the bottom, then shoot straight up.', poly(0, 0.78, 0, -0.82), { pools: [[0]] }),
+    M('volley', 'Ember Spray', 'An M across the top.', poly(-0.6, -0.15, -0.3, -0.65, 0, -0.25, 0.3, -0.65, 0.6, -0.15), { ink: 'light' }),
+    M('counter', 'Teep', 'A < pointing left.', poly(0.35, -0.5, -0.3, 0, 0.35, 0.5), { ink: 'light' }),
+    M('push', 'Push Kick', 'A > pointing right.', poly(-0.35, -0.5, 0.3, 0, -0.35, 0.5), { ink: 'light' }),
+    M('pull', 'Hook Punch', 'A 7: across the top, then slash down to the left.', poly(-0.45, -0.5, 0.45, -0.5, -0.1, 0.55), { ink: 'light' }),
+    M('wave', 'Lightning Step', 'A lightning bolt from the top to the bottom.', poly(0.25, -0.75, -0.2, -0.05, 0.2, 0.05, -0.25, 0.75), { ink: 'light' }),
+    M('zone', 'Ram Muay', 'Circle once low on the pad, then break out upward in a zigzag and pool the ink at the end.', join(arc(0, 0.42, 0.28, 180, 540), poly(-0.28, 0.42, 0.1, 0.02, -0.06, -0.1, 0.55, -0.62)), { pools: [[1]] }),
+    M('throw', 'Clinch Throw', 'A peak: up to a point and down again.', poly(-0.5, 0.35, 0, -0.35, 0.5, 0.35)),
+    M('empower', 'Wai Kru', 'An X: one stroke, then the other.', [poly(-0.5, -0.5, 0.5, 0.5), poly(0.5, -0.5, -0.5, 0.5)]),
+    M('focus', 'Coiled Spring', 'A small N low on the pad.', poly(-0.2, 0.75, -0.2, 0.35, 0.2, 0.75, 0.2, 0.35), { ink: 'light' }),
+    M('ultimate', 'Inferno Star', 'A five-pointed star in one stroke.', star(0, 0.05, 0.75), { closed: [true] }),
+  ],
+  earth: [
+    M('strike', 'Tiger Claw', 'A short stroke straight up from the centre. Press and pool at the top.', poly(0, 0.02, 0, -0.6), { pools: [[1]], ink: 'heavy' }),
+    M('heavy', 'Tiger Descends the Mountain', 'Across the top, then turn and come straight down. Pool where you land.', poly(-0.6, -0.55, 0.42, -0.55, 0.42, 0.78), { pools: [[1]], ink: 'heavy' }),
+    M('projectile', 'Boulder Toss', 'Pool at the bottom, then one long stroke straight up.', poly(0, 0.75, 0, -0.8), { pools: [[0]], ink: 'heavy' }),
+    M('guard', 'Iron Wire', 'A big square round the centre. Pool where you start.', poly(-0.45, -0.45, 0.45, -0.45, 0.45, 0.45, -0.45, 0.45, -0.45, -0.45), { closed: [true], pools: [[0]], ink: 'heavy' }),
+    M('dash', 'Charging Tiger', 'A long line from the bottom left to the top right. Pool where you start.', poly(-0.6, 0.6, 0.6, -0.6), { pools: [[0]], ink: 'heavy' }),
+    M('evade', 'Tiger Steps Back', 'A short stroke straight down, low on the pad.', poly(0, 0.1, 0, 0.68), { ink: 'heavy' }),
+    M('heal', 'Rooted Breath', 'A small square round the centre.', poly(-0.2, -0.2, 0.2, -0.2, 0.2, 0.2, -0.2, 0.2, -0.2, -0.2), { closed: [true], ink: 'heavy' }),
+    M('sweep', 'Horse Stance', 'A long, low, level stroke. Pool at both ends, like two planted feet.', poly(-0.75, 0.45, 0.75, 0.45), { pools: [[0, 1]], ink: 'heavy' }),
+    M('flurry', 'Hundred Fists', 'A square zigzag up the pad: across, up, back, up, across, up.', poly(-0.35, 0.65, 0.35, 0.65, 0.35, 0.22, -0.35, 0.22, -0.35, -0.22, 0.35, -0.22, 0.35, -0.65)),
+    M('launcher', 'Rising Stone', 'Three steps climbing to the top right. Pool at the top.', poly(-0.65, 0.55, -0.22, 0.55, -0.22, 0.12, 0.22, 0.12, 0.22, -0.32, 0.65, -0.32), { pools: [[1]], ink: 'heavy' }),
+    M('volley', 'Scatter Stones', 'Two square teeth across the top.', poly(-0.6, -0.05, -0.6, -0.55, -0.2, -0.55, -0.2, -0.05, 0.2, -0.05, 0.2, -0.55, 0.6, -0.55, 0.6, -0.05)),
+    M('counter', 'Rock Rebuke', 'A small L round the centre.', poly(-0.2, -0.3, -0.2, 0.2, 0.3, 0.2), { ink: 'heavy' }),
+    M('push', 'Mountain Push', 'A square bracket opening left: across, down, back.', poly(-0.45, -0.42, 0.42, -0.42, 0.42, 0.42, -0.45, 0.42), { ink: 'heavy' }),
+    M('pull', 'Iron Chain', 'A square bracket opening right: across, down, back.', poly(0.45, -0.42, -0.42, -0.42, -0.42, 0.42, 0.45, 0.42), { ink: 'heavy' }),
+    M('wave', 'Earth Rift', 'A big L: down the left side and along the bottom. Pool where it ends.', poly(-0.55, -0.65, -0.55, 0.55, 0.65, 0.55), { pools: [[1]], ink: 'heavy' }),
+    M('zone', 'Pit Trap', 'A square cup low on the pad: down, across, up.', poly(-0.42, 0.0, -0.42, 0.62, 0.42, 0.62, 0.42, 0.0), { ink: 'heavy' }),
+    M('throw', 'Lift the Ox', 'A square arch high on the pad: up, across, down.', poly(-0.45, 0.05, -0.45, -0.55, 0.45, -0.55, 0.45, 0.05), { ink: 'heavy' }),
+    M('empower', 'Tiger Roar', 'A cross: one stroke down, one across.', [poly(0, -0.62, 0, 0.62), poly(-0.62, 0, 0.62, 0)], { ink: 'heavy' }),
+    M('focus', 'Still Mountain', 'A short level stroke high on the pad.', poly(-0.28, -0.55, 0.28, -0.55)),
+    M('ultimate', 'Mountain Falls', 'A square spiral: round the rim and in, corner by corner.', poly(-0.7, -0.7, 0.7, -0.7, 0.7, 0.7, -0.7, 0.7, -0.7, -0.32, 0.32, -0.32, 0.32, 0.32, -0.32, 0.32, -0.32, 0.02), { ink: 'heavy' }),
+  ],
+  air: [
+    M('strike', 'Crane Beak', 'A small arch high on the pad.', arc(0, -0.3, 0.28, 180, 360), { ink: 'light' }),
+    M('heavy', 'Meia-lua', 'A wide arc over the top of the pad, left to right. Pool at the start: the planted foot.', arc(0, 0.12, 0.8, 200, 340), { pools: [[0]], ink: 'light' }),
+    M('projectile', 'Wind Blade', 'A small leaf high on the pad: one arc up, one arc back.', join(arc(0, -0.2, 0.4, 225, 315, 32), arc(0, -0.76, 0.4, 45, 135, 32)), { closed: [true], ink: 'light' }),
+    M('guard', 'Open Sky', 'A big circle near the rim, left a little open. Pool the ink where you begin.', arc(0, 0, 0.78, 130, 445), { pools: [[0]], loose: true }),
+    M('dash', 'Swoop', 'One long curve from the bottom left, bending up to the top right.', quad(-0.65, 0.6, -0.5, -0.45, 0.62, -0.55), { ink: 'light' }),
+    M('evade', 'Aú', 'Two strokes from just below the centre, sweeping out and up: one wing, then the other.', [quad(-0.06, 0.25, -0.62, 0.3, -0.82, -0.42), quad(0.06, 0.25, 0.62, 0.3, 0.82, -0.42)], { ink: 'light' }),
+    M('heal', 'Crane’s Rest', 'A small spiral in to the centre.', spiral(0, 0, 0.34, 0.05, 0, 1.5), { ink: 'light' }),
+    M('sweep', 'Rasteira', 'A wide low curve under the centre. Pool at the start.', arc(0, -0.15, 0.78, 155, 25), { pools: [[0]], ink: 'light' }),
+    M('flurry', 'Martelo Rain', 'Three small arches in a row across the middle.', join(arc(-0.4, 0, 0.2, 180, 360), arc(0, 0, 0.2, 180, 360), arc(0.4, 0, 0.2, 180, 360)), { ink: 'light' }),
+    M('launcher', 'Armada Lift', 'From the bottom, sweep out to the right and curl up over the top.', quad(-0.35, 0.7, 0.95, 0.2, -0.1, -0.7), { ink: 'light' }),
+    M('volley', 'Feather Flurry', 'Two cups side by side high on the pad.', join(arc(-0.25, -0.45, 0.25, 180, 0), arc(0.25, -0.45, 0.25, 180, 0)), { ink: 'light' }),
+    M('counter', 'Esquiva', 'A small cup round the centre.', arc(0, -0.12, 0.3, 180, 0), { ink: 'light' }),
+    M('push', 'Gust', 'A long stroke left to right that curls up at the end.', join(poly(-0.72, 0.15, 0.25, 0.15), arc(0.25, -0.1, 0.25, 90, -180)), { ink: 'light' }),
+    M('pull', 'Updraft', 'From the left, spiral in one and a quarter turns.', spiral(0, 0, 0.75, 0.12, 180, 1.25), { ink: 'light' }),
+    M('wave', 'Gale', 'One big wave across the middle: a crest, then a trough.', hwave(-0.8, 0.8, 0, 0.32, 1), { ink: 'light' }),
+    M('zone', 'Whirlwind', 'Three loops in a row across the pad, without lifting the brush.', curve(u => { const t = u * 3 * TAU; return { x: -0.62 + 1.24 * u - 0.2 * Math.sin(t), y: 0.05 + 0.22 * Math.cos(t) }; }, 160), { ink: 'light' }),
+    M('throw', 'Rabo de Arraia', 'Across the top, then hook down round the right and back.', join(poly(-0.6, -0.45, 0.2, -0.45), arc(0.2, 0, 0.45, 270, 450)), { ink: 'light' }),
+    M('empower', 'Ginga', 'A small sway, one wave, low on the pad.', hwave(-0.45, 0.45, 0.52, 0.14, 1), { ink: 'light' }),
+    M('focus', 'Crane Stands', 'A small closed circle low on the pad.', arc(0, 0.58, 0.18, -90, 270), { closed: [true], ink: 'light' }),
+    M('ultimate', 'Typhoon', 'Four loops climbing from the bottom to the top, without lifting the brush.', curve(u => { const t = u * 4 * TAU; return { x: 0.28 * Math.cos(t) - 0.0, y: 0.72 - 1.44 * u - 0.2 * Math.sin(t) }; }, 200)),
+  ],
+};
+for (const w of WAY_ORDER) MOVES[w].forEach((m, i) => {
+  m.way = w; m.id = w + ':' + m.role; m.order = ROLES.indexOf(m.role);
+  if (!m.closed) m.closed = m.strokes.map(() => false);
+  if (!m.pools) m.pools = m.strokes.map(() => []);
+});
+
+// ── the reader: each stroke resampled to N points; shape compared after centring and sizing, then size, place, pooling and ink ──
+const N = 48;
+const pathLen = p => { let L = 0; for (let i = 1; i < p.length; i++) L += Math.hypot(p[i].x - p[i - 1].x, p[i].y - p[i - 1].y); return L; };
+function resample(pts, n) {
+  const p = pts.map(q => ({ x: q.x, y: q.y })), I = pathLen(p) / (n - 1);
+  if (!(I > 0)) return Array.from({ length: n }, () => ({ x: p[0].x, y: p[0].y }));
+  const out = [{ x: p[0].x, y: p[0].y }];
+  let D = 0;
+  for (let i = 1; i < p.length; i++) {
+    const d = Math.hypot(p[i].x - p[i - 1].x, p[i].y - p[i - 1].y);
+    if (d > 0 && D + d >= I) {
+      const k = (I - D) / d, q = { x: p[i - 1].x + k * (p[i].x - p[i - 1].x), y: p[i - 1].y + k * (p[i].y - p[i - 1].y) };
+      out.push(q); p.splice(i, 0, q); D = 0;
+    } else D += d;
+  }
+  while (out.length < n) out.push({ x: p[p.length - 1].x, y: p[p.length - 1].y });
+  return out.slice(0, n);
+}
+function frame(ps) {
+  let cx = 0, cy = 0;
+  for (const q of ps) { cx += q.x; cy += q.y; }
+  cx /= ps.length; cy /= ps.length;
+  let r = 0;
+  for (const q of ps) r += (q.x - cx) ** 2 + (q.y - cy) ** 2;
+  r = Math.sqrt(r / ps.length) || 1e-6;
+  return { cx, cy, r, n: ps.map(q => ({ x: (q.x - cx) / r, y: (q.y - cy) / r })) };
+}
+// sharp turns (a square has four, a circle none): the turning over three steps, counted at its peaks
+function corners(r, cyclic) {
+  const n = r.length, dir = [];
+  for (let i = 0; i < n - 1; i++) dir.push(Math.atan2(r[i + 1].y - r[i].y, r[i + 1].x - r[i].x));
+  if (cyclic) dir.push(Math.atan2(r[1].y - r[n - 1].y, r[1].x - r[n - 1].x));
+  const m = dir.length, turn = [];
+  for (let i = 0; i < m; i++) { const j = i + 1 < m ? i + 1 : cyclic ? 0 : -1; turn.push(j < 0 ? 0 : (((dir[j] - dir[i]) + 3 * Math.PI) % TAU) - Math.PI); }
+  const win = [];
+  for (let i = 0; i < m; i++) { let a = 0; for (let k = -1; k <= 1; k++) { const j = i + k; if (j >= 0 && j < m) a += turn[j]; else if (cyclic) a += turn[(j + m) % m]; } win.push(Math.abs(a)); }
+  let count = 0, last = -9;
+  for (let i = 0; i < m; i++) {
+    const prev = win[(i - 1 + m) % m], next = win[(i + 1) % m];
+    if (win[i] > 1.0 && win[i] >= prev && win[i] >= next && i - last > 3) { count++; last = i; }
+  }
+  return count;
+}
+const prepOf = (g, strokes) => strokes.map((s, i) => { const r = resample(s, N); return { f: frame(r), closed: g.closed[i], cyc: g.closed[i] || g.loose, pools: g.pools[i], corners: corners(r, g.closed[i]) }; });
+const turned = (s, a) => s.map(p => ({ x: p.x * Math.cos(a) - p.y * Math.sin(a), y: p.x * Math.sin(a) + p.y * Math.cos(a) }));
+for (const w of WAY_ORDER) for (const g of MOVES[w]) { g.prep = prepOf(g, g.strokes); g.preps = g.loose ? Array.from({ length: 12 }, (_, k) => prepOf(g, g.strokes.map(s => turned(s, k * TAU / 12)))) : [g.prep]; }
+const INKP = { MIN: 0.008, MAX: 0.06, POOL: 0.12, VTHIN: 4, VDRY: 2.6, POOLT: 0.28 };
+const median = a => { const s = [...a].sort((x, y) => x - y); return s.length ? s[s.length >> 1] : 0; };
+function prepDrawn(strokes) {
+  return strokes.map(s => {
+    const L = s.len || pathLen(s.pts) || 1e-6;
+    const pr = s.pts.map(p => p.p).filter(v => v != null);
+    const r = resample(s.pts, N), f = frame(r), shut = Math.hypot(r[0].x - r[N - 1].x, r[0].y - r[N - 1].y) < 0.6 * f.r;
+    return { f, pools: s.pools.map(p => clamp(p.s / L, 0, 1)), ink: median(s.pts.map(p => p.w)) / INKP.MAX, pr: pr.length ? pr.reduce((a, b) => a + b, 0) / pr.length : null, pts: s.pts, len: L,
+             corners: corners(r, false), cornersShut: shut ? corners(r, true) : corners(r, false) };
+  });
+}
+function fitStroke(d, t) {
+  const A = d.f.n, B = t.f.n;
+  let best = { err: Infinity, rev: false, k: 0 };
+  for (const rev of [false, true]) {
+    const P = rev ? A.slice().reverse() : A;
+    const steps = t.cyc ? N : 1;
+    for (let k = 0; k < steps; k += t.cyc ? 2 : 1) {
+      let e = 0;
+      for (let i = 0; i < N; i++) { const p = P[(i + k) % N], q = B[i]; e += Math.hypot(p.x - q.x, p.y - q.y); }
+      e /= N;
+      if (e < best.err) best = { err: e, rev, k };
+    }
+  }
+  let ch = 0;
+  for (const p of A) { let m = Infinity; for (const q of B) m = Math.min(m, (p.x - q.x) ** 2 + (p.y - q.y) ** 2); ch += Math.sqrt(m); }
+  for (const q of B) { let m = Infinity; for (const p of A) m = Math.min(m, (p.x - q.x) ** 2 + (p.y - q.y) ** 2); ch += Math.sqrt(m); }
+  ch /= 2 * N;
+  const shape = (0.5 * best.err + 0.5 * ch) * clamp(t.f.r / 0.42, 0.55, 1);
+  let need = 0, hit = 0;
+  const used = new Set();
+  for (const tp of t.pools) {
+    need++;
+    const want = t.cyc ? tp : best.rev ? 1 - tp : tp;
+    let found = -1;
+    d.pools.forEach((dp, i) => { if (Math.abs(dp - want) <= 0.13 && !used.has(i)) found = i; });
+    if (found >= 0) { hit++; used.add(found); }
+  }
+  const dc = t.cyc ? d.cornersShut : d.corners;
+  return { shape, place: Math.hypot(d.f.cx - t.f.cx, d.f.cy - t.f.cy), size: Math.abs(Math.log(d.f.r / t.f.r)), need, hit, extra: d.pools.length - used.size, corners: Math.max(0, Math.abs(dc - t.corners) - 1) };
+}
+function joined(D) {
+  const pts = [], pools = [];
+  let L = 0, gap = 0;
+  D.forEach((d, i) => {
+    if (i) gap = Math.max(gap, Math.hypot(d.pts[0].x - pts[pts.length - 1].x, d.pts[0].y - pts[pts.length - 1].y));
+    for (const p of d.pools) pools.push({ s: L + p * d.len });
+    pts.push(...d.pts); L += d.len;
+  });
+  return { one: prepDrawn([{ pts, pools, len: L }])[0], gap };
+}
+function inkMiss(level, want) {
+  if (want === 'light') return clamp((level - 0.55) / 0.4, 0, 1);
+  if (want === 'heavy') return clamp((0.55 - level) / 0.35, 0, 1);
+  if (want === 'steady') return level < 0.3 ? clamp((0.3 - level) / 0.25, 0, 1) : clamp((level - 0.95) / 0.4, 0, 1);
+  return 0;
+}
+function scoreGlyph(g, D) {
+  let pairs = null, joinCost = 0;
+  if (g.prep.length === D.length) pairs = D.length === 2 ? [[0, 1], [1, 0]] : [D.map((_, i) => i)];
+  else if (g.prep.length === 1 && D.length > 1 && D.length <= 3) {
+    const J = joined(D);
+    if (J.gap > 0.25) return null;
+    D = [J.one]; pairs = [[0]]; joinCost = 0.05 * (J.gap > 0.1 ? 2 : 1);
+  } else return null;
+  let best = null;
+  for (const prep of g.preps) for (const order of pairs) {
+    const fits = prep.map((t, i) => fitStroke(D[order[i]], t));
+    const avg = k => fits.reduce((a, f) => a + f[k], 0) / fits.length, sum = k => fits.reduce((a, f) => a + f[k], 0);
+    const r = { shape: avg('shape'), place: avg('place'), size: avg('size'), need: sum('need'), hit: sum('hit'), extra: sum('extra'), corners: sum('corners') };
+    if (!best || r.shape + r.place < best.shape + best.place) best = r;
+  }
+  const level = D.reduce((a, d) => a + d.ink, 0) / D.length, miss = inkMiss(level, g.ink);
+  const prs = D.map(d => d.pr).filter(v => v != null), pr = prs.length ? prs.reduce((a, b) => a + b, 0) / prs.length : null;
+  const missing = best.need - best.hit;
+  const q = 1 - 1.05 * best.shape - 1.2 * best.place - 0.6 * best.size - 0.12 * Math.min(3, best.corners) - 0.26 * missing - 0.06 * Math.min(3, Math.max(0, best.extra)) - 0.07 * miss - joinCost;
+  return { g, q, level, pr, missing, extra: best.extra,
+    parts: { shape: clamp(1 - best.shape / 0.5 - 0.15 * Math.min(3, best.corners), 0, 1), size: clamp(1 - best.size / 0.7, 0, 1), place: clamp(1 - best.place / 0.4, 0, 1),
+             pooling: best.need ? clamp((best.hit - 0.34 * Math.max(0, best.extra)) / best.need, 0, 1) : clamp(1 - 0.34 * Math.max(0, best.extra), 0, 1), ink: 1 - miss } };
+}
+const CLEAN = 0.8, ROUGH = 0.42;
+// read what's written against the moves you know: the closest, how well it was written, and how strong that makes it
+function recognize(strokes, moves) {
+  const D = prepDrawn(strokes.filter(s => s.pts.length > 1));
+  if (!D.length) return null;
+  const all = moves.map(g => scoreGlyph(g, D)).filter(Boolean).sort((a, b) => b.q - a.q);
+  if (!all.length) return { verdict: 'fizzle', best: null, all, power: 0 };
+  const b = all[0];
+  const verdict = b.q >= CLEAN ? 'clean' : b.q >= ROUGH ? 'rough' : 'fizzle';
+  let pbonus = 0;
+  if (b.pr != null) { const want = { light: 0.3, steady: 0.55, heavy: 0.85, any: b.pr }[b.g.ink]; pbonus = 0.08 * (1 - 2 * Math.min(0.5, Math.abs(b.pr - want))); b.parts.pressure = clamp(1 - 2 * Math.abs(b.pr - want), 0, 1); }
+  const power = verdict === 'fizzle' ? 0 : clamp(0.4 + 0.6 * (b.q - ROUGH) / (0.95 - ROUGH), 0.4, 1) + pbonus;
+  return { verdict, best: b, power: Math.max(0, power), all };
+}
+
+// ── a believable hand, for demonstrations and tests: a template, written at the speed its ink wants ──
+const SPEED = { light: 2.6, steady: 1.35, heavy: 0.7, any: 1.4 };
+function writeOut(g, o = {}) {
+  const off = o.off || { x: 0, y: 0 }, sc = o.scale || 1, wob = o.wobble ?? 0.012;
+  return g.strokes.map((tp, si) => {
+    const base = resample(tp, 110), ph = (si + 1) * 1.7 + (o.seed || 0);
+    const pts = base.map((q, i) => ({ x: q.x * sc + off.x + wob * Math.sin(i * 0.11 + ph), y: q.y * sc + off.y + wob * Math.cos(i * 0.09 + ph * 1.3) }));
+    const want = g.pools[si] || [], pools = [], L = pathLen(pts);
+    let t = 0, w = INKP.MIN * 2, s = 0, load = 0;
+    const out = [], dwells = [];
+    pts.forEach((p, i) => {
+      const prev = pts[i - 1], next = pts[i + 1];
+      let turn = 0;
+      if (prev && next) { const a1 = Math.atan2(p.y - prev.y, p.x - prev.x), a2 = Math.atan2(next.y - p.y, next.x - p.x); turn = Math.abs(((a2 - a1 + 3 * Math.PI) % TAU) - Math.PI); }
+      const v = SPEED[g.ink] * (turn > 0.6 ? 0.35 : turn > 0.3 ? 0.7 : 1) * (o.speed || 1);
+      const d = prev ? Math.hypot(p.x - prev.x, p.y - prev.y) : 0;
+      t += d / v; s += d; load = Math.min(1, load + d / v / 0.8);
+      const target = INKP.MIN + (INKP.MAX - INKP.MIN) * (0.25 + 0.75 * load) * clamp(1 - v / INKP.VTHIN, 0.06, 1);
+      w += (target - w) * 0.35;
+      const pt = { x: p.x, y: p.y, t, w, p: o.pressure ?? null, dry: v > INKP.VDRY && i > 3, seed: (i * 37 + si * 11) % 997 };
+      const k = i / (pts.length - 1);
+      for (const tq of want) if (!o.noPools && Math.abs(k - tq) < 0.5 / (pts.length - 1) + 1e-9) {
+        dwells.push({ i: out.length, t0: t, t1: t + 0.45 });
+        pools.push({ s, dwell: 0.45, w: INKP.POOL });
+        t += 0.45; w = INKP.POOL * 0.9;
+      }
+      out.push(pt);
+    });
+    return { pts: out, pools, len: L, dwells, dur: t };
+  });
+}
+
+return { TAU, clamp, WAYS, WAY_ORDER, ROLES, MOVES, INKP, CLEAN, ROUGH, recognize, writeOut, resample, pathLen, scoreGlyph, prepDrawn };
+})();
+</script>
+<script>
+// ── Ink Dojo ─────────────────────────────────────────────────────────────────
+// A dojo of four halls round a courtyard. Pick a way (Water, Fire, Earth or
+// Air) and walk the dojo; its fighters walk up and challenge you, one at a
+// time, and you fight them only with moves you write on the pad with a brush.
+// Every way has twenty moves. You start with eight; each fighter you beat
+// teaches you another, and when all twelve are beaten the Grandmaster waits on
+// the dais.
+(() => {
+'use strict';
+const { TAU, clamp, WAYS, WAY_ORDER, ROLES, MOVES, INKP, recognize, writeOut } = INK;
+const cv = document.getElementById('game'), ctx = cv.getContext('2d');
+const DISPLAY = '"Yuji Syuku", "Hiragino Mincho ProN", "Songti SC", Georgia, serif';
+const BODY = '"Zen Kaku Gothic New", "Hiragino Sans", "Segoe UI", system-ui, sans-serif';
+const C = { night: '#120f19', night2: '#1b1725', line: '#362e4a', paper: '#efe6d0', sumi: '#19141f', fg: '#ece6f4', muted: '#a99fbc', seal: '#c63f2e', gold: '#e9bb52',
+            hp: '#e2574c', rough: '#d9935a', fizzle: '#8b8398' };
+const lerp = (a, b, k) => a + (b - a) * k;
+const ease = k => (k <= 0 ? 0 : k >= 1 ? 1 : k * k * (3 - 2 * k));
+const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+const angTo = (a, b) => Math.atan2(b.y - a.y, b.x - a.x);
+const rr = (a, b) => a + Math.random() * (b - a);
+const hexA = (hex, a) => { const n = parseInt(hex.slice(1), 16); return `rgba(${n >> 16},${(n >> 8) & 255},${n & 255},${a})`; };
+
+// ── screen and layout: the dojo above, the pad of paper below (or beside it, on a wide screen) ──
+let W = 0, H = 0, DPR = 1;
+const L = { arena: { x: 0, y: 0, w: 0, h: 0 }, pad: { cx: 0, cy: 0, r: 0 }, wide: false };
+function resize() {
+  W = window.innerWidth || document.documentElement.clientWidth || 390;
+  H = window.innerHeight || document.documentElement.clientHeight || 844;
+  DPR = Math.min(2.5, window.devicePixelRatio || 1);
+  cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR);
+  cv.style.width = W + 'px'; cv.style.height = H + 'px';
+  L.wide = W > H * 1.05;
+  if (L.wide) {
+    const r = Math.min(H * 0.4, W * 0.21, 210);
+    L.pad = { cx: W - r - 28, cy: H / 2 + 26, r };
+    L.arena = { x: 0, y: 0, w: W - 2 * r - 56, h: H };
+  } else {
+    const r = Math.min(W * 0.42, H * 0.215, 210);
+    L.pad = { cx: W / 2, cy: H - r - Math.max(14, H * 0.02), r };
+    L.arena = { x: 0, y: 0, w: W, h: L.pad.cy - r - 46 };
+  }
+}
+window.addEventListener('resize', resize);
+resize();
+
+// ── sound: a few tones and noises, made on the spot (nothing to load) ──
+let AC = null, master = null, soundOn = true;
+try { soundOn = localStorage.getItem('inkdojo-sound') !== 'off'; } catch (_) {}
+function audio() {
+  if (AC) { if (AC.state === 'suspended') AC.resume(); return AC; }
+  try { AC = new (window.AudioContext || window.webkitAudioContext)(); master = AC.createGain(); master.gain.value = soundOn ? 0.5 : 0; master.connect(AC.destination); } catch (_) { AC = null; }
+  return AC;
+}
+function setSound(on) { soundOn = on; try { localStorage.setItem('inkdojo-sound', on ? 'on' : 'off'); } catch (_) {} if (master) master.gain.value = on ? 0.5 : 0; }
+function tone(f, d, type = 'sine', v = 0.15, at = 0, slide = 0) {
+  if (!AC || !soundOn) return;
+  const t = AC.currentTime + at, o = AC.createOscillator(), g = AC.createGain();
+  o.type = type; o.frequency.setValueAtTime(f, t); if (slide) o.frequency.exponentialRampToValueAtTime(Math.max(30, f * slide), t + d);
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(v, t + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t + d);
+  o.connect(g); g.connect(master); o.start(t); o.stop(t + d + 0.02);
+}
+let noiseBuf = null;
+function noise(d, v = 0.2, f0 = 1200, f1 = 400, q = 1, at = 0) {
+  if (!AC || !soundOn) return;
+  if (!noiseBuf) { noiseBuf = AC.createBuffer(1, AC.sampleRate, AC.sampleRate); const ch = noiseBuf.getChannelData(0); for (let i = 0; i < ch.length; i++) ch[i] = Math.random() * 2 - 1; }
+  const t = AC.currentTime + at, s = AC.createBufferSource(), fl = AC.createBiquadFilter(), g = AC.createGain();
+  s.buffer = noiseBuf; fl.type = 'bandpass'; fl.Q.value = q; fl.frequency.setValueAtTime(f0, t); fl.frequency.exponentialRampToValueAtTime(Math.max(40, f1), t + d);
+  g.gain.setValueAtTime(v, t); g.gain.exponentialRampToValueAtTime(0.0001, t + d);
+  s.connect(fl); fl.connect(g); g.connect(master); s.start(t); s.stop(t + d + 0.02);
+}
+const PENTA = { water: [392, 440, 523, 587, 659], fire: [330, 392, 440, 494, 587], earth: [196, 220, 262, 294, 330], air: [523, 587, 698, 784, 880] };
+const SFX = {
+  stroke() { noise(0.12, 0.05, 2400, 900, 0.7); },
+  cast(way) { const p = PENTA[way] || PENTA.water; tone(p[0], 0.35, 'triangle', 0.09); tone(p[2], 0.35, 'triangle', 0.07, 0.06); tone(p[4], 0.5, 'sine', 0.06, 0.12);
+    if (way === 'fire') noise(0.25, 0.08, 3000, 600); else if (way === 'water') noise(0.3, 0.06, 900, 300, 0.6); else if (way === 'earth') tone(70, 0.3, 'sine', 0.2, 0, 0.6); else noise(0.35, 0.07, 1800, 4000, 0.5); },
+  hit(big) { tone(big ? 90 : 140, big ? 0.25 : 0.12, 'sine', big ? 0.35 : 0.22, 0, 0.5); noise(big ? 0.18 : 0.08, big ? 0.22 : 0.14, 1500, 300, 0.8); },
+  block() { tone(820, 0.06, 'square', 0.06); tone(560, 0.1, 'triangle', 0.08, 0.02); },
+  dodge() { noise(0.2, 0.06, 900, 3000, 0.6); },
+  fizzle() { tone(220, 0.25, 'sawtooth', 0.04, 0, 0.6); },
+  heal() { [523, 659, 784].forEach((f, i) => tone(f, 0.4, 'sine', 0.06, i * 0.08)); },
+  gong() { tone(98, 2.2, 'sine', 0.3); tone(147, 1.8, 'sine', 0.12, 0.01); tone(196, 1.4, 'triangle', 0.06, 0.02); },
+  drum(n = 2) { for (let i = 0; i < n; i++) { tone(70, 0.3, 'sine', 0.4, i * 0.22, 0.5); noise(0.12, 0.12, 400, 120, 0.8, i * 0.22); } },
+  learn() { [392, 523, 659, 784, 1046].forEach((f, i) => tone(f, 0.5, 'triangle', 0.07, i * 0.09)); },
+  tap() { tone(660, 0.05, 'triangle', 0.05); },
+};
+
+// ── saved progress: your way, the fighters you've beaten, and a few numbers ──
+const SAVE_KEY = 'inkdojo-1';
+let save = null;
+function loadSave() { try { const s = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null'); if (s && WAYS[s.way]) return s; } catch (_) {} return null; }
+function writeSave() { if (!save) return; try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch (_) {} }
+function newSave(way) { return { way, beaten: [], master: false, stats: { casts: 0, clean: 0, wins: 0, falls: 0, t0: Date.now() } }; }
+const learnedCount = () => Math.min(20, 8 + (save ? save.beaten.length : 0));
+const myMoves = () => (save ? MOVES[save.way].filter(m => m.order < learnedCount()) : []);
+
+// ── the dojo: four halls round a gravel courtyard with a pond, a cherry tree and the Grandmaster's dais ──
+const WORLD = { w: 1600, h: 1700 };
+const HALLS = {
+  air:   { x: 400, y: 90, w: 800, h: 440, label: 'Hall of Air', sign: { x: 800, y: 120 } },
+  water: { x: 90, y: 470, w: 400, h: 760, label: 'Hall of Water', sign: { x: 120, y: 850 } },
+  earth: { x: 1110, y: 470, w: 400, h: 760, label: 'Hall of Earth', sign: { x: 1480, y: 850 } },
+  fire:  { x: 400, y: 1170, w: 800, h: 440, label: 'Hall of Fire', sign: { x: 800, y: 1580 } },
+};
+const YARD = { x: 520, y: 560, w: 560, h: 580 };
+const POND = { x: 830, y: 905, rx: 120, ry: 72 };
+const DAIS = { x: 800, y: 612, w: 230, h: 64 };
+const START = { x: 800, y: 1065 };
+// things you can't walk through: pillars, the tree, lanterns and rocks (circles), the pond (an oval), the outer walls
+const SOLIDS = [];
+for (const [x, y] of [[400, 90], [1200, 90], [400, 530], [1200, 530], [90, 470], [490, 470], [90, 1230], [490, 1230], [1110, 470], [1510, 470], [1110, 1230], [1510, 1230],
+                      [400, 1170], [1200, 1170], [400, 1610], [1200, 1610], [520, 560], [1080, 560], [520, 1140], [1080, 1140]]) SOLIDS.push({ x, y, r: 17, kind: 'pillar' });
+SOLIDS.push({ x: 625, y: 690, r: 20, kind: 'tree' });
+for (const [x, y] of [[560, 1100], [1040, 1100], [1040, 600], [560, 600]]) SOLIDS.push({ x, y, r: 13, kind: 'lantern' });
+for (const [x, y, r] of [[700, 980, 16], [940, 1040, 12], [985, 760, 18]]) SOLIDS.push({ x, y, r, kind: 'rock' });
+function blocked(p, r) {
+  // the walls
+  p.x = clamp(p.x, 80 + r, WORLD.w - 80 - r); p.y = clamp(p.y, 80 + r, WORLD.h - 80 - r);
+  for (const s of SOLIDS) { const d = Math.hypot(p.x - s.x, p.y - s.y), m = s.r + r; if (d < m) { const k = (m - d) / (d || 1); p.x += (p.x - s.x) * k; p.y += (p.y - s.y) * k; } }
+  // the pond: pushed back out along its oval
+  const ex = (p.x - POND.x) / (POND.rx + r), ey = (p.y - POND.y) / (POND.ry + r), e = Math.hypot(ex, ey);
+  if (e < 1) { const k = 1 / (e || 1e-6); p.x = POND.x + ex * k * (POND.rx + r); p.y = POND.y + ey * k * (POND.ry + r); }
+}
+
+// the floor is painted once, onto its own canvas, and the visible part copied each frame
+const floor = document.createElement('canvas');
+floor.width = WORLD.w; floor.height = WORLD.h;
+(function paintFloor() {
+  const c = floor.getContext('2d');
+  let seed = 11; const r = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  c.fillStyle = '#0d0b12'; c.fillRect(0, 0, WORLD.w, WORLD.h);
+  // wooden planks everywhere inside the walls
+  const PL = 34, tones = ['#6d4529', '#77502f', '#6a4327', '#7c5534', '#714a2c'];
+  for (let y = 70, row = 0; y < WORLD.h - 70; y += PL, row++) {
+    let x = 70 - r() * 160;
+    while (x < WORLD.w - 70) {
+      const len = 160 + r() * 220;
+      c.fillStyle = tones[(row * 3 + Math.floor(x / 97)) % tones.length];
+      c.fillRect(Math.max(70, x), y, Math.min(len, WORLD.w - 70 - x), PL - 1);
+      c.strokeStyle = 'rgba(255,220,170,0.06)'; c.lineWidth = 1;
+      for (let g = 0; g < 3; g++) { const gy = y + 6 + g * 9 + r() * 3; c.beginPath(); c.moveTo(Math.max(70, x + 6), gy); c.bezierCurveTo(x + len * 0.3, gy - 2, x + len * 0.6, gy + 2, Math.min(WORLD.w - 70, x + len - 6), gy); c.stroke(); }
+      c.fillStyle = 'rgba(20,10,4,0.55)'; c.fillRect(Math.min(WORLD.w - 70, x + len) - 1, y, 2, PL - 1);
+      x += len;
+    }
+    c.fillStyle = 'rgba(20,10,4,0.5)'; c.fillRect(70, y + PL - 1, WORLD.w - 140, 1);
+  }
+  // tatami in the halls: straw mats with dark cloth edges, laid in the old pattern
+  for (const [way, h] of Object.entries(HALLS)) {
+    c.fillStyle = '#3a2a1a'; c.fillRect(h.x - 4, h.y - 4, h.w + 8, h.h + 8);
+    const mw = 120, mh = 60;
+    for (let y = h.y, j = 0; y < h.y + h.h - 1; y += mh, j++) for (let x = h.x, i = 0; x < h.x + h.w - 1; x += mw, i++) {
+      const rot = (i + j) % 3 === 0, w = rot ? mh : mw, hh = rot ? mw : mh;
+      if (rot && y + hh > h.y + h.h) continue;
+      const g = c.createLinearGradient(x, y, x + w, y + hh);
+      g.addColorStop(0, '#c7b67a'); g.addColorStop(1, '#b9a76a');
+      c.fillStyle = g; c.fillRect(x + 1, y + 1, Math.min(w, h.x + h.w - x) - 2, Math.min(hh, h.y + h.h - y) - 2);
+      c.strokeStyle = 'rgba(90,80,40,0.22)'; c.lineWidth = 1;
+      for (let k = 3; k < (rot ? w : hh) - 2; k += 3) { c.beginPath(); if (rot) { c.moveTo(x + k, y + 2); c.lineTo(x + k, y + Math.min(hh, h.y + h.h - y) - 2); } else { c.moveTo(x + 2, y + k); c.lineTo(x + Math.min(w, h.x + h.w - x) - 2, y + k); } c.stroke(); }
+      c.strokeStyle = '#2b3a22'; c.lineWidth = 3; c.strokeRect(x + 1.5, y + 1.5, Math.min(w, h.x + h.w - x) - 3, Math.min(hh, h.y + h.h - y) - 3);
+    }
+    // the way's sign painted large on the mats, in faint ink
+    const cxh = h.x + h.w / 2, cyh = h.y + h.h / 2, R = Math.min(h.w, h.h) * 0.3;
+    c.save(); c.globalAlpha = 0.16; c.strokeStyle = WAYS[way].color; c.lineWidth = 14; c.lineCap = 'round'; c.lineJoin = 'round';
+    wayMark(c, way, cxh, cyh, R); c.restore();
+  }
+  // the courtyard: raked gravel, rings round the rocks, a stone path, the pond
+  const Y = YARD;
+  c.fillStyle = '#d5cfc1'; c.fillRect(Y.x, Y.y, Y.w, Y.h);
+  c.strokeStyle = 'rgba(120,110,95,0.35)'; c.lineWidth = 1.5;
+  for (let y = Y.y + 8; y < Y.y + Y.h; y += 9) { c.beginPath(); c.moveTo(Y.x, y); c.lineTo(Y.x + Y.w, y); c.stroke(); }
+  for (const s of SOLIDS.filter(s => s.kind === 'rock')) for (let k = 1; k <= 4; k++) { c.fillStyle = '#d5cfc1'; c.beginPath(); c.arc(s.x, s.y, s.r + k * 11, 0, TAU); c.fill(); }
+  for (const s of SOLIDS.filter(s => s.kind === 'rock')) for (let k = 1; k <= 4; k++) { c.beginPath(); c.arc(s.x, s.y, s.r + k * 11, 0, TAU); c.stroke(); }
+  c.strokeStyle = '#6b5f50'; c.lineWidth = 6; c.strokeRect(Y.x - 3, Y.y - 3, Y.w + 6, Y.h + 6);
+  // stepping stones from the south door to the dais
+  for (let i = 0; i < 9; i++) { const y = 1130 - i * 58, x = 800 + (i % 2 ? 46 : -46) * (i > 1 && i < 7 ? 1.6 : 0.5); c.fillStyle = '#8f877a'; c.beginPath(); c.ellipse(x, y, 26, 17, 0.2 * (i % 3), 0, TAU); c.fill(); c.fillStyle = 'rgba(255,255,255,0.12)'; c.beginPath(); c.ellipse(x - 5, y - 4, 16, 9, 0.2, 0, TAU); c.fill(); }
+  const pg = c.createRadialGradient(POND.x - 30, POND.y - 20, 10, POND.x, POND.y, POND.rx);
+  pg.addColorStop(0, '#2b6f8f'); pg.addColorStop(1, '#173a52');
+  c.fillStyle = '#6b6457'; c.beginPath(); c.ellipse(POND.x, POND.y, POND.rx + 9, POND.ry + 9, 0, 0, TAU); c.fill();
+  c.fillStyle = pg; c.beginPath(); c.ellipse(POND.x, POND.y, POND.rx, POND.ry, 0, 0, TAU); c.fill();
+  for (const [x, y, rr2] of [[POND.x - 70, POND.y - 20, 14], [POND.x + 50, POND.y + 30, 11], [POND.x + 20, POND.y - 40, 9]]) { c.fillStyle = '#3f7d4a'; c.beginPath(); c.arc(x, y, rr2, 0.3, TAU - 0.2); c.lineTo(x, y); c.fill(); }
+  // the dais
+  c.fillStyle = '#3c2416'; c.fillRect(DAIS.x - DAIS.w / 2 - 6, DAIS.y - DAIS.h / 2 - 6, DAIS.w + 12, DAIS.h + 12);
+  c.fillStyle = '#8a4b2a'; c.fillRect(DAIS.x - DAIS.w / 2, DAIS.y - DAIS.h / 2, DAIS.w, DAIS.h);
+  c.strokeStyle = 'rgba(255,200,150,0.25)'; c.lineWidth = 1; for (let x = DAIS.x - DAIS.w / 2 + 12; x < DAIS.x + DAIS.w / 2; x += 23) { c.beginPath(); c.moveTo(x, DAIS.y - DAIS.h / 2 + 2); c.lineTo(x, DAIS.y + DAIS.h / 2 - 2); c.stroke(); }
+  // the outer walls: dark beams with paper screens
+  c.fillStyle = '#2a1a10'; c.fillRect(56, 56, WORLD.w - 112, 18); c.fillRect(56, WORLD.h - 74, WORLD.w - 112, 18); c.fillRect(56, 56, 18, WORLD.h - 112); c.fillRect(WORLD.w - 74, 56, 18, WORLD.h - 112);
+  c.fillStyle = '#e8dfc8';
+  for (let x = 90; x < WORLD.w - 90; x += 64) { c.fillRect(x, 60, 56, 10); c.fillRect(x, WORLD.h - 70, 56, 10); }
+  for (let y = 90; y < WORLD.h - 90; y += 64) { c.fillRect(60, y, 10, 56); c.fillRect(WORLD.w - 70, y, 10, 56); }
+})();
+// a way's mark, in the shape its guard takes: water a circle, fire a triangle, earth a square, air an open sweep
+function wayMark(c, way, x, y, R) {
+  c.beginPath();
+  if (way === 'water') c.arc(x, y, R, 0, TAU);
+  else if (way === 'fire') { c.moveTo(x, y - R); c.lineTo(x + R * 0.88, y + R * 0.6); c.lineTo(x - R * 0.88, y + R * 0.6); c.closePath(); }
+  else if (way === 'earth') c.rect(x - R * 0.8, y - R * 0.8, R * 1.6, R * 1.6);
+  else { c.arc(x, y, R, Math.PI * 0.75, Math.PI * 2.45); }
+  c.stroke();
+}
+
+// ── the camera: it follows you, and in a fight it frames both of you ──
+const cam = { x: START.x, y: START.y, s: 1, shake: 0 };
+function camTarget() {
+  const A = L.arena, base = clamp(Math.min(A.w / 400, A.h / 440), 0.62, 1.8);
+  if (FIGHT && FIGHT.foe) {
+    const f = FIGHT.foe, mx = (player.x * 0.6 + f.x * 0.4), my = (player.y * 0.6 + f.y * 0.4);
+    const need = Math.max(Math.abs(player.x - f.x) + 160, (Math.abs(player.y - f.y) + 200) * A.w / A.h);
+    return { x: mx, y: my, s: clamp(A.w / need, 0.5, base * 1.3) };
+  }
+  return { x: player.x, y: player.y, s: base };
+}
+function updateCam(dt, snap) {
+  const T = camTarget(), k = snap ? 1 : Math.min(1, dt * 5);
+  cam.x = lerp(cam.x, T.x, k); cam.y = lerp(cam.y, T.y, k); cam.s = lerp(cam.s, T.s, snap ? 1 : Math.min(1, dt * 2.5));
+  cam.shake = Math.max(0, cam.shake - dt * 30);
+}
+const toScreen = (x, y) => ({ x: L.arena.x + L.arena.w / 2 + (x - cam.x) * cam.s, y: L.arena.y + L.arena.h * 0.56 + (y - cam.y) * cam.s });
+function worldTransform() {
+  const sx = cam.shake ? rr(-cam.shake, cam.shake) : 0, sy = cam.shake ? rr(-cam.shake, cam.shake) : 0;
+  ctx.setTransform(DPR * cam.s, 0, 0, DPR * cam.s, DPR * (L.arena.x + L.arena.w / 2 - cam.x * cam.s + sx), DPR * (L.arena.y + L.arena.h * 0.56 - cam.y * cam.s + sy));
+}
+function drawFloor() {
+  // only the part of the floor in view
+  const s = cam.s, x0 = cam.x - (L.arena.w / 2) / s - 4, y0 = cam.y - (L.arena.h * 0.56) / s - 4, w = L.arena.w / s + 8, h = L.arena.h / s + 8;
+  const sx = clamp(x0, 0, WORLD.w), sy = clamp(y0, 0, WORLD.h), ex = clamp(x0 + w, 0, WORLD.w), ey = clamp(y0 + h, 0, WORLD.h);
+  if (ex > sx && ey > sy) ctx.drawImage(floor, sx, sy, ex - sx, ey - sy, sx, sy, ex - sx, ey - sy);
+}
+// the koi, the petals and the things that stand up off the floor
+const KOI = Array.from({ length: 5 }, (_, i) => ({ a: i * 1.3, r: 0.4 + (i % 3) * 0.18, sp: 0.25 + (i % 2) * 0.12, c: i % 2 ? '#f08a3c' : '#f4efe4' }));
+function drawPond(t) {
+  for (const k of KOI) {
+    const a = k.a + t * k.sp, x = POND.x + Math.cos(a) * POND.rx * k.r * 0.9, y = POND.y + Math.sin(a) * POND.ry * k.r * 0.9, d = a + Math.PI / 2;
+    ctx.save(); ctx.translate(x, y); ctx.rotate(d);
+    ctx.fillStyle = k.c; ctx.beginPath(); ctx.ellipse(0, 0, 9, 3.4, 0, 0, TAU); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(-8, 0); ctx.lineTo(-14, -4 * Math.sin(t * 6 + k.a)); ctx.lineTo(-14, 4); ctx.fill();
+    ctx.restore();
+  }
+  ctx.strokeStyle = 'rgba(255,255,255,0.18)'; ctx.lineWidth = 1.2;
+  for (let i = 0; i < 3; i++) { const ph = (t * 0.4 + i / 3) % 1; ctx.globalAlpha = 1 - ph; ctx.beginPath(); ctx.ellipse(POND.x - 40 + i * 40, POND.y + (i - 1) * 18, 6 + ph * 26, 3 + ph * 14, 0, 0, TAU); ctx.stroke(); }
+  ctx.globalAlpha = 1;
+}
+function drawProps(t, layer) {
+  for (const s of SOLIDS) {
+    if (layer === 'low') {
+      ctx.fillStyle = 'rgba(0,0,0,0.28)'; ctx.beginPath(); ctx.ellipse(s.x + 4, s.y + 6, s.r * 1.1, s.r * 0.7, 0, 0, TAU); ctx.fill();
+      if (s.kind === 'pillar') { ctx.fillStyle = '#7a2418'; ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, TAU); ctx.fill(); ctx.fillStyle = '#a3382a'; ctx.beginPath(); ctx.arc(s.x - 4, s.y - 4, s.r * 0.55, 0, TAU); ctx.fill(); }
+      else if (s.kind === 'lantern') { ctx.fillStyle = '#8b857a'; ctx.fillRect(s.x - s.r, s.y - s.r, s.r * 2, s.r * 2); ctx.fillStyle = `rgba(255,200,120,${0.55 + 0.15 * Math.sin(t * 3 + s.x)})`; ctx.beginPath(); ctx.arc(s.x, s.y, s.r * 0.55, 0, TAU); ctx.fill(); }
+      else if (s.kind === 'rock') { ctx.fillStyle = '#6e695f'; ctx.beginPath(); ctx.ellipse(s.x, s.y, s.r, s.r * 0.82, 0.4, 0, TAU); ctx.fill(); ctx.fillStyle = 'rgba(255,255,255,0.15)'; ctx.beginPath(); ctx.ellipse(s.x - 3, s.y - 4, s.r * 0.5, s.r * 0.3, 0.4, 0, TAU); ctx.fill(); }
+      else if (s.kind === 'tree') { ctx.fillStyle = '#4a2f22'; ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, TAU); ctx.fill(); }
+    } else if (s.kind === 'tree') {
+      // the blossom, over everyone's heads (see-through when someone is under it)
+      const under = player && [player, ...fighters()].some(f => Math.hypot(f.x - s.x, f.y - s.y) < 110);
+      ctx.globalAlpha = under ? 0.3 : 0.86;
+      for (const [dx, dy, r] of [[0, -20, 62], [-48, 6, 46], [46, 0, 50], [-12, 40, 44], [30, -54, 40]]) {
+        const g = ctx.createRadialGradient(s.x + dx - 10, s.y + dy - 12, 4, s.x + dx, s.y + dy, r);
+        g.addColorStop(0, '#ffd3e2'); g.addColorStop(1, 'rgba(232,140,170,0.75)');
+        ctx.fillStyle = g; ctx.beginPath(); ctx.arc(s.x + dx, s.y + dy, r, 0, TAU); ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+    }
+  }
+  if (layer !== 'low') {
+    // falling petals
+    ctx.fillStyle = '#ffc6d9';
+    for (let i = 0; i < 16; i++) { const ph = (t * 0.07 + i * 0.137) % 1, x = 560 + ((i * 97) % 180) + Math.sin(t + i) * 20, y = 600 + ph * 260; ctx.globalAlpha = Math.sin(ph * Math.PI) * 0.9; ctx.beginPath(); ctx.ellipse(x, y, 3, 1.7, t + i, 0, TAU); ctx.fill(); }
+    ctx.globalAlpha = 1;
+    // the halls' banners
+    for (const [way, h] of Object.entries(HALLS)) {
+      const s = h.sign, col = WAYS[way].color;
+      ctx.fillStyle = '#efe6d0'; ctx.fillRect(s.x - 24, s.y - 30, 48, 60);
+      ctx.strokeStyle = col; ctx.lineWidth = 4; ctx.lineCap = 'round'; wayMark(ctx, way, s.x, s.y - 2, 14);
+      ctx.fillStyle = '#2a1a10'; ctx.fillRect(s.x - 28, s.y - 34, 56, 5);
+    }
+  }
+}
+
+// ── the fighters ──
+const RANKS = {
+  1: { belt: '#f2efe6', beltName: 'white belt', hp: 70, dmg: 0.72, windup: 0.62, think: [0.9, 1.5], react: 0.1, moves: ['strike', 'projectile', 'guard', 'dash', 'sweep'] },
+  2: { belt: '#8a5a2b', beltName: 'brown belt', hp: 100, dmg: 0.86, windup: 0.5, think: [0.7, 1.2], react: 0.25, moves: ['strike', 'heavy', 'projectile', 'guard', 'dash', 'evade', 'sweep', 'volley', 'push', 'launcher'] },
+  3: { belt: '#16131b', beltName: 'black belt', hp: 140, dmg: 1.0, windup: 0.42, think: [0.55, 0.95], react: 0.4, moves: ['strike', 'heavy', 'projectile', 'guard', 'dash', 'evade', 'sweep', 'flurry', 'launcher', 'volley', 'counter', 'push', 'pull', 'wave', 'zone', 'throw', 'heal'] },
+  4: { belt: '#c63f2e', beltName: 'red belt', hp: 205, dmg: 1.0, windup: 0.42, think: [0.6, 1.0], react: 0.42, moves: ROLES.slice() },
+};
+const GI = { water: '#d9ebf7', fire: '#f8ddd2', earth: '#eee0c2', air: '#f5efcd', master: '#2b2531' };
+const SKIN = ['#f1c9a5', '#e0ac85', '#c98d64', '#a8714c', '#f5d6bd', '#8d5a3b'];
+const HAIR = ['#1d1a20', '#3a2618', '#5a3a22', '#2b2b33', '#7a7064', '#151217'];
+const ROSTER = [
+  { id: 'w1', name: 'Mei', way: 'water', rank: 1, post: [205, 640] }, { id: 'w2', name: 'Ryo', way: 'water', rank: 2, post: [335, 850] }, { id: 'w3', name: 'Sensei Nami', way: 'water', rank: 3, post: [205, 1060] },
+  { id: 'f1', name: 'Kai', way: 'fire', rank: 1, post: [560, 1455] }, { id: 'f2', name: 'Bo', way: 'fire', rank: 2, post: [800, 1360] }, { id: 'f3', name: 'Sensei Homura', way: 'fire', rank: 3, post: [1040, 1455] },
+  { id: 'e1', name: 'Tomo', way: 'earth', rank: 1, post: [1395, 640] }, { id: 'e2', name: 'Gan', way: 'earth', rank: 2, post: [1265, 850] }, { id: 'e3', name: 'Sensei Iwao', way: 'earth', rank: 3, post: [1395, 1060] },
+  { id: 'a1', name: 'Sora', way: 'air', rank: 1, post: [560, 245] }, { id: 'a2', name: 'Fei', way: 'air', rank: 2, post: [800, 330] }, { id: 'a3', name: 'Sensei Kaze', way: 'air', rank: 3, post: [1040, 245] },
+];
+const MASTER = { id: 'm', name: 'Grandmaster Sumi', way: 'master', rank: 4, post: [DAIS.x, DAIS.y] };
+const WAYMOD = {
+  water:  { dmg: 1.0, heal: 1.5, guard: 0.75, speed: 1.0, hp: 100 },
+  fire:   { dmg: 1.18, heal: 0.8, guard: 0.6, speed: 1.05, hp: 95 },
+  earth:  { dmg: 1.05, heal: 1.0, guard: 0.9, speed: 0.88, hp: 125, steady: 0.5 },
+  air:    { dmg: 0.95, heal: 1.0, guard: 0.7, speed: 1.22, hp: 95, evade: 1.4, knock: 1.4 },
+  master: { dmg: 1.0, heal: 1.0, guard: 0.8, speed: 1.1, hp: 100 },
+};
+function makeFighter(o) {
+  const k = o.isPlayer ? null : RANKS[o.rank], mod = WAYMOD[o.way], n = (o.id || 'p').charCodeAt(0) + (o.id || 'p').charCodeAt(1 % (o.id || 'p').length);
+  const maxHp = o.isPlayer ? mod.hp : k.hp;
+  return {
+    id: o.id || 'you', name: o.name || 'You', way: o.way, rank: o.rank || 0, isPlayer: !!o.isPlayer,
+    x: o.post ? o.post[0] : START.x, y: o.post ? o.post[1] : START.y, r: 15, face: o.isPlayer ? -Math.PI / 2 : angTo({ x: o.post[0], y: o.post[1] }, { x: 800, y: 850 }),
+    vx: 0, vy: 0, kx: 0, ky: 0, lift: 0,
+    hp: maxHp, maxHp, ki: 100, maxKi: 100, kiRegen: o.isPlayer ? 15 : 13,
+    speed: 150 * mod.speed, act: null, queue: [],
+    st: { stun: 0, slow: 0, burn: 0, guard: 0, counter: 0, invuln: 0, empower: 0, focus: 0, heal: 0, healRate: 0, flash: 0 },
+    pose: 'idle', poseT: 0, walk: 0,
+    post: o.post ? { x: o.post[0], y: o.post[1] } : null, mode: 'post', beaten: false,
+    glyph: null, ai: { think: rr(0.6, 1.2), cd: {}, strafe: Math.random() < 0.5 ? 1 : -1, way: o.way === 'master' ? 'water' : o.way },
+    gi: o.isPlayer ? '#f6f1e6' : GI[o.way], trim: o.way === 'master' ? '#c63f2e' : WAYS[o.way].color,
+    belt: o.isPlayer ? '#16131b' : k.belt, skin: o.isPlayer ? '#e9bf98' : SKIN[n % SKIN.length], hair: o.isPlayer ? '#1d1a20' : HAIR[(n * 7) % HAIR.length],
+  };
+}
+let player = null, FOES = [], MASTERF = null;
+function moveWay(f) { return f.way === 'master' ? f.ai.way : f.way; }
+
+// a fighter, seen from above: shadow, feet, gi and belt, arms (in the pose of the moment), head
+function drawFighter(f, t) {
+  const down = f.hp <= 0 || f.pose === 'down', lift = f.lift || 0;
+  ctx.save(); ctx.translate(f.x, f.y);
+  ctx.fillStyle = 'rgba(0,0,0,0.32)'; ctx.beginPath(); ctx.ellipse(2, 9, 16 - lift * 0.1, 7, 0, 0, TAU); ctx.fill();
+  ctx.translate(0, -lift);
+  if (f.st.flash > 0) { ctx.shadowColor = '#fff'; ctx.shadowBlur = 16; }
+  if (down) {
+    // lying on the mat
+    ctx.rotate(f.face + Math.PI / 2);
+    ctx.fillStyle = f.gi; ctx.beginPath(); ctx.ellipse(0, 4, 11, 19, 0, 0, TAU); ctx.fill();
+    ctx.strokeStyle = f.trim; ctx.lineWidth = 2; ctx.stroke();
+    ctx.fillStyle = f.belt; ctx.fillRect(-11, 4, 22, 3.5);
+    ctx.fillStyle = f.skin; ctx.beginPath(); ctx.arc(0, -16, 7.5, 0, TAU); ctx.fill();
+    ctx.fillStyle = f.hair; ctx.beginPath(); ctx.arc(0, -17.5, 7.5, Math.PI, TAU); ctx.fill();
+    ctx.restore(); return;
+  }
+  ctx.rotate(f.face);
+  const p = f.pose, k = clamp(f.poseT, 0, 1), stride = Math.sin(f.walk) * 5;
+  // feet
+  ctx.fillStyle = '#2a2026';
+  const kick = p === 'kick' ? Math.sin(k * Math.PI) : 0;
+  ctx.beginPath(); ctx.ellipse(stride - 2, -7, 5, 3.4, 0, 0, TAU); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(-stride - 2 + kick * 26, 7 - kick * 5, 5, 3.4, 0, 0, TAU); ctx.fill();
+  if (kick > 0.05) { ctx.strokeStyle = f.gi; ctx.lineWidth = 6; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(0, 5); ctx.lineTo(kick * 24, 6 - kick * 4); ctx.stroke(); }
+  // arms
+  const sh = [{ x: 1, y: -11 }, { x: 1, y: 11 }];
+  let fists = [{ x: 11, y: -7 }, { x: 13, y: 6 }];
+  if (p === 'strike') { const e = Math.sin(k * Math.PI); fists = [{ x: 11 - 2 * e, y: -8 }, { x: 13 + 14 * e, y: 5 - 4 * e }]; }
+  else if (p === 'strike2') { const e = Math.sin(k * Math.PI); fists = [{ x: 13 + 14 * e, y: -6 + 4 * e }, { x: 11 - 2 * e, y: 8 }]; }
+  else if (p === 'guard') fists = [{ x: 12, y: -3 }, { x: 13, y: 3 }];
+  else if (p === 'cast') { const e = Math.sin(k * Math.PI); fists = [{ x: 4 + 6 * e, y: -14 - 3 * e }, { x: 4 + 6 * e, y: 14 + 3 * e }]; }
+  else if (p === 'bow') fists = [{ x: 6, y: -9 }, { x: 6, y: 9 }];
+  else if (p === 'hurt') fists = [{ x: 6, y: -12 }, { x: 4, y: 12 }];
+  ctx.strokeStyle = f.gi; ctx.lineWidth = 6; ctx.lineCap = 'round';
+  for (let i = 0; i < 2; i++) { ctx.beginPath(); ctx.moveTo(sh[i].x, sh[i].y); ctx.lineTo(fists[i].x, fists[i].y); ctx.stroke(); }
+  // body: the gi, its trim, the belt
+  ctx.fillStyle = f.gi; ctx.beginPath(); ctx.ellipse(-1, 0, 10, 13.5, 0, 0, TAU); ctx.fill();
+  ctx.strokeStyle = f.trim; ctx.lineWidth = 2; ctx.beginPath(); ctx.ellipse(-1, 0, 10, 13.5, 0, 0, TAU); ctx.stroke();
+  ctx.strokeStyle = f.trim; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(8, -6); ctx.lineTo(2, 0); ctx.lineTo(8, 6); ctx.stroke();
+  ctx.fillStyle = f.belt; ctx.fillRect(-4.5, -13, 3.5, 26);
+  if (f.belt === '#f2efe6') { ctx.strokeStyle = 'rgba(0,0,0,0.25)'; ctx.lineWidth = 0.8; ctx.strokeRect(-4.5, -13, 3.5, 26); }
+  // fists
+  ctx.fillStyle = f.skin; for (const q of fists) { ctx.beginPath(); ctx.arc(q.x, q.y, 3.6, 0, TAU); ctx.fill(); }
+  // head
+  ctx.fillStyle = f.skin; ctx.beginPath(); ctx.arc(1, 0, 7.6, 0, TAU); ctx.fill();
+  ctx.fillStyle = f.hair; ctx.beginPath(); ctx.arc(-0.5, 0, 7.8, Math.PI * 0.55, Math.PI * 1.45); ctx.lineTo(1, 0); ctx.fill();
+  if (f.way === 'master' && !f.isPlayer) { ctx.fillStyle = '#e8e2d8'; ctx.beginPath(); ctx.arc(-2, 0, 4.5, 0, TAU); ctx.fill(); }
+  if (f.isPlayer) { ctx.fillStyle = WAYS[f.way].color; ctx.fillRect(-3, -7.5, 2.5, 15); }
+  ctx.restore();
+  ctx.shadowBlur = 0;
+}
+// what's on a fighter right now: a guard's shape, a counter's ring, being stunned, slowed, burning or empowered
+function drawStatus(f, t) {
+  const S = f.st, col = f.isPlayer ? WAYS[f.way].color : f.way === 'master' ? WAYS[f.ai.way].color : WAYS[f.way].color, y = f.y - (f.lift || 0);
+  if (S.guard > 0) {
+    ctx.save(); ctx.globalAlpha = Math.min(1, S.guard * 3) * 0.75; ctx.strokeStyle = col; ctx.lineWidth = 3; ctx.shadowColor = col; ctx.shadowBlur = 12;
+    wayMark(ctx, moveWay(f) === 'master' ? 'water' : moveWay(f), f.x, y, 27 + Math.sin(t * 8) * 1.5);
+    ctx.globalAlpha *= 0.18; ctx.fillStyle = col; ctx.fill(); ctx.restore();
+  }
+  if (S.counter > 0) { ctx.save(); ctx.strokeStyle = col; ctx.globalAlpha = 0.8; ctx.lineWidth = 2; ctx.setLineDash([5, 5]); ctx.lineDashOffset = -t * 30; ctx.beginPath(); ctx.arc(f.x, y, 31, 0, TAU); ctx.stroke(); ctx.restore(); }
+  if (S.empower > 0) { ctx.save(); ctx.globalCompositeOperation = 'lighter'; for (let i = 0; i < 6; i++) { const a = t * 3 + i * TAU / 6, h = 8 + 6 * Math.sin(t * 9 + i); ctx.fillStyle = hexA(col, 0.35); ctx.beginPath(); ctx.ellipse(f.x + Math.cos(a) * 18, y + Math.sin(a) * 18 - h * 0.4, 4, h * 0.6, a, 0, TAU); ctx.fill(); } ctx.restore(); }
+  if (S.stun > 0 && f.hp > 0) { for (let i = 0; i < 3; i++) { const a = t * 5 + i * TAU / 3; star5(f.x + Math.cos(a) * 12, y - 22 + Math.sin(a) * 4, 3.5, '#ffe58a'); } }
+  if (S.slow > 0) { ctx.fillStyle = hexA('#7cc7ff', 0.8); for (let i = 0; i < 3; i++) { const ph = (t * 1.2 + i / 3) % 1; ctx.beginPath(); ctx.arc(f.x - 10 + i * 10, y - 10 + ph * 22, 2.2, 0, TAU); ctx.fill(); } }
+  if (S.burn > 0) { ctx.save(); ctx.globalCompositeOperation = 'lighter'; for (let i = 0; i < 4; i++) { const ph = (t * 2 + i / 4) % 1; ctx.fillStyle = `rgba(255,${120 + i * 20},40,${0.7 * (1 - ph)})`; ctx.beginPath(); ctx.ellipse(f.x - 9 + i * 6, y - 4 - ph * 22, 3 * (1 - ph) + 1, 5 * (1 - ph) + 1, 0, 0, TAU); ctx.fill(); } ctx.restore(); }
+  if (S.heal > 0) { ctx.save(); ctx.globalCompositeOperation = 'lighter'; for (let i = 0; i < 5; i++) { const ph = (t * 0.9 + i / 5) % 1; ctx.fillStyle = `rgba(150,255,190,${0.6 * (1 - ph)})`; ctx.beginPath(); ctx.arc(f.x + Math.cos(i * 2.4) * 14, y + 6 - ph * 34, 2.4, 0, TAU); ctx.fill(); } ctx.restore(); }
+}
+function star5(x, y, r, col) { ctx.fillStyle = col; ctx.beginPath(); for (let i = 0; i < 10; i++) { const a = -Math.PI / 2 + i * Math.PI / 5, rr2 = i % 2 ? r * 0.45 : r; ctx[i ? 'lineTo' : 'moveTo'](x + Math.cos(a) * rr2, y + Math.sin(a) * rr2); } ctx.closePath(); ctx.fill(); }
+// the move a fighter is about to make, written in the air above them as it winds up (so you can see it coming)
+function drawAirGlyph(f) {
+  const G = f.glyph;
+  if (!G) return;
+  const k = clamp(G.t / G.dur, 0, 1), col = WAYS[G.move.way].color, R = 22, x = f.x, y = f.y - 46 - (f.lift || 0);
+  ctx.save();
+  ctx.fillStyle = 'rgba(239,230,208,0.78)'; ctx.beginPath(); ctx.arc(x, y, R + 5, 0, TAU); ctx.fill();
+  ctx.strokeStyle = col; ctx.lineWidth = 2.2; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  const total = G.move.strokes.reduce((a, s) => a + s.length, 0);
+  let left = Math.floor(total * Math.min(1, k * 1.25));
+  for (const s of G.move.strokes) { if (left <= 1) break; ctx.beginPath(); for (let i = 0; i < Math.min(s.length, left); i++) (i ? ctx.lineTo : ctx.moveTo).call(ctx, x + s[i].x * R, y + s[i].y * R); ctx.stroke(); left -= s.length; }
+  ctx.strokeStyle = hexA(col, 0.9); ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(x, y, R + 5, -Math.PI / 2, -Math.PI / 2 + TAU * k); ctx.stroke();
+  ctx.restore();
+}
+
+// ── moves: what each of the twenty does (every way has its own version of each) ──
+// cost in ki; wind: how long a written move takes to come out; aiWind: how much longer a fighter's telegraph is for it
+const ROLE = {
+  strike:     { label: 'Strike', what: 'A quick hit up close.', cost: 6, wind: 0.05, rec: 0.18, aiWind: 1.0, range: 'close', dmg: 7, reach: 60, lunge: 42 },
+  heavy:      { label: 'Heavy blow', what: 'A big hit up close that knocks them back.', cost: 16, wind: 0.18, rec: 0.35, aiWind: 1.35, range: 'close', dmg: 17, reach: 64, lunge: 52, knock: 190 },
+  projectile: { label: 'Shot', what: 'A shot at them from any distance.', cost: 10, wind: 0.06, rec: 0.2, aiWind: 1.0, range: 'far', dmg: 10, speed: 440 },
+  guard:      { label: 'Guard', what: 'Block most of what hits you for a moment.', cost: 8, wind: 0, rec: 0.05, aiWind: 0.4, self: true, dur: 1.5 },
+  dash:       { label: 'Dash', what: 'Rush in and hit them on arrival.', cost: 10, wind: 0.03, rec: 0.15, aiWind: 0.85, range: 'mid', dmg: 8 },
+  evade:      { label: 'Evade', what: 'Spring away; nothing touches you as you go.', cost: 8, wind: 0, rec: 0.1, aiWind: 0.3, self: true },
+  heal:       { label: 'Heal', what: 'Mend over a few seconds.', cost: 22, wind: 0.08, rec: 0.25, aiWind: 1.0, self: true, amount: 28 },
+  sweep:      { label: 'Sweep', what: 'Hits all round you and knocks them down.', cost: 14, wind: 0.1, rec: 0.3, aiWind: 1.1, range: 'close', dmg: 9, radius: 100, stun: 0.6 },
+  flurry:     { label: 'Flurry', what: 'Four quick hits up close.', cost: 16, wind: 0.05, rec: 0.25, aiWind: 1.0, range: 'close', dmg: 4.5, hits: 4, reach: 64, lunge: 32 },
+  launcher:   { label: 'Launcher', what: 'Throws them off their feet: stunned for a moment.', cost: 16, wind: 0.08, rec: 0.3, aiWind: 1.15, range: 'close', dmg: 9, stun: 1.3, reach: 62, lunge: 44 },
+  volley:     { label: 'Volley', what: 'Three shots in a fan.', cost: 18, wind: 0.08, rec: 0.25, aiWind: 1.1, range: 'far', dmg: 6, speed: 420, n: 3 },
+  counter:    { label: 'Counter', what: 'Wait for their blow: if it comes, turn it back on them.', cost: 12, wind: 0, rec: 0.05, aiWind: 0.4, self: true, dur: 0.9, dmg: 16, stun: 0.9 },
+  push:       { label: 'Push', what: 'Drive them far away.', cost: 14, wind: 0.06, rec: 0.25, aiWind: 1.0, range: 'close', dmg: 8, reach: 125, knock: 320 },
+  pull:       { label: 'Pull', what: 'Drag them to you, and slow them.', cost: 14, wind: 0.06, rec: 0.25, aiWind: 1.0, range: 'mid', dmg: 4, reach: 380, slow: 2 },
+  wave:       { label: 'Wave', what: 'A long wave that rolls over them.', cost: 20, wind: 0.1, rec: 0.3, aiWind: 1.15, range: 'far', dmg: 13, speed: 380, travel: 470, width: 105 },
+  zone:       { label: 'Zone', what: 'Lay a pool of your element where they stand.', cost: 24, wind: 0.1, rec: 0.3, aiWind: 1.15, range: 'mid', dps: 5.5, dur: 4, radius: 85 },
+  throw:      { label: 'Throw', what: 'Grab them up close and hurl them away.', cost: 16, wind: 0.06, rec: 0.3, aiWind: 1.05, range: 'close', dmg: 12, reach: 72, knock: 240, stun: 0.8 },
+  empower:    { label: 'Empower', what: 'Half as strong again for six seconds.', cost: 22, wind: 0.08, rec: 0.2, aiWind: 0.9, self: true, dur: 6 },
+  focus:      { label: 'Focus', what: 'Gather your ki: a big gulp now, and faster after.', cost: 0, wind: 0.08, rec: 0.2, aiWind: 0.9, self: true, ki: 45 },
+  ultimate:   { label: 'Ultimate', what: '', cost: 60, wind: 0.22, rec: 0.5, aiWind: 1.6, range: 'mid', dmg: 32 },
+};
+const ULT = {
+  water: 'A great wave rolls out from you: it hits hard, drives them back and slows them.',
+  fire: 'A star of fire bursts round you and leaves them burning.',
+  earth: 'The ground heaves all round you: a heavy hit, and they can’t move for two seconds.',
+  air: 'A typhoon picks them up and spins them: a long stun and a heavy hit.',
+};
+const moveWhat = m => (m.role === 'ultimate' ? ULT[m.way] : ROLE[m.role].what);
+const beats = (a, b) => WAYS[a] && WAYS[a].beats === b;
+const advMul = (a, b) => (beats(a, b) ? 1.25 : beats(b, a) ? 0.8 : 1);
+
+// ── effects: motes of light, brush slashes, rings, ink, floating words ──
+let FX = [], SHOTS = [], WAVES = [], ZONES = [], TEXTS = [], GHOSTS = [];
+const sprites = {};
+function sprite(col) {
+  if (sprites[col]) return sprites[col];
+  const s = document.createElement('canvas'); s.width = s.height = 48;
+  const c = s.getContext('2d'), g = c.createRadialGradient(24, 24, 0, 24, 24, 24), n = parseInt(col.slice(1), 16), r = n >> 16, gg = (n >> 8) & 255, b = n & 255;
+  g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(0.2, `rgba(${r},${gg},${b},0.95)`); g.addColorStop(0.5, `rgba(${r},${gg},${b},0.32)`); g.addColorStop(1, `rgba(${r},${gg},${b},0)`);
+  c.fillStyle = g; c.fillRect(0, 0, 48, 48);
+  return (sprites[col] = s);
+}
+function burst(x, y, col, n, sp = 140, life = 0.6, size = 7, o = {}) {
+  for (let i = 0; i < n; i++) { const a = o.a != null ? o.a + rr(-o.spread, o.spread) : rr(0, TAU), v = sp * rr(0.35, 1);
+    FX.push({ k: 'mote', x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v - (o.up || 0), life: life * rr(0.6, 1), max: life, size: size * rr(0.6, 1.2), col, drag: o.drag ?? 2.5, grav: o.grav || 0 }); }
+}
+function ring(x, y, r0, r1, col, life = 0.5, w = 4) { FX.push({ k: 'ring', x, y, r0, r1, col, life, max: life, w }); }
+function slash(x, y, a, col, size = 26, life = 0.28) { FX.push({ k: 'slash', x, y, a, col, size, life, max: life }); }
+function inkSplash(x, y, n = 8, sp = 120) { for (let i = 0; i < n; i++) { const a = rr(0, TAU), v = sp * rr(0.3, 1); FX.push({ k: 'ink', x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life: rr(0.5, 0.9), max: 0.9, size: rr(2, 5), drag: 6 }); } }
+function words(x, y, text, col, size = 15, life = 0.9) { TEXTS.push({ x, y, text, col, size, life, max: life }); }
+function ghostOf(f) { GHOSTS.push({ x: f.x, y: f.y, face: f.face, gi: f.gi, col: WAYS[moveWay(f)] ? WAYS[moveWay(f)].color : '#fff', life: 0.35, max: 0.35 }); }
+function stepFx(dt) {
+  for (const p of FX) { p.life -= dt; if (p.k === 'mote' || p.k === 'ink') { p.x += p.vx * dt; p.y += p.vy * dt; p.vx *= Math.exp(-p.drag * dt); p.vy *= Math.exp(-p.drag * dt); p.vy += (p.grav || 0) * dt; } }
+  FX = FX.filter(p => p.life > 0);
+  for (const p of TEXTS) { p.life -= dt; p.y -= 34 * dt; }
+  TEXTS = TEXTS.filter(p => p.life > 0);
+  for (const g of GHOSTS) g.life -= dt;
+  GHOSTS = GHOSTS.filter(g => g.life > 0);
+}
+function drawFx(layer) {
+  if (layer === 'under') {
+    for (const g of GHOSTS) { ctx.save(); ctx.globalAlpha = 0.35 * g.life / g.max; ctx.translate(g.x, g.y); ctx.rotate(g.face); ctx.fillStyle = g.col; ctx.beginPath(); ctx.ellipse(0, 0, 12, 15, 0, 0, TAU); ctx.fill(); ctx.restore(); }
+    for (const p of FX) if (p.k === 'ink') { ctx.globalAlpha = Math.min(1, p.life / p.max * 1.5); ctx.fillStyle = C.sumi; ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, TAU); ctx.fill(); }
+    ctx.globalAlpha = 1;
+    return;
+  }
+  ctx.save(); ctx.globalCompositeOperation = 'lighter';
+  for (const p of FX) {
+    const k = p.life / p.max;
+    if (p.k === 'mote') { const s = p.size * (0.5 + 0.5 * k); ctx.globalAlpha = Math.min(1, k * 1.4); ctx.drawImage(sprite(p.col), p.x - s, p.y - s, 2 * s, 2 * s); }
+    else if (p.k === 'ring') { const e = 1 - k, r = p.r0 + (p.r1 - p.r0) * (1 - (1 - e) * (1 - e)); ctx.globalAlpha = k; ctx.strokeStyle = p.col; ctx.lineWidth = p.w * k + 1; ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, TAU); ctx.stroke(); }
+    else if (p.k === 'slash') {
+      // a brush stroke of light: thick in the middle, tapering at both ends
+      const e = 1 - k, sweep = 2.2 * Math.min(1, e * 3);
+      ctx.globalAlpha = Math.min(1, k * 2); ctx.fillStyle = p.col;
+      ctx.beginPath();
+      for (let i = 0; i <= 12; i++) { const u = i / 12, a = p.a - 1.1 + sweep * u, w = Math.sin(u * Math.PI) * p.size * 0.28; ctx.lineTo(p.x + Math.cos(a) * (p.size + w), p.y + Math.sin(a) * (p.size + w)); }
+      for (let i = 12; i >= 0; i--) { const u = i / 12, a = p.a - 1.1 + sweep * u; ctx.lineTo(p.x + Math.cos(a) * p.size, p.y + Math.sin(a) * p.size); }
+      ctx.fill();
+    }
+  }
+  ctx.restore();
+}
+function drawTexts() {
+  ctx.textAlign = 'center';
+  for (const p of TEXTS) {
+    const k = p.life / p.max;
+    ctx.globalAlpha = Math.min(1, k * 2.5); ctx.font = `bold ${p.size}px ${BODY}`;
+    ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(10,8,16,0.85)'; ctx.strokeText(p.text, p.x, p.y); ctx.fillStyle = p.col; ctx.fillText(p.text, p.x, p.y);
+  }
+  ctx.globalAlpha = 1;
+}
+
+// ── a move, from the moment it's written (or a fighter starts writing it in the air) to its end ──
+const wcol = way => WAYS[way] ? WAYS[way].color : '#fff';
+function startMove(f, move, power, target) {
+  const R = ROLE[move.role], cost = R.cost;
+  if (f.ki < cost) { if (f.isPlayer) { words(f.x, f.y - 34, 'Not enough ki', '#9fd0ff', 14); SFX.fizzle(); } return false; }
+  if (f.st.stun > 0 || f.hp <= 0) return false;
+  f.ki -= cost;
+  const wind = f.isPlayer ? R.wind : RANKS[f.rank].windup * R.aiWind;
+  f.act = { move, power, target, phase: 'wind', t: wind, wind, hits: 0, next: 0 };
+  if (!f.isPlayer) f.glyph = { move, t: 0, dur: wind };
+  f.pose = 'cast'; f.poseT = 0;
+  if (f.isPlayer) SFX.cast(move.way);
+  return true;
+}
+function stepAct(f, dt) {
+  const A = f.act;
+  if (!A) return;
+  if (f.st.stun > 0) { f.act = null; f.glyph = null; return; } // (a stun breaks a move in the making)
+  A.t -= dt;
+  if (f.glyph) f.glyph.t += dt;
+  if (A.phase === 'wind' && A.t <= 0) { f.glyph = null; A.phase = 'go'; A.t = ROLE[A.move.role].rec; perform(f, A); }
+  else if (A.phase === 'go') {
+    if (A.move.role === 'flurry' && A.hits < ROLE.flurry.hits && (A.next -= dt) <= 0) { A.next = 0.12; flurryHit(f, A); }
+    if (A.t <= 0 && (A.move.role !== 'flurry' || A.hits >= ROLE.flurry.hits)) f.act = null;
+  }
+}
+const foeOf = f => (FIGHT ? (f === player ? FIGHT.foe : f === FIGHT.foe ? player : null) : null);
+const inFight = f => !!FIGHT && FIGHT.on && (f === player || f === FIGHT.foe);
+function aimAt(f, A) { const t = A.target || foeOf(f); return t ? angTo(f, t) : f.face; }
+// close in on the target (a short lunge) and say whether the blow lands
+function closeIn(f, t, reach, lunge) {
+  if (!t) return false;
+  const gap = dist(f, t) - f.r - t.r;
+  if (gap > reach + lunge) return false;
+  const step = Math.max(0, Math.min(lunge, gap - 6)), a = angTo(f, t);
+  if (step > 2) { ghostOf(f); f.x += Math.cos(a) * step; f.y += Math.sin(a) * step; }
+  return gap - step <= reach;
+}
+function perform(f, A) {
+  const m = A.move, R = ROLE[m.role], way = m.way, col = wcol(way), t = A.target || foeOf(f), P = A.power, a = aimAt(f, A);
+  f.face = a;
+  const fx = f.x + Math.cos(a) * 20, fy = f.y + Math.sin(a) * 20;
+  switch (m.role) {
+    case 'strike': case 'heavy': case 'launcher': {
+      f.pose = m.role === 'heavy' ? 'kick' : Math.random() < 0.5 ? 'strike' : 'strike2'; f.poseT = 0;
+      const hit = closeIn(f, t, R.reach, R.lunge), hx = f.x + Math.cos(a) * 32, hy = f.y + Math.sin(a) * 32;
+      slash(hx, hy, a, col, m.role === 'heavy' ? 34 : 24);
+      burst(hx, hy, col, m.role === 'heavy' ? 14 : 7, 160, 0.4, 6, { a, spread: 0.8 });
+      if (hit) hurt(t, f, R.dmg, { power: P, knock: R.knock || 60, ang: a, stun: R.stun || 0, big: m.role === 'heavy', launch: m.role === 'launcher' });
+      break;
+    }
+    case 'flurry': f.pose = 'strike'; f.poseT = 0; A.next = 0; break;
+    case 'sweep': {
+      f.pose = 'kick'; f.poseT = 0;
+      ring(f.x, f.y, 20, R.radius, col, 0.45, 6); burst(f.x, f.y, col, 18, 220, 0.45, 6);
+      for (let i = 0; i < 3; i++) slash(f.x, f.y, a + i * TAU / 3, col, 40, 0.32);
+      if (t && dist(f, t) - t.r <= R.radius) hurt(t, f, R.dmg, { power: P, knock: 120, ang: angTo(f, t), stun: R.stun });
+      break;
+    }
+    case 'projectile': case 'volley': {
+      f.pose = 'strike'; f.poseT = 0;
+      const n = m.role === 'volley' ? R.n : 1;
+      for (let i = 0; i < n; i++) { const aa = a + (n > 1 ? (i - (n - 1) / 2) * 0.24 : 0); shoot(f, fx, fy, aa, R.speed * (way === 'air' ? 1.2 : 1), R.dmg, P, way, n > 1 ? 7 : 10); }
+      break;
+    }
+    case 'wave': {
+      f.pose = 'cast'; f.poseT = 0;
+      WAVES.push({ owner: f, way, x: fx, y: fy, a, speed: R.speed, travel: 0, max: R.travel, width: R.width, dmg: R.dmg, P, hit: false });
+      break;
+    }
+    case 'zone': {
+      const at = t ? { x: t.x, y: t.y } : { x: f.x + Math.cos(a) * 160, y: f.y + Math.sin(a) * 160 };
+      ZONES.push({ owner: f, way, x: at.x, y: at.y, r: R.radius, life: R.dur, max: R.dur, dps: R.dps, P, tick: 0 });
+      ring(at.x, at.y, 10, R.radius, col, 0.5, 5);
+      break;
+    }
+    case 'guard': f.st.guard = R.dur * (0.6 + 0.4 * Math.min(1, P)); f.pose = 'guard'; f.poseT = 0; burst(f.x, f.y, col, 10, 90, 0.5, 6); break;
+    case 'counter': f.st.counter = R.dur; f.pose = 'guard'; f.poseT = 0; ring(f.x, f.y, 40, 26, col, 0.35, 3); break;
+    case 'dash': {
+      if (!t) { ghostOf(f); f.x += Math.cos(a) * 120; f.y += Math.sin(a) * 120; break; }
+      const gap = dist(f, t) - f.r - t.r, step = clamp(gap - 10, 0, 260);
+      for (let i = 1; i <= 4; i++) GHOSTS.push({ x: f.x + Math.cos(a) * step * i / 5, y: f.y + Math.sin(a) * step * i / 5, face: a, gi: f.gi, col, life: 0.3 + i * 0.04, max: 0.45 });
+      f.x += Math.cos(a) * step; f.y += Math.sin(a) * step; f.st.invuln = Math.max(f.st.invuln, 0.18);
+      f.pose = 'strike'; f.poseT = 0;
+      burst(f.x, f.y, col, 10, 160, 0.4, 6, { a: a + Math.PI, spread: 0.6 });
+      if (dist(f, t) - f.r - t.r < 26) hurt(t, f, R.dmg, { power: P, knock: 110, ang: a });
+      break;
+    }
+    case 'evade': {
+      const away = t ? a + Math.PI + rr(-0.5, 0.5) : a + Math.PI, d = 165 * (WAYMOD[way] && WAYMOD[way].evade || 1);
+      for (let i = 1; i <= 3; i++) GHOSTS.push({ x: f.x + Math.cos(away) * d * i / 4, y: f.y + Math.sin(away) * d * i / 4, face: f.face, gi: f.gi, col, life: 0.35, max: 0.4 });
+      f.x += Math.cos(away) * d; f.y += Math.sin(away) * d; f.st.invuln = 0.45 * (WAYMOD[way] && WAYMOD[way].evade || 1);
+      burst(f.x, f.y, col, 12, 120, 0.5, 6); SFX.dodge();
+      break;
+    }
+    case 'throw': {
+      f.pose = 'strike2'; f.poseT = 0;
+      if (closeIn(f, t, R.reach, 30)) { hurt(t, f, R.dmg, { power: P, knock: R.knock, ang: a, stun: R.stun, big: true, launch: true }); ring(t.x, t.y, 10, 60, col, 0.4, 4); }
+      else slash(fx, fy, a, col, 22);
+      break;
+    }
+    case 'push': {
+      f.pose = 'strike'; f.poseT = 0;
+      for (let i = 0; i < 14; i++) FX.push({ k: 'mote', x: fx, y: fy, vx: Math.cos(a + rr(-0.3, 0.3)) * rr(200, 420), vy: Math.sin(a + rr(-0.3, 0.3)) * rr(200, 420), life: 0.45, max: 0.45, size: 7, col, drag: 3 });
+      if (t && dist(f, t) - f.r - t.r <= R.reach) hurt(t, f, R.dmg, { power: P, knock: R.knock, ang: a });
+      break;
+    }
+    case 'pull': {
+      f.pose = 'cast'; f.poseT = 0;
+      if (t && dist(f, t) <= R.reach) {
+        for (let i = 0; i < 16; i++) { const k = i / 16; FX.push({ k: 'mote', x: lerp(t.x, f.x, k), y: lerp(t.y, f.y, k), vx: -Math.cos(a) * 160, vy: -Math.sin(a) * 160, life: 0.4, max: 0.4, size: 6, col, drag: 2 }); }
+        if (hurt(t, f, R.dmg, { power: P, slow: R.slow })) { const d = dist(f, t) - 62; if (d > 0) { t.kx -= Math.cos(a) * d * 5.5; t.ky -= Math.sin(a) * d * 5.5; } }
+      }
+      break;
+    }
+    case 'heal': f.st.heal = 3; f.st.healRate = R.amount * WAYMOD[way].heal * P / 3; SFX.heal(); burst(f.x, f.y, '#9dffc2', 16, 90, 0.8, 6, { up: 60 }); break;
+    case 'empower': f.st.empower = R.dur * (0.6 + 0.4 * Math.min(1, P)); burst(f.x, f.y, col, 20, 150, 0.6, 7); ring(f.x, f.y, 10, 50, col, 0.4, 3); break;
+    case 'focus': f.ki = Math.min(f.maxKi, f.ki + R.ki * (0.6 + 0.4 * Math.min(1, P))); f.st.focus = 3; for (let i = 0; i < 18; i++) { const aa = i * TAU / 18; FX.push({ k: 'mote', x: f.x + Math.cos(aa) * 60, y: f.y + Math.sin(aa) * 60, vx: -Math.cos(aa) * 130, vy: -Math.sin(aa) * 130, life: 0.45, max: 0.45, size: 6, col: '#9fd0ff', drag: 0 }); } break;
+    case 'ultimate': ultimate(f, A, t, a); break;
+  }
+}
+function flurryHit(f, A) {
+  const t = A.target || foeOf(f), a = aimAt(f, A), col = wcol(A.move.way);
+  A.hits++; f.face = a; f.pose = A.hits % 2 ? 'strike' : 'strike2'; f.poseT = 0;
+  const hx = f.x + Math.cos(a) * 30, hy = f.y + Math.sin(a) * 30;
+  slash(hx, hy, a + (A.hits % 2 ? 0.5 : -0.5), col, 20, 0.2); burst(hx, hy, col, 4, 140, 0.3, 5, { a, spread: 0.7 });
+  if (closeIn(f, t, ROLE.flurry.reach, ROLE.flurry.lunge / 2)) hurt(t, f, ROLE.flurry.dmg, { power: A.power, knock: 30, ang: a });
+}
+function ultimate(f, A, t, a) {
+  const way = A.move.way, col = wcol(way), P = A.power, D = ROLE.ultimate.dmg;
+  cam.shake = Math.max(cam.shake, 9); SFX.gong();
+  if (way === 'water') {
+    WAVES.push({ owner: f, way, x: f.x, y: f.y, a, speed: 420, travel: 0, max: 560, width: 300, dmg: D, P, hit: false, big: true, slow: 3, knock: 320 });
+    burst(f.x, f.y, col, 40, 260, 0.8, 8);
+  } else if (way === 'fire') {
+    for (let i = 0; i < 5; i++) { const aa = -Math.PI / 2 + i * TAU / 5; for (let k = 0; k < 8; k++) FX.push({ k: 'mote', x: f.x, y: f.y, vx: Math.cos(aa) * (120 + k * 40), vy: Math.sin(aa) * (120 + k * 40), life: 0.7, max: 0.7, size: 9, col, drag: 1.5 }); }
+    ring(f.x, f.y, 20, 175, col, 0.6, 9); ring(f.x, f.y, 10, 130, '#ffd27a', 0.5, 5);
+    if (t && dist(f, t) - t.r <= 175) hurt(t, f, D, { power: P, knock: 160, ang: angTo(f, t), burn: 4, big: true });
+  } else if (way === 'earth') {
+    for (let i = 0; i < 3; i++) setTimeout(() => ring(f.x, f.y, 20, 230, col, 0.6, 10), i * 140);
+    inkSplash(f.x, f.y, 18, 200);
+    if (t && dist(f, t) - t.r <= 225) hurt(t, f, D, { power: P, knock: 90, ang: angTo(f, t), stun: 2.2, big: true });
+  } else if (way === 'air') {
+    const at = t ? { x: t.x, y: t.y } : { x: f.x + Math.cos(a) * 160, y: f.y + Math.sin(a) * 160 };
+    ZONES.push({ owner: f, way: 'air', x: at.x, y: at.y, r: 110, life: 1.6, max: 1.6, dps: D / 1.6, P, tick: 0, typhoon: true });
+    if (t) { t.st.stun = Math.max(t.st.stun, 1.8); t.lift = 18; }
+  }
+}
+// a shot: a drop of water, a spark of fire, a stone, a blade of wind
+function shoot(f, x, y, a, speed, dmg, P, way, r) { SHOTS.push({ owner: f, way, x, y, vx: Math.cos(a) * speed, vy: Math.sin(a) * speed, r, dmg, P, life: 1.8, trail: [], spin: rr(0, TAU) }); }
+function stepShots(dt) {
+  for (const s of SHOTS) {
+    s.trail.unshift({ x: s.x, y: s.y }); if (s.trail.length > 9) s.trail.pop();
+    s.x += s.vx * dt; s.y += s.vy * dt; s.life -= dt; s.spin += dt * 10;
+    const t = foeOf(s.owner);
+    if (t && t.hp > 0 && dist(s, t) < t.r + s.r) { s.life = 0; if (!reflect(s, t)) hurt(t, s.owner, s.dmg, { power: s.P, knock: 70, ang: Math.atan2(s.vy, s.vx) }); burst(s.x, s.y, wcol(s.way), 10, 150, 0.4, 6); }
+    for (const sol of SOLIDS) if (Math.hypot(s.x - sol.x, s.y - sol.y) < sol.r + s.r) { s.life = 0; burst(s.x, s.y, wcol(s.way), 6, 100, 0.3, 5); }
+  }
+  SHOTS = SHOTS.filter(s => s.life > 0);
+}
+// a water guard turns shots back (a counter does too)
+function reflect(s, t) {
+  if ((t.st.guard > 0 && moveWay(t) === 'water') && Math.random() < 0.35) {
+    SHOTS.push({ ...s, owner: t, vx: -s.vx, vy: -s.vy, life: 1.2, trail: [] }); words(t.x, t.y - 30, 'Turned back', wcol('water'), 13); return true;
+  }
+  return false;
+}
+function stepWaves(dt) {
+  for (const w of WAVES) {
+    const d = w.speed * dt; w.x += Math.cos(w.a) * d; w.y += Math.sin(w.a) * d; w.travel += d;
+    const t = foeOf(w.owner);
+    if (!w.hit && t && t.hp > 0) {
+      const dx = t.x - w.x, dy = t.y - w.y, along = dx * Math.cos(w.a) + dy * Math.sin(w.a), across = -dx * Math.sin(w.a) + dy * Math.cos(w.a);
+      if (Math.abs(along) < 22 + t.r && Math.abs(across) < w.width / 2 + t.r) { w.hit = true; hurt(t, w.owner, w.dmg, { power: w.P, knock: w.knock || 140, ang: w.a, slow: w.slow || 0, big: !!w.big }); }
+    }
+    if (Math.random() < 0.8) { const off = rr(-0.5, 0.5) * w.width; FX.push({ k: 'mote', x: w.x - Math.sin(w.a) * off, y: w.y + Math.cos(w.a) * off, vx: Math.cos(w.a) * 60, vy: Math.sin(w.a) * 60, life: 0.4, max: 0.4, size: 7, col: wcol(w.way), drag: 2 }); }
+  }
+  WAVES = WAVES.filter(w => w.travel < w.max);
+}
+function stepZones(dt) {
+  for (const z of ZONES) {
+    z.life -= dt; z.tick -= dt;
+    const t = foeOf(z.owner);
+    if (t && t.hp > 0 && dist(z, t) < z.r + t.r * 0.5) {
+      if (z.way === 'air') { const a = angTo(t, z); t.kx += Math.cos(a) * 260 * dt * 6; t.ky += Math.sin(a) * 260 * dt * 6; }
+      if (z.tick <= 0) { z.tick = 0.5; hurt(t, z.owner, z.dps * 0.5, { power: z.P, knock: 0, quiet: true, slow: z.way === 'water' ? 0.8 : 0, burn: z.way === 'fire' ? 1.5 : 0, stun: z.way === 'earth' ? 0.35 : 0 }); }
+    }
+    if (Math.random() < 0.5) { const a = rr(0, TAU), r = rr(0.3, 1) * z.r; FX.push({ k: 'mote', x: z.x + Math.cos(a) * r, y: z.y + Math.sin(a) * r, vx: -Math.sin(a) * 70, vy: Math.cos(a) * 70 - (z.way === 'fire' ? 50 : 0), life: 0.6, max: 0.6, size: 6, col: wcol(z.way), drag: 1 }); }
+  }
+  ZONES = ZONES.filter(z => z.life > 0);
+}
+function drawShots(t) {
+  ctx.save(); ctx.globalCompositeOperation = 'lighter';
+  for (const s of SHOTS) {
+    const col = wcol(s.way);
+    s.trail.forEach((p, i) => { const k = 1 - i / s.trail.length, sz = s.r * 1.6 * k; ctx.globalAlpha = 0.5 * k; ctx.drawImage(sprite(col), p.x - sz, p.y - sz, sz * 2, sz * 2); });
+    ctx.globalAlpha = 1; const sz = s.r * 2.2; ctx.drawImage(sprite(col), s.x - sz, s.y - sz, sz * 2, sz * 2);
+  }
+  ctx.restore();
+  for (const s of SHOTS) {
+    const col = wcol(s.way), a = Math.atan2(s.vy, s.vx);
+    ctx.save(); ctx.translate(s.x, s.y); ctx.rotate(s.way === 'earth' ? s.spin : a);
+    ctx.fillStyle = s.way === 'earth' ? '#8a6a44' : '#fff'; ctx.strokeStyle = col; ctx.lineWidth = 2;
+    ctx.beginPath();
+    if (s.way === 'water') { ctx.moveTo(s.r, 0); ctx.quadraticCurveTo(-s.r * 0.4, s.r * 0.9, -s.r * 0.9, 0); ctx.quadraticCurveTo(-s.r * 0.4, -s.r * 0.9, s.r, 0); }
+    else if (s.way === 'fire') { ctx.moveTo(s.r, 0); ctx.lineTo(-s.r * 0.7, s.r * 0.65); ctx.lineTo(-s.r * 0.7, -s.r * 0.65); ctx.closePath(); }
+    else if (s.way === 'earth') { for (let i = 0; i < 6; i++) { const aa = i * TAU / 6, rr2 = s.r * (i % 2 ? 0.8 : 1); ctx.lineTo(Math.cos(aa) * rr2, Math.sin(aa) * rr2); } ctx.closePath(); }
+    else { ctx.arc(-s.r * 0.3, 0, s.r, -1.2, 1.2); ctx.arc(-s.r * 0.9, 0, s.r * 0.9, 1.0, -1.0, true); ctx.closePath(); }
+    ctx.globalAlpha = 0.9; ctx.fill(); ctx.stroke(); ctx.restore();
+  }
+}
+function drawWavesZones(t) {
+  for (const z of ZONES) {
+    const col = wcol(z.way), k = Math.min(1, z.life / 0.4) * Math.min(1, (z.max - z.life) / 0.25 + 0.2);
+    ctx.save(); ctx.globalAlpha = 0.22 * k; ctx.fillStyle = col; ctx.beginPath(); ctx.arc(z.x, z.y, z.r, 0, TAU); ctx.fill();
+    ctx.globalAlpha = 0.7 * k; ctx.strokeStyle = col; ctx.lineWidth = 3;
+    if (z.way === 'water' || z.way === 'air') { for (let i = 0; i < 3; i++) { ctx.beginPath(); for (let j = 0; j <= 40; j++) { const u = j / 40, a = t * (z.way === 'air' ? 6 : 2.5) + i * TAU / 3 + u * 4, r = z.r * (1 - u * 0.85); ctx.lineTo(z.x + Math.cos(a) * r, z.y + Math.sin(a) * r); } ctx.stroke(); } }
+    else if (z.way === 'fire') { ctx.setLineDash([10, 8]); ctx.lineDashOffset = -t * 40; ctx.beginPath(); ctx.arc(z.x, z.y, z.r, 0, TAU); ctx.stroke(); ctx.setLineDash([]); }
+    else { ctx.beginPath(); ctx.rect(z.x - z.r * 0.75, z.y - z.r * 0.75, z.r * 1.5, z.r * 1.5); ctx.stroke(); ctx.globalAlpha = 0.25 * k; ctx.fillStyle = '#2a1a10'; ctx.fill(); }
+    ctx.restore();
+  }
+  for (const w of WAVES) {
+    const col = wcol(w.way), k = Math.min(1, (w.max - w.travel) / 120);
+    ctx.save(); ctx.translate(w.x, w.y); ctx.rotate(w.a); ctx.globalAlpha = 0.8 * k;
+    ctx.strokeStyle = col; ctx.lineWidth = w.big ? 10 : 6; ctx.lineCap = 'round';
+    ctx.beginPath();
+    for (let i = 0; i <= 20; i++) { const u = i / 20 - 0.5, y = u * w.width, x = (w.way === 'earth' ? (i % 2 ? 5 : -5) : -Math.cos(u * Math.PI) * 16 * (w.way === 'air' ? 0.5 : 1)) + (w.way === 'fire' ? Math.sin(t * 20 + i) * 4 : 0); ctx[i ? 'lineTo' : 'moveTo'](x, y); }
+    ctx.stroke();
+    ctx.globalAlpha = 0.25 * k; ctx.lineWidth = w.big ? 30 : 18; ctx.stroke();
+    ctx.restore();
+  }
+}
+
+// ── hits ──
+function hurt(t, src, base, o = {}) {
+  if (!inFight(t) || !inFight(src) || t.hp <= 0 || !FIGHT.on) return false;
+  const sw = moveWay(src), tw = moveWay(t);
+  if (t.st.invuln > 0) { words(t.x, t.y - 30, 'Dodged', '#e8e2f2', 13); SFX.dodge(); return false; }
+  if (t.st.counter > 0 && !o.quiet) {
+    // the counter: their blow is turned back on them
+    t.st.counter = 0; const a = angTo(t, src);
+    words(t.x, t.y - 34, 'Counter!', wcol(tw), 17); ring(t.x, t.y, 10, 70, wcol(tw), 0.4, 5); slash(src.x, src.y, a, wcol(tw), 30);
+    t.counters = (t.counters || 0) + 1;
+    hurt(src, t, ROLE.counter.dmg, { power: t.isPlayer ? (t.counterPow || 1) : 1, stun: ROLE.counter.stun, knock: 120, ang: a, quietCounter: true });
+    return false;
+  }
+  let dmg = base * (o.power ?? 1) * WAYMOD[sw].dmg * advMul(sw, tw) * (src.st.empower > 0 ? 1.5 : 1) * (src.isPlayer ? 1 : RANKS[src.rank].dmg);
+  let blocked = false;
+  if (t.st.guard > 0 && !o.quiet) { blocked = true; dmg *= 1 - WAYMOD[tw].guard; words(t.x, t.y - 30, 'Blocked', '#d6d0e4', 13); SFX.block(); }
+  dmg = Math.max(0.5, dmg);
+  t.hp = Math.max(0, t.hp - dmg);
+  t.st.flash = 0.12; if (!o.quiet) { t.pose = 'hurt'; t.poseT = 0; }
+  words(t.x + rr(-8, 8), t.y - 26, String(Math.round(dmg)), blocked ? '#bbb' : t.isPlayer ? '#ff8a7a' : '#ffe08a', o.big ? 20 : 15);
+  if (!o.quiet) { SFX.hit(!!o.big); burst(t.x, t.y, wcol(sw), o.big ? 16 : 8, 170, 0.45, 6); if (o.big) { inkSplash(t.x, t.y, 10, 150); cam.shake = Math.max(cam.shake, 6); } }
+  if (!blocked) {
+    const kn = (o.knock || 0) * (sw === 'air' ? WAYMOD.air.knock : 1) * (tw === 'earth' ? WAYMOD.earth.steady : 1);
+    if (kn) { t.kx += Math.cos(o.ang) * kn * 3.2; t.ky += Math.sin(o.ang) * kn * 3.2; }
+    let stun = o.stun || 0; if (sw === 'earth' && stun) stun += 0.25;
+    if (stun) t.st.stun = Math.max(t.st.stun, stun * (o.power ? Math.min(1, 0.6 + 0.4 * o.power) : 1));
+    if (o.launch) t.lift = 14;
+    if (sw === 'water' || o.slow) t.st.slow = Math.max(t.st.slow, o.slow || 1.2);
+    if (sw === 'fire' || o.burn) t.st.burn = Math.max(t.st.burn, o.burn || 2.5);
+  }
+  if (t.isPlayer) FIGHT.taken += dmg; else FIGHT.dealt += dmg;
+  if (t.hp <= 0) knockedOut(t, src);
+  return true;
+}
+// statuses wear off; burns burn; heals heal; ki comes back
+function stepStatus(f, dt) {
+  const S = f.st;
+  for (const k of ['stun', 'slow', 'guard', 'counter', 'invuln', 'empower', 'focus', 'flash']) S[k] = Math.max(0, S[k] - dt);
+  if (S.burn > 0) { S.burn = Math.max(0, S.burn - dt); if (inFight(f) && f.hp > 0) { f.hp = Math.max(0, f.hp - 2 * dt); if (f.hp <= 0) knockedOut(f, foeOf(f)); } }
+  if (S.heal > 0) { S.heal = Math.max(0, S.heal - dt); f.hp = Math.min(f.maxHp, f.hp + S.healRate * dt); }
+  f.ki = Math.min(f.maxKi, f.ki + f.kiRegen * (S.focus > 0 ? 2 : 1) * dt);
+  f.lift = Math.max(0, (f.lift || 0) - dt * 30);
+  f.poseT += dt * 3.2; if (f.poseT >= 1 && f.pose !== 'down' && f.pose !== 'bow') f.pose = S.guard > 0 || S.counter > 0 ? 'guard' : 'idle';
+}
+
+// ── the fighters' minds ──
+function aiFight(f, foe, dt) {
+  if (f.hp <= 0 || f.st.stun > 0) return;
+  const d = dist(f, foe), K = RANKS[f.rank], ai = f.ai;
+  f.face = angTo(f, foe);
+  // keep the distance this fighter likes, circling
+  if (!f.act) {
+    const want = ai.range || (ai.range = f.rank >= 3 ? rr(70, 170) : rr(60, 150)), a = angTo(f, foe);
+    let mx = 0, my = 0;
+    if (d > want + 25) { mx += Math.cos(a); my += Math.sin(a); } else if (d < want - 25) { mx -= Math.cos(a); my -= Math.sin(a); }
+    mx += -Math.sin(a) * 0.6 * ai.strafe; my += Math.cos(a) * 0.6 * ai.strafe;
+    if (Math.random() < dt * 0.5) ai.strafe *= -1;
+    const n = Math.hypot(mx, my) || 1, sp = f.speed * (f.st.slow > 0 ? 0.6 : 1) * 0.85;
+    f.vx = mx / n * sp; f.vy = my / n * sp;
+  } else { f.vx = 0; f.vy = 0; }
+  if (f.act) return;
+  for (const k in ai.cd) ai.cd[k] = Math.max(0, ai.cd[k] - dt);
+  // seeing a blow or a shot coming: guard or spring away (the better the fighter, the more often)
+  const threat = (foe.act && foe.act.phase === 'wind' && ['heavy', 'ultimate', 'launcher', 'throw'].includes(foe.act.move.role)) || SHOTS.some(s => s.owner === foe && dist(s, f) < 120) || WAVES.some(w => w.owner === foe && dist(w, f) < 160);
+  if (threat && !ai.reacted && Math.random() < K.react) {
+    ai.reacted = true; setTimeout(() => { ai.reacted = false; }, 900);
+    const opt = ['guard', 'evade', 'counter'].filter(r => K.moves.includes(r) && !ai.cd[r]);
+    if (opt.length) { useAi(f, opt[Math.floor(Math.random() * opt.length)], foe, true); return; }
+  }
+  ai.think -= dt;
+  if (ai.think > 0) return;
+  ai.think = rr(K.think[0], K.think[1]);
+  if (f.way === 'master') ai.way = WAY_ORDER[Math.floor(Math.random() * 4)];
+  const w = {};
+  const add = (r, v) => { if (K.moves.includes(r) && !ai.cd[r] && f.ki >= ROLE[r].cost) w[r] = (w[r] || 0) + v; };
+  if (d < 95) { add('strike', 3); add('heavy', 2); add('flurry', 2); add('launcher', 1.5); add('throw', 1.5); add('sweep', 1.5); add('push', 1); add('counter', 0.6); add('guard', 0.4); }
+  else if (d < 230) { add('dash', 2); add('projectile', 2); add('volley', 1.5); add('wave', 1.5); add('pull', 1.2); add('zone', 1); }
+  else { add('projectile', 3); add('wave', 2); add('volley', 1.5); add('dash', 2); add('zone', 0.8); }
+  if (f.hp < f.maxHp * 0.45) add('heal', 2.5);
+  if (f.ki < 30) add('focus', 2);
+  if (f.rank >= 3 && f.ki >= 60) add('ultimate', 0.6);
+  add('empower', 0.3);
+  const keys = Object.keys(w);
+  if (!keys.length) return;
+  let pick = Math.random() * keys.reduce((a, k) => a + w[k], 0), role = keys[0];
+  for (const k of keys) { pick -= w[k]; if (pick <= 0) { role = k; break; } }
+  useAi(f, role, foe);
+}
+function useAi(f, role, foe, quick) {
+  const way = moveWay(f), move = MOVES[way].find(m => m.role === role);
+  if (!move) return;
+  if (startMove(f, move, 1, foe)) {
+    f.ai.cd[role] = { guard: 2.5, evade: 2.5, counter: 3, heal: 9, empower: 10, focus: 6, ultimate: 14, zone: 6, wave: 4, volley: 3.5, pull: 4, throw: 3.5, launcher: 3, heavy: 2.5, sweep: 3, dash: 2.5 }[role] || 1.2;
+    if (quick && f.act) { f.act.t *= 0.5; f.act.wind *= 0.5; if (f.glyph) f.glyph.dur *= 0.5; }
+  }
+}
+
+// ── the pad: rice paper, a brush, and the reader ──
+// strokes are kept in pad units (the pad is a circle of radius 1); the ink thickens the longer the brush is down,
+// thins the faster it moves, splits into dry streaks when very fast, and pools where it's held still
+const PAD = { strokes: [], pen: null, judgeAt: 0, shown: null, guide: null, prs: { ok: false, vals: new Set() } };
+const READ_AFTER = 550; // ms after the brush lifts before the glyph is read (time for a second stroke)
+const pf = p => (p == null ? 1 : 0.45 + 1.1 * p);
+function padPressure(e) {
+  const v = e && e.pressure;
+  if (typeof v !== 'number' || v <= 0 || e.pointerType === 'mouse') return null;
+  if (e.pointerType === 'pen') { PAD.prs.ok = true; return v; }
+  PAD.prs.vals.add(Math.round(v * 100));
+  if (PAD.prs.vals.size >= 4) PAD.prs.ok = true;
+  return PAD.prs.ok ? v : null;
+}
+const evTime = e => { const t = e.timeStamp, n = performance.now(); return t > 0 && Math.abs(t - n) < 4000 ? t : n; };
+const padAt = (x, y) => ({ x: (x - L.pad.cx) / L.pad.r, y: (y - L.pad.cy) / L.pad.r });
+const inPad = (x, y) => Math.hypot(x - L.pad.cx, y - L.pad.cy) < L.pad.r * 1.05;
+function penDown(x, y, e) {
+  if (PAD.shown) { PAD.shown = null; PAD.strokes = []; }
+  PAD.judgeAt = 0;
+  const u = padAt(x, y), t = evTime(e), p = padPressure(e);
+  const pt = { x: u.x, y: u.y, t, w: INKP.MIN * 2 * pf(p), p, seed: (Math.random() * 997) | 0 };
+  const s = { pts: [pt], pools: [], len: 0, livePools: [] };
+  PAD.strokes.push(s);
+  PAD.pen = { s, t0: t, lastMove: performance.now(), v: 0, w: pt.w, dwell: 0, poolW: pt.w };
+  SFX.stroke();
+}
+function penMove(x, y, t, p) {
+  const pen = PAD.pen;
+  if (!pen) return;
+  const u = padAt(x, y), s = pen.s, last = s.pts[s.pts.length - 1], d = Math.hypot(u.x - last.x, u.y - last.y);
+  if (d < 0.004) return;
+  if (pen.dwell >= INKP.POOLT) { s.pools.push({ s: s.len, dwell: pen.dwell, w: pen.poolW }); s.livePools.push({ p: { ...last }, w: pen.poolW }); }
+  pen.dwell = 0;
+  const dt = Math.max(1, t - last.t) / 1000;
+  pen.v = pen.v * 0.55 + (d / dt) * 0.45;
+  const v = pen.v * L.pad.r / 180, load = Math.min(1, (t - pen.t0) / 800);
+  const target = INKP.MIN + (INKP.MAX - INKP.MIN) * (0.25 + 0.75 * load) * clamp(1 - v / INKP.VTHIN, 0.06, 1) * pf(p);
+  pen.w += (target - pen.w) * Math.min(1, dt * 16);
+  const n = Math.min(10, Math.ceil(d / 0.012));
+  for (let i = 1; i <= n; i++) { const k = i / n; s.pts.push({ x: last.x + (u.x - last.x) * k, y: last.y + (u.y - last.y) * k, t: last.t + (t - last.t) * k, w: last.w + (pen.w - last.w) * k, p, dry: v > INKP.VDRY && s.len > 0.08, seed: (Math.random() * 997) | 0 }); }
+  s.len += d;
+  pen.lastMove = performance.now(); pen.poolW = pen.w;
+}
+function penUp() {
+  const pen = PAD.pen;
+  if (!pen) return;
+  const s = pen.s, last = s.pts[s.pts.length - 1];
+  if (pen.dwell >= INKP.POOLT) { s.pools.push({ s: s.len, dwell: pen.dwell, w: pen.poolW }); s.livePools.push({ p: { ...last }, w: pen.poolW }); }
+  PAD.pen = null;
+  PAD.judgeAt = performance.now() + READ_AFTER;
+}
+function padTick(dt) {
+  const pen = PAD.pen, now = performance.now();
+  if (pen && now - pen.lastMove > 60) { pen.dwell += dt; pen.poolW += (INKP.POOL * pf(pen.s.pts[pen.s.pts.length - 1].p) - pen.poolW) * Math.min(1, dt * 1.9); }
+  if (!pen && PAD.judgeAt && now >= PAD.judgeAt) padJudge();
+  if (PAD.shown && now - PAD.shown.t > 1200) { PAD.shown = null; PAD.strokes = []; }
+}
+// read it: the closest of your moves, how well it was written; cast it at that strength
+function padJudge(strokes) {
+  PAD.judgeAt = 0;
+  const S = strokes || PAD.strokes;
+  const R = S.length ? recognize(S, myMoves()) : null;
+  if (!R) { PAD.strokes = []; return null; }
+  if (strokes) PAD.strokes = strokes;
+  const sh = PAD.shown = { R, t: performance.now(), ok: false, msg: '' };
+  if (R.verdict === 'fizzle') {
+    const all = recognize(S, MOVES[save.way]), locked = all && all.verdict !== 'fizzle' && all.best.g.order >= learnedCount();
+    sh.msg = locked ? 'A move of your way, but no one has taught it to you yet' : R.best && R.best.q > 0.15 ? `The ink doesn’t take · closest: ${R.best.g.name}` : 'The ink doesn’t take';
+    SFX.fizzle();
+  }
+  else {
+    const m = R.best.g;
+    if (player.st.stun > 0 || player.hp <= 0) sh.msg = 'Stunned!';
+    else if (player.act) sh.msg = 'Still moving…';
+    else if (startMove(player, m, R.power, FIGHT && FIGHT.on ? FIGHT.foe : null)) {
+      sh.ok = true; player.counterPow = R.power;
+      words(player.x, player.y - 44, m.name, WAYS[m.way].color, 15, 1.1);
+      if (save) { save.stats.casts++; if (R.verdict === 'clean') save.stats.clean++; }
+      if (PAD.guide && PAD.guide.role === m.role) PAD.guide = null;
+    } else sh.msg = player.ki < ROLE[m.role].cost ? 'Not enough ki' : '';
+  }
+  return R;
+}
+// drawing the ink, as on the dojo page
+function seg(c, M, a, b, color) {
+  const ax = M.cx + a.x * M.r, ay = M.cy + a.y * M.r, bx = M.cx + b.x * M.r, by = M.cy + b.y * M.r;
+  const wa = Math.max(0.6, a.w * M.r), wb = Math.max(0.6, b.w * M.r);
+  const dx = bx - ax, dy = by - ay, d = Math.hypot(dx, dy) || 1e-6, nx = -dy / d, ny = dx / d;
+  c.fillStyle = color;
+  if (b.dry) {
+    const lanes = [-0.36, -0.13, 0.1, 0.33];
+    for (let k = 0; k < 4; k++) {
+      if ((b.seed + k * 3) % 7 === 0) continue;
+      const o = lanes[k], h = 0.085;
+      c.beginPath(); c.moveTo(ax + nx * wa * (o - h), ay + ny * wa * (o - h)); c.lineTo(bx + nx * wb * (o - h), by + ny * wb * (o - h));
+      c.lineTo(bx + nx * wb * (o + h), by + ny * wb * (o + h)); c.lineTo(ax + nx * wa * (o + h), ay + ny * wa * (o + h)); c.closePath(); c.fill();
+    }
+    return;
+  }
+  c.beginPath(); c.arc(bx, by, wb / 2, 0, TAU); c.fill();
+  c.beginPath(); c.moveTo(ax + nx * wa / 2, ay + ny * wa / 2); c.lineTo(bx + nx * wb / 2, by + ny * wb / 2); c.lineTo(bx - nx * wb / 2, by - ny * wb / 2); c.lineTo(ax - nx * wa / 2, ay - ny * wa / 2); c.closePath(); c.fill();
+}
+function blot(c, M, p, w, color) {
+  const x = M.cx + p.x * M.r, y = M.cy + p.y * M.r, r = w * M.r / 2;
+  c.fillStyle = color; c.beginPath(); c.arc(x, y, r, 0, TAU); c.fill();
+  for (let k = 0; k < 6; k++) { const a = k * TAU / 6 + (p.seed || 0) * 0.37, r2 = r * (0.28 + 0.12 * (((p.seed || 0) + k * 5) % 4)); c.beginPath(); c.arc(x + Math.cos(a) * r * 0.82, y + Math.sin(a) * r * 0.82, r2, 0, TAU); c.fill(); }
+}
+function inkStroke(c, M, s, color = C.sumi, upto = Infinity) {
+  const P = s.pts;
+  if (!P.length) return;
+  blot(c, M, P[0], P[0].w, color);
+  for (let i = 1; i < P.length && P[i].t <= upto; i++) seg(c, M, P[i - 1], P[i], color);
+  for (const d of s.dwells || []) { if (upto < d.t0) continue; const k = clamp((upto - d.t0) / (d.t1 - d.t0), 0, 1), p = P[Math.min(d.i, P.length - 1)]; blot(c, M, p, INKP.POOL * (0.5 + 0.5 * k), color); }
+  for (const pl of s.livePools || []) blot(c, M, pl.p, pl.w, color);
+}
+function paper(c, M, faint) {
+  const g = c.createRadialGradient(M.cx - M.r * 0.3, M.cy - M.r * 0.35, M.r * 0.1, M.cx, M.cy, M.r);
+  g.addColorStop(0, '#f6efdc'); g.addColorStop(1, '#e4d6b4');
+  c.fillStyle = g; c.beginPath(); c.arc(M.cx, M.cy, M.r, 0, TAU); c.fill();
+  c.strokeStyle = 'rgba(80,60,40,0.55)'; c.lineWidth = Math.max(1, M.r * 0.008); c.stroke();
+  c.strokeStyle = `rgba(80,60,40,${faint ? 0.1 : 0.16})`; c.lineWidth = 1;
+  for (const k of [1 / 3, 2 / 3]) { c.beginPath(); c.arc(M.cx, M.cy, M.r * k, 0, TAU); c.stroke(); }
+  for (let i = 0; i < 8; i++) { const a = i * TAU / 8; c.beginPath(); c.moveTo(M.cx + Math.cos(a) * M.r * 0.06, M.cy + Math.sin(a) * M.r * 0.06); c.lineTo(M.cx + Math.cos(a) * M.r, M.cy + Math.sin(a) * M.r); c.stroke(); }
+}
+// a move's glyph as a guide or a ghost: its path, its start (a dot) and its pools (rings)
+function glyphGuide(c, M, g, color, alpha, dashed = true, lw) {
+  c.save(); c.globalAlpha = alpha; c.strokeStyle = color; c.fillStyle = color; c.lineWidth = lw || Math.max(1.5, M.r * 0.014); c.lineCap = 'round'; c.lineJoin = 'round';
+  if (dashed) c.setLineDash([M.r * 0.045, M.r * 0.03]);
+  g.strokes.forEach((s, si) => {
+    c.beginPath(); s.forEach((p, i) => (i ? c.lineTo : c.moveTo).call(c, M.cx + p.x * M.r, M.cy + p.y * M.r)); c.stroke();
+    c.setLineDash([]);
+    c.beginPath(); c.arc(M.cx + s[0].x * M.r, M.cy + s[0].y * M.r, Math.max(2.5, M.r * 0.035), 0, TAU); c.fill();
+    for (const tp of g.pools[si]) { const p = s[Math.round(tp * (s.length - 1))]; c.beginPath(); c.arc(M.cx + p.x * M.r, M.cy + p.y * M.r, Math.max(4, M.r * 0.08), 0, TAU); c.stroke(); }
+    if (dashed) c.setLineDash([M.r * 0.045, M.r * 0.03]);
+  });
+  c.restore();
+}
+function drawPad() {
+  const M = L.pad, now = performance.now(), sh = PAD.shown;
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.beginPath(); ctx.arc(M.cx + 3, M.cy + 6, M.r + 4, 0, TAU); ctx.fill();
+  paper(ctx, M);
+  if (PAD.guide && !sh) glyphGuide(ctx, M, PAD.guide, '#5a4630', 0.5);
+  if (sh && sh.R.best && (sh.R.verdict !== 'fizzle' || sh.R.best.q > 0.15)) { const took = sh.R.verdict !== 'fizzle'; glyphGuide(ctx, M, sh.R.best.g, took ? WAYS[sh.R.best.g.way].color : '#5a4630', took ? 0.75 : 0.35); }
+  ctx.globalAlpha = sh ? clamp(1 - (now - sh.t - 600) / 600, 0, 1) : 1;
+  ctx.beginPath(); ctx.arc(M.cx, M.cy, M.r, 0, TAU); ctx.clip();
+  for (const s of PAD.strokes) inkStroke(ctx, M, s);
+  if (PAD.pen && PAD.pen.dwell > 0) blot(ctx, M, PAD.pen.s.pts[PAD.pen.s.pts.length - 1], PAD.pen.poolW, C.sumi);
+  ctx.restore();
+  if (sh && sh.ok) {
+    const sz = Math.max(26, M.r * 0.22), k = clamp((now - sh.t) / 220, 0, 1), grow = 1 + 0.5 * (1 - ease(k));
+    ctx.save(); ctx.translate(M.cx + M.r * 0.68, M.cy + M.r * 0.68); ctx.scale(grow, grow); ctx.globalAlpha = Math.min(1, 0.3 + k);
+    ctx.fillStyle = C.seal; roundRect(-sz / 2, -sz / 2, sz, sz, sz * 0.16); ctx.fill();
+    ctx.strokeStyle = '#fbeee0'; ctx.lineWidth = Math.max(2, sz * 0.08); ctx.lineCap = 'round'; ctx.lineJoin = 'round'; wayMark(ctx, sh.R.best.g.way, 0, 1, sz * 0.3);
+    ctx.restore();
+  }
+}
+function roundRect(x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
+
+// ── the game: title, the way you choose, the dojo, challenges, fights, lessons, the Grandmaster ──
+let state = 'title', FIGHT = null, T = 0, slowmo = 0, banner = null, overlay = null, pickWay = null, buttons = [], calm = 0;
+const fighters = () => [...FOES, ...(MASTERF ? [MASTERF] : [])];
+function setupWorld() {
+  player = makeFighter({ isPlayer: true, way: save.way, name: 'You' });
+  FOES = ROSTER.map(o => { const f = makeFighter(o); if (save.beaten.includes(o.id)) { f.beaten = true; f.mode = 'beaten'; f.pose = 'bow'; } return f; });
+  MASTERF = null;
+  if (save.beaten.length >= ROSTER.length && !save.master) spawnMaster(true);
+  FX = []; SHOTS = []; WAVES = []; ZONES = []; TEXTS = []; GHOSTS = []; FIGHT = null; slowmo = 0;
+  PAD.strokes = []; PAD.shown = null; PAD.pen = null; PAD.guide = null;
+  updateCam(0, true);
+}
+function spawnMaster(quiet) {
+  MASTERF = makeFighter(MASTER); MASTERF.face = Math.PI / 2;
+  if (!quiet) { say('Grandmaster Sumi waits on the dais', 'Every hall is beaten. One fight left.', 4); SFX.gong(); }
+}
+function say(title, sub, life = 2.6, col) { banner = { title, sub, life, max: life, col: col || C.gold }; }
+function beginGame(way) { save = newSave(way); writeSave(); setupWorld(); state = 'play'; say(`The Way of ${WAYS[way].name}`, `${WAYS[way].animal} · ${WAYS[way].style}. Open MOVES to see how to write your first eight. Walk the dojo: its fighters will come to you.`, 5.5, WAYS[way].color); }
+function continueGame() { setupWorld(); state = 'play'; say(`The Way of ${WAYS[save.way].name}`, `${save.beaten.length} of 12 fighters beaten`, 3, WAYS[save.way].color); }
+
+// a fighter sees you coming, walks up, bows, and the fight begins
+function lookForChallenger() {
+  if (FIGHT || state !== 'play' || calm > 0 || fighters().some(f => f.mode === 'approach')) return;
+  let best = null, bd = Infinity;
+  for (const f of fighters()) {
+    if (f.beaten || f.mode !== 'post') continue;
+    const d = dist(f, player), reach = f === MASTERF ? 250 : 215;
+    if (d < reach && d < bd) { best = f; bd = d; }
+  }
+  if (best) {
+    best.mode = 'approach';
+    const hall = best.way === 'master' ? 'the dais' : HALLS[best.way].label;
+    say(`${best.name} challenges you`, best === MASTERF ? 'The last fight' : `${hall} · ${RANKS[best.rank].beltName}`, 2.2, best.way === 'master' ? C.seal : WAYS[best.way].color);
+    words(best.x, best.y - 40, '!', '#ffe08a', 24, 0.9);
+  }
+}
+function startFight(f) {
+  const cx = (player.x + f.x) / 2, cy = (player.y + f.y) / 2;
+  FIGHT = { foe: f, on: false, intro: 1.9, t: 0, cx, cy, r: 255, dealt: 0, taken: 0, over: null };
+  f.mode = 'fight'; f.hp = f.maxHp; f.ki = f.maxKi; f.act = null; f.glyph = null; f.ai.think = rr(0.8, 1.3);
+  player.act = null; player.pose = 'bow'; player.poseT = 0; f.pose = 'bow'; f.poseT = 0;
+  for (const k in player.st) player.st[k] = 0; player.hp = player.maxHp; player.ki = player.maxKi;
+  SHOTS = []; WAVES = []; ZONES = [];
+  PAD.strokes = []; PAD.shown = null;
+  SFX.drum(2);
+}
+function knockedOut(t, src) {
+  if (!FIGHT || FIGHT.over) return;
+  FIGHT.on = false; FIGHT.over = { winner: src, loser: t, t: 0 };
+  t.hp = 0; t.pose = 'down'; t.act = null; t.glyph = null; src.act = null;
+  slowmo = 0.9; SFX.gong(); cam.shake = 8;
+  burst(t.x, t.y, wcol(moveWay(src)), 30, 220, 0.9, 8); inkSplash(t.x, t.y, 16, 180);
+}
+function endFight() {
+  const O = FIGHT.over, foe = FIGHT.foe;
+  calm = 4;
+  FIGHT = null; SHOTS = []; WAVES = []; ZONES = [];
+  if (O.winner === player) {
+    foe.beaten = true; foe.mode = 'return'; foe.hp = foe.maxHp; foe.pose = 'idle';
+    if (foe === MASTERF) { save.master = true; save.stats.wins++; save.stats.t1 = Date.now(); writeSave(); overlay = { kind: 'victory', t: 0 }; SFX.learn(); return; }
+    const before = learnedCount();
+    if (!save.beaten.includes(foe.id)) save.beaten.push(foe.id);
+    save.stats.wins++; writeSave();
+    const after = learnedCount(), move = after > before ? MOVES[save.way].find(m => m.order === after - 1) : null;
+    overlay = { kind: 'learn', t: 0, foe, move, demo: move ? writeOut(move, { wobble: 0.006 }) : null };
+    SFX.learn();
+  } else {
+    save.stats.falls++; writeSave();
+    overlay = { kind: 'fallen', t: 0, foe };
+    foe.mode = 'return'; foe.hp = foe.maxHp; foe.pose = 'idle';
+  }
+}
+function afterLearn() {
+  overlay = null;
+  player.hp = player.maxHp; player.ki = player.maxKi; player.pose = 'idle';
+  if (save.beaten.length >= ROSTER.length && !save.master && !MASTERF) spawnMaster(false);
+}
+function afterFall() {
+  overlay = null;
+  player.x = START.x; player.y = START.y; player.hp = player.maxHp; player.ki = player.maxKi; player.pose = 'idle';
+  for (const k in player.st) player.st[k] = 0;
+  updateCam(0, true);
+}
+
+// ── every frame ──
+const keys = {};
+let stick = null; // { id, x0, y0, x, y }
+function update(dt) {
+  T += dt;
+  stepFx(dt);
+  if (banner && (banner.life -= dt) <= 0) banner = null;
+  if (overlay) { overlay.t += dt; return; }
+  if (state !== 'play') return;
+  const sdt = slowmo > 0 ? dt * 0.35 : dt; slowmo = Math.max(0, slowmo - dt); calm = Math.max(0, calm - dt);
+  padTick(dt);
+  // you: walk with the stick (drag on the floor) or the keys
+  let mx = 0, my = 0;
+  if (stick) { const dx = stick.x - stick.x0, dy = stick.y - stick.y0, d = Math.hypot(dx, dy); if (d > 6) { const k = Math.min(1, d / 50); mx = dx / d * k; my = dy / d * k; } }
+  if (keys.ArrowLeft || keys.KeyA) mx -= 1; if (keys.ArrowRight || keys.KeyD) mx += 1; if (keys.ArrowUp || keys.KeyW) my -= 1; if (keys.ArrowDown || keys.KeyS) my += 1;
+  const mn = Math.hypot(mx, my); if (mn > 1) { mx /= mn; my /= mn; }
+  const canWalk = player.hp > 0 && player.st.stun <= 0 && !(FIGHT && (FIGHT.intro > 0 || FIGHT.over)) && !(player.act && player.act.phase === 'wind');
+  const sp = player.speed * (player.st.slow > 0 ? 0.6 : 1);
+  player.vx = canWalk ? mx * sp : 0; player.vy = canWalk ? my * sp : 0;
+  if (FIGHT && FIGHT.foe) player.face = angTo(player, FIGHT.foe); else if (mn > 0.1) player.face = Math.atan2(my, mx);
+  // the fight
+  if (FIGHT) {
+    const F = FIGHT, foe = F.foe;
+    if (F.intro > 0) {
+      F.intro -= dt; foe.face = angTo(foe, player);
+      if (F.intro < 1.1 && !F.said) { F.said = true; say('Begin!', '', 0.9, C.seal); SFX.drum(1); }
+      if (F.intro <= 0) { F.on = true; player.pose = 'idle'; foe.pose = 'idle'; }
+    } else if (F.over) { F.over.t += dt; if (F.over.t > 1.7) endFight(); }
+    else { F.t += sdt; aiFight(foe, player, sdt); }
+  }
+  // everyone else
+  for (const f of fighters()) {
+    if (FIGHT && f === FIGHT.foe) continue;
+    if (f.mode === 'approach') {
+      const d = dist(f, player), a = angTo(f, player); f.face = a;
+      if (FIGHT) { f.mode = 'return'; continue; }
+      if (d > 140) { f.vx = Math.cos(a) * f.speed * 0.9; f.vy = Math.sin(a) * f.speed * 0.9; } else { f.vx = f.vy = 0; startFight(f); }
+    } else if (f.mode === 'return') {
+      const d = dist(f, f.post), a = angTo(f, f.post);
+      if (d > 6) { f.vx = Math.cos(a) * f.speed * 0.7; f.vy = Math.sin(a) * f.speed * 0.7; f.face = a; }
+      else { f.vx = f.vy = 0; f.mode = f.beaten ? 'beaten' : 'post'; f.pose = f.beaten ? 'bow' : 'idle'; f.face = angTo(f, { x: 800, y: 850 }); }
+    } else {
+      f.vx = f.vy = 0;
+      // practising at their post now and then
+      if (f.mode === 'post' && Math.random() < dt * 0.25 && f.poseT >= 1) { f.pose = Math.random() < 0.5 ? 'strike' : 'kick'; f.poseT = 0; }
+    }
+  }
+  lookForChallenger();
+  // moves in progress, statuses, motion
+  const live = FIGHT ? [player, FIGHT.foe] : [player];
+  for (const f of live) stepAct(f, sdt);
+  for (const f of [player, ...fighters()]) {
+    stepStatus(f, sdt);
+    const moving = Math.hypot(f.vx, f.vy) > 5;
+    f.x += (f.vx + f.kx) * sdt; f.y += (f.vy + f.ky) * sdt;
+    const fr = Math.exp(-7 * sdt); f.kx *= fr; f.ky *= fr;
+    if (moving) f.walk += sdt * 11; else f.walk *= 0.8;
+    blocked(f, f.r);
+  }
+  if (FIGHT) {
+    // the ring holds the two of you
+    for (const f of [player, FIGHT.foe]) { const d = Math.hypot(f.x - FIGHT.cx, f.y - FIGHT.cy), m = FIGHT.r - f.r; if (d > m) { const k = m / d; f.x = FIGHT.cx + (f.x - FIGHT.cx) * k; f.y = FIGHT.cy + (f.y - FIGHT.cy) * k; f.kx *= -0.3; f.ky *= -0.3; } }
+    const a = FIGHT.foe, d = dist(player, a), m = player.r + a.r;
+    if (d < m && d > 0) { const k = (m - d) / d / 2; player.x -= (a.x - player.x) * k; player.y -= (a.y - player.y) * k; a.x += (a.x - player.x) * k; a.y += (a.y - player.y) * k; }
+  }
+  stepShots(sdt); stepWaves(sdt); stepZones(sdt);
+  updateCam(dt);
+}
+
+// ── drawing a frame ──
+function render() {
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  ctx.fillStyle = C.night; ctx.fillRect(0, 0, W, H);
+  if (state === 'title') { drawTitle(); drawOverlay(); return; }
+  ctx.save();
+  ctx.beginPath(); ctx.rect(L.arena.x, L.arena.y, L.arena.w, L.arena.h); ctx.clip();
+  worldTransform();
+  drawFloor();
+  drawPond(T);
+  if (FIGHT) { ctx.save(); ctx.strokeStyle = 'rgba(20,14,24,0.55)'; ctx.lineWidth = 9; ctx.setLineDash([28, 10, 6, 10]); ctx.beginPath(); ctx.arc(FIGHT.cx, FIGHT.cy, FIGHT.r, 0, TAU); ctx.stroke(); ctx.restore(); }
+  drawWavesZones(T);
+  drawProps(T, 'low');
+  drawFx('under');
+  const all = [player, ...fighters()].sort((a, b) => a.y - b.y);
+  for (const f of all) drawFighter(f, T);
+  for (const f of all) drawStatus(f, T);
+  drawShots(T);
+  drawFx('over');
+  drawProps(T, 'high');
+  for (const f of fighters()) if (!FIGHT || f !== FIGHT.foe) nameTag(f);
+  if (FIGHT) drawAirGlyph(FIGHT.foe);
+  drawTexts();
+  ctx.restore();
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  if (!FIGHT) pointToNext();
+  drawHud();
+  drawPanel();
+  drawPad();
+  if (stick) { ctx.strokeStyle = 'rgba(236,230,244,0.35)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(stick.x0, stick.y0, 50, 0, TAU); ctx.stroke(); ctx.fillStyle = 'rgba(236,230,244,0.35)'; const dx = stick.x - stick.x0, dy = stick.y - stick.y0, d = Math.min(50, Math.hypot(dx, dy)), a = Math.atan2(dy, dx); ctx.beginPath(); ctx.arc(stick.x0 + Math.cos(a) * d, stick.y0 + Math.sin(a) * d, 18, 0, TAU); ctx.fill(); }
+  drawBanner();
+  drawOverlay();
+}
+function nameTag(f) {
+  if (dist(f, player) > 330) return;
+  ctx.textAlign = 'center'; ctx.font = `bold 12px ${BODY}`;
+  const y = f.y - 30, txt = f.beaten ? `${f.name} ✓` : f.name;
+  ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(10,8,16,0.8)'; ctx.strokeText(txt, f.x, y);
+  ctx.fillStyle = f.beaten ? '#bfb8cc' : f.way === 'master' ? '#ff9a8a' : WAYS[f.way].color; ctx.fillText(txt, f.x, y);
+}
+// an arrow at the edge of the view toward the nearest fighter still to beat
+function pointToNext() {
+  let best = null, bd = Infinity;
+  for (const f of fighters()) if (!f.beaten) { const d = dist(f, player); if (d < bd) { bd = d; best = f; } }
+  if (!best) return;
+  const s = toScreen(best.x, best.y), A = L.arena, m = 30;
+  if (s.x > A.x + m && s.x < A.x + A.w - m && s.y > A.y + 90 && s.y < A.y + A.h - m) return;
+  const cx = A.x + A.w / 2, cy = A.y + A.h * 0.56, a = Math.atan2(s.y - cy, s.x - cx);
+  const rx = A.w / 2 - m, ry = A.h * 0.42 - m, k = 1 / Math.max(Math.abs(Math.cos(a)) / rx, Math.abs(Math.sin(a)) / ry);
+  const x = cx + Math.cos(a) * k, y = cy + Math.sin(a) * k, col = best.way === 'master' ? C.seal : WAYS[best.way].color;
+  ctx.save(); ctx.translate(x, y); ctx.rotate(a); ctx.fillStyle = col; ctx.globalAlpha = 0.85 + 0.15 * Math.sin(T * 5);
+  ctx.beginPath(); ctx.moveTo(12, 0); ctx.lineTo(-8, -9); ctx.lineTo(-4, 0); ctx.lineTo(-8, 9); ctx.closePath(); ctx.fill(); ctx.restore();
+  ctx.textAlign = 'center'; ctx.font = `bold 11px ${BODY}`; ctx.fillStyle = col; ctx.fillText(best.name, x - Math.cos(a) * 26, y - Math.sin(a) * 26 + 4);
+}
+function bar(x, y, w, h, k, col, back = 'rgba(255,255,255,0.12)') { roundRect(x, y, w, h, h / 2); ctx.fillStyle = back; ctx.fill(); if (k > 0) { roundRect(x, y, Math.max(h, w * k), h, h / 2); ctx.fillStyle = col; ctx.fill(); } }
+function drawHud() {
+  const pad = 12, w = Math.min(170, L.arena.w * 0.4), wc = WAYS[save.way].color;
+  ctx.fillStyle = 'rgba(18,15,25,0.72)'; roundRect(pad - 6, pad - 6, w + 12, 50, 10); ctx.fill();
+  ctx.textAlign = 'left'; ctx.font = `bold 12px ${BODY}`; ctx.fillStyle = C.fg; ctx.fillText(`You · ${WAYS[save.way].name}`, pad, pad + 8);
+  bar(pad, pad + 14, w, 9, player.hp / player.maxHp, C.hp);
+  bar(pad, pad + 27, w, 6, player.ki / player.maxKi, wc);
+  ctx.font = `10px ${BODY}`; ctx.fillStyle = C.muted; ctx.fillText(`ki ${Math.floor(player.ki)}`, pad + w - 34, pad + 41);
+  if (FIGHT && FIGHT.foe) {
+    const f = FIGHT.foe, x = L.arena.x + L.arena.w - pad - w, col = f.way === 'master' ? C.seal : WAYS[f.way].color;
+    ctx.fillStyle = 'rgba(18,15,25,0.72)'; roundRect(x - 6, pad - 6, w + 12, 50, 10); ctx.fill();
+    ctx.textAlign = 'right'; ctx.font = `bold 12px ${BODY}`; ctx.fillStyle = col; ctx.fillText(f.name, x + w, pad + 8);
+    bar(x, pad + 14, w, 9, f.hp / f.maxHp, C.hp);
+    bar(x, pad + 27, w, 6, f.ki / f.maxKi, f.way === 'master' ? wcol(f.ai.way) : col);
+    ctx.font = `10px ${BODY}`; ctx.fillStyle = C.muted; ctx.fillText(f.way === 'master' ? 'every way' : `${RANKS[f.rank].beltName}${beats(save.way, f.way) ? ' · your way beats theirs' : beats(f.way, save.way) ? ' · their way beats yours' : ''}`, x + w, pad + 41);
+  } else {
+    const bx = L.arena.x + L.arena.w - pad - 132;
+    ctx.fillStyle = 'rgba(18,15,25,0.72)'; roundRect(bx - 6, pad - 6, 144, 40, 10); ctx.fill();
+    ctx.textAlign = 'right'; ctx.font = `bold 12px ${BODY}`; ctx.fillStyle = C.fg;
+    const left = ROSTER.length - save.beaten.length;
+    ctx.fillText(left ? `${save.beaten.length} of 12 beaten` : save.master ? 'Grandmaster' : 'The Grandmaster waits', L.arena.x + L.arena.w - pad, pad + 8);
+    ctx.font = `11px ${BODY}`; ctx.fillStyle = C.muted; ctx.fillText(`${learnedCount()} of 20 moves`, L.arena.x + L.arena.w - pad, pad + 24);
+  }
+}
+// round the pad: the line that says what was read, the Moves button, the sound button
+function panelButtons() {
+  const M = L.pad, y = M.cy - M.r - 30;
+  return { moves: { x: L.wide ? L.arena.w + 10 : 12, y: y - 15, w: 84, h: 30 }, sound: { x: W - (L.wide ? 50 : 52), y: y - 15, w: 40, h: 30 } };
+}
+function drawPanel() {
+  const M = L.pad, B = panelButtons(), y = M.cy - M.r - 30;
+  if (!L.wide) { const g = ctx.createLinearGradient(0, L.arena.h - 20, 0, H); g.addColorStop(0, 'rgba(18,15,25,0)'); g.addColorStop(0.15, 'rgba(18,15,25,0.92)'); g.addColorStop(1, C.night); ctx.fillStyle = g; ctx.fillRect(0, L.arena.h - 20, W, H - L.arena.h + 20); }
+  else { ctx.fillStyle = C.night; ctx.fillRect(L.arena.w, 0, W - L.arena.w, H); }
+  pill(B.moves, 'MOVES', C.gold);
+  pill(B.sound, soundOn ? '♪' : '–', C.muted);
+  // the words sit in the gap between the two buttons: one line, or two if they don't fit
+  const sh = PAD.shown, mid = (B.moves.x + B.moves.w + B.sound.x) / 2, maxW = B.sound.x - B.moves.x - B.moves.w - 16;
+  const lines = (text, font, col) => {
+    ctx.font = font; ctx.fillStyle = col;
+    const ls = wrapLines(text, maxW);
+    if (ls.length < 2) ctx.fillText(text, mid, y + 5, maxW);
+    else { ctx.fillText(ls[0], mid, y - 2, maxW); ctx.fillText(ls.slice(1).join(' '), mid, y + 14, maxW); }
+  };
+  ctx.textAlign = 'center';
+  if (sh) {
+    const R = sh.R, took = R.verdict !== 'fizzle' && R.best;
+    if (took) {
+      ctx.font = `bold 14px ${BODY}`; ctx.fillStyle = sh.ok ? WAYS[R.best.g.way].color : C.rough;
+      ctx.fillText(R.best.g.name, mid, y - 2, maxW);
+      ctx.font = `12px ${BODY}`; ctx.fillStyle = sh.ok ? C.fg : C.rough;
+      ctx.fillText(`${R.verdict === 'clean' ? 'Clean' : 'Rough'} · ${Math.round(R.power * 100)}%${sh.msg ? ' · ' + sh.msg : ''}`, mid, y + 14, maxW);
+    } else lines(sh.msg, `bold 13px ${BODY}`, C.fizzle);
+  } else lines(PAD.guide ? `Trace: ${PAD.guide.name}` : FIGHT && FIGHT.on ? 'Write a move' : 'Walk: drag the floor · Write moves on the paper', `italic 13px ${BODY}`, 'rgba(214,208,228,0.6)');
+}
+function pill(b, text, col) { roundRect(b.x, b.y, b.w, b.h, b.h / 2); ctx.fillStyle = 'rgba(30,22,44,0.92)'; ctx.fill(); ctx.strokeStyle = col; ctx.lineWidth = 1.5; ctx.stroke(); ctx.textAlign = 'center'; ctx.fillStyle = col; ctx.font = `bold 13px ${BODY}`; ctx.fillText(text, b.x + b.w / 2, b.y + b.h / 2 + 5); }
+const hit = (b, x, y) => b && x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h;
+function drawBanner() {
+  if (!banner) return;
+  const k = banner.life / banner.max, a = Math.min(1, k * 4, (1 - k) * 8 + 0.2), y = L.arena.y + Math.min(150, L.arena.h * 0.3);
+  ctx.globalAlpha = a; ctx.textAlign = 'center';
+  ctx.font = `${Math.min(34, W / 12)}px ${DISPLAY}`; ctx.lineWidth = 5; ctx.strokeStyle = 'rgba(10,8,16,0.85)';
+  const cx = L.arena.x + L.arena.w / 2;
+  ctx.strokeText(banner.title, cx, y); ctx.fillStyle = banner.col; ctx.fillText(banner.title, cx, y);
+  if (banner.sub) { ctx.font = `14px ${BODY}`; ctx.lineWidth = 4; wrapLines(banner.sub, L.arena.w - 40).forEach((l, i) => { ctx.strokeText(l, cx, y + 26 + i * 18); ctx.fillStyle = C.fg; ctx.fillText(l, cx, y + 26 + i * 18); }); }
+  ctx.globalAlpha = 1;
+}
+function wrapLines(text, maxW) {
+  const out = []; let line = '';
+  for (const w of text.split(' ')) { const t = line ? line + ' ' + w : w; if (ctx.measureText(t).width > maxW && line) { out.push(line); line = w; } else line = t; }
+  if (line) out.push(line);
+  return out;
+}
+function wrapText(text, x, y, maxW, lh) { const ls = wrapLines(text, maxW); ls.forEach((l, i) => ctx.fillText(l, x, y + i * lh)); return y + ls.length * lh; }
+
+// ── the title: your way ──
+const TAGLINE = { water: 'Yield and flow. Heals best, and slows whatever it touches.', fire: 'Press, then strike. Hits hardest, and leaves them burning.',
+                  earth: 'Root and press. The toughest, and its guard barely moves.', air: 'Sway and sweep. The fastest, and it knocks foes flying.' };
+const SIGNATURE = { water: 'counter', fire: 'flurry', earth: 'guard', air: 'heavy' };
+let titleT = 0, choosing = false;
+function drawTitle() {
+  titleT += 1 / 60;
+  buttons = [];
+  const cx = W / 2, top = Math.max(26, H * 0.05);
+  // a great ensō behind the name
+  ctx.save(); ctx.strokeStyle = 'rgba(233,187,82,0.12)'; ctx.lineWidth = Math.min(W, H) * 0.035; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.arc(cx, top + Math.min(W, H) * 0.2, Math.min(W, H) * 0.19, 2.4, 2.4 + TAU * 0.86); ctx.stroke(); ctx.restore();
+  ctx.textAlign = 'center';
+  ctx.font = `${Math.min(64, W / 6)}px ${DISPLAY}`; ctx.fillStyle = C.paper; ctx.fillText('Ink Dojo', cx, top + Math.min(W, H) * 0.2 + 18);
+  ctx.font = `14px ${BODY}`; ctx.fillStyle = C.muted;
+  let y = wrapText('Write your moves with a brush. Beat every fighter in the dojo.', cx, top + Math.min(W, H) * 0.2 + 52, Math.min(W - 40, 420), 19) + 10;
+  const saved = loadSave();
+  if (saved && !choosing) {
+    const wcol2 = WAYS[saved.way].color, bw = Math.min(W - 40, 360);
+    y += 10;
+    const b1 = { x: cx - bw / 2, y, w: bw, h: 64, go: () => { save = saved; continueGame(); } };
+    roundRect(b1.x, b1.y, b1.w, b1.h, 14); ctx.fillStyle = C.night2; ctx.fill(); ctx.strokeStyle = wcol2; ctx.lineWidth = 2; ctx.stroke();
+    ctx.font = `22px ${DISPLAY}`; ctx.fillStyle = wcol2; ctx.fillText(saved.master ? 'Walk the dojo again' : 'Carry on', cx, y + 28);
+    ctx.font = `13px ${BODY}`; ctx.fillStyle = C.muted; ctx.fillText(`The Way of ${WAYS[saved.way].name} · ${saved.master ? 'Grandmaster' : saved.beaten.length + ' of 12 beaten'}`, cx, y + 49);
+    buttons.push(b1);
+    y += 84;
+    const b2 = { x: cx - bw / 2, y, w: bw, h: 48, go: () => { choosing = true; pickWay = null; } };
+    roundRect(b2.x, b2.y, b2.w, b2.h, 12); ctx.strokeStyle = C.line; ctx.lineWidth = 1.5; ctx.stroke();
+    ctx.font = `15px ${BODY}`; ctx.fillStyle = C.fg; ctx.fillText('Choose a new way', cx, y + 30);
+    buttons.push(b2);
+    return;
+  }
+  // the four ways
+  ctx.font = `20px ${DISPLAY}`; ctx.fillStyle = C.gold; ctx.fillText('Choose your way', cx, y + 14); y += 30;
+  const cols = W > 760 ? 4 : 2, gap = 12, cw = Math.min(220, (Math.min(W, 960) - 32 - gap * (cols - 1)) / cols), x0 = cx - (cw * cols + gap * (cols - 1)) / 2;
+  const rows = 4 / cols, availH = H - y - 92, ch = Math.min(250, Math.max(170, availH / rows - gap));
+  WAY_ORDER.forEach((w, i) => {
+    const X = x0 + (i % cols) * (cw + gap), Y = y + Math.floor(i / cols) * (ch + gap), Wy = WAYS[w], sel = pickWay === w;
+    roundRect(X, Y, cw, ch, 14); ctx.fillStyle = sel ? 'rgba(39,33,54,0.98)' : C.night2; ctx.fill(); ctx.strokeStyle = sel ? Wy.color : C.line; ctx.lineWidth = sel ? 2.5 : 1.2; ctx.stroke();
+    const r = Math.min(cw * 0.24, ch * 0.2), M = { cx: X + cw / 2, cy: Y + 12 + r, r };
+    paper(ctx, M, true);
+    const g = MOVES[w].find(m => m.role === SIGNATURE[w]);
+    glyphGuide(ctx, M, g, Wy.color, 0.95, false, Math.max(2, r * 0.07));
+    ctx.textAlign = 'center'; ctx.font = `${Math.min(24, cw / 6)}px ${DISPLAY}`; ctx.fillStyle = Wy.color; ctx.fillText(Wy.name, X + cw / 2, Y + 2 * r + 42);
+    ctx.font = `12px ${BODY}`; ctx.fillStyle = C.muted; ctx.fillText(`${Wy.animal} · ${Wy.style}`, X + cw / 2, Y + 2 * r + 60);
+    ctx.font = `12px ${BODY}`; ctx.fillStyle = C.fg;
+    const ly = wrapText(TAGLINE[w], X + cw / 2, Y + 2 * r + 80, cw - 16, 15);
+    ctx.font = `11px ${BODY}`; ctx.fillStyle = C.muted; if (ly + 6 < Y + ch) ctx.fillText(`Beats ${WAYS[Wy.beats].name}`, X + cw / 2, Math.min(Y + ch - 10, ly + 8));
+    buttons.push({ x: X, y: Y, w: cw, h: ch, go: () => { pickWay = w; SFX.tap(); } });
+  });
+  y += rows * (ch + gap) + 6;
+  const bw = Math.min(W - 40, 320), b = { x: cx - bw / 2, y, w: bw, h: 52, go: () => { if (pickWay) { choosing = false; beginGame(pickWay); } } };
+  roundRect(b.x, b.y, b.w, b.h, 26); ctx.fillStyle = pickWay ? WAYS[pickWay].color : 'rgba(255,255,255,0.08)'; ctx.fill();
+  ctx.textAlign = 'center'; ctx.font = `17px ${BODY}`; ctx.fillStyle = pickWay ? C.night : C.muted;
+  ctx.fillText(pickWay ? `Enter the dojo · ${WAYS[pickWay].name}` : 'Pick a way above', cx, y + 32);
+  buttons.push(b);
+  if (saved) { const bb = { x: cx - 60, y: y + 60, w: 120, h: 30, go: () => { choosing = false; } }; ctx.font = `13px ${BODY}`; ctx.fillStyle = C.muted; ctx.fillText('Back', cx, y + 80); buttons.push(bb); }
+}
+
+// ── overlays: your moves, a lesson, a fall, the end ──
+function drawOverlay() {
+  const O = overlay;
+  if (!O) return;
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  ctx.fillStyle = 'rgba(10,8,16,0.88)'; ctx.fillRect(0, 0, W, H);
+  buttons = [];
+  const cx = W / 2;
+  ctx.textAlign = 'center';
+  if (O.kind === 'scroll') {
+    const way = save.way, Wy = WAYS[way];
+    ctx.font = `${Math.min(28, W / 13)}px ${DISPLAY}`; ctx.fillStyle = Wy.color; ctx.fillText(`The Way of ${Wy.name}`, cx, 40);
+    ctx.font = `12px ${BODY}`; ctx.fillStyle = C.muted; ctx.fillText(`${Wy.animal} · ${Wy.style} · ${Wy.ink} Tap a move to trace it on the paper.`, cx, 60, W - 24);
+    const cols = W > 700 ? 5 : 4, cw = Math.min(170, (W - 16) / cols), rows = 5, top = 74, ch = Math.min(150, (H - top - 56) / rows), r = Math.min(cw * 0.3, (ch - 40) / 2.1);
+    const x0 = cx - cw * cols / 2;
+    MOVES[way].forEach((m, i) => {
+      const X = x0 + (i % cols) * cw, Y = top + Math.floor(i / cols) * ch, known = m.order < learnedCount(), M = { cx: X + cw / 2, cy: Y + r + 4, r };
+      paper(ctx, M, true);
+      if (known) glyphGuide(ctx, M, m, '#2e2216', 0.95, false, 2);
+      else { ctx.fillStyle = 'rgba(18,15,25,0.55)'; ctx.beginPath(); ctx.arc(M.cx, M.cy, r, 0, TAU); ctx.fill(); ctx.font = `${r * 0.8}px ${DISPLAY}`; ctx.fillStyle = C.muted; ctx.fillText('?', M.cx, M.cy + r * 0.28); }
+      ctx.font = `bold 11px ${BODY}`; ctx.fillStyle = known ? Wy.color : C.fizzle; ctx.fillText(known ? m.name : '—', X + cw / 2, Y + 2 * r + 18, cw - 6);
+      ctx.font = `10px ${BODY}`; ctx.fillStyle = known ? C.muted : '#5d566a'; ctx.fillText(`${ROLE[m.role].label}${known ? ' · ' + ROLE[m.role].cost + ' ki' : ''}`, X + cw / 2, Y + 2 * r + 31, cw - 6);
+      if (known) buttons.push({ x: X, y: Y, w: cw, h: ch, go: () => { O.pick = m; } });
+    });
+    if (O.pick) {
+      // a move's card: what it does and how to write it
+      const m = O.pick, bw = Math.min(W - 32, 380), bh = 250, bx = cx - bw / 2, by = H / 2 - bh / 2;
+      roundRect(bx, by, bw, bh, 16); ctx.fillStyle = C.night2; ctx.fill(); ctx.strokeStyle = Wy.color; ctx.lineWidth = 2; ctx.stroke();
+      const M = { cx: bx + 70, cy: by + 80, r: 52 }; paper(ctx, M); glyphGuide(ctx, M, m, '#2e2216', 0.95, false, 2.5);
+      ctx.textAlign = 'left'; ctx.font = `22px ${DISPLAY}`; ctx.fillStyle = Wy.color; ctx.fillText(m.name, bx + 136, by + 52, bw - 150);
+      ctx.font = `12px ${BODY}`; ctx.fillStyle = C.muted; ctx.fillText(`${ROLE[m.role].label} · ${ROLE[m.role].cost} ki`, bx + 136, by + 72);
+      ctx.font = `13px ${BODY}`; ctx.fillStyle = C.fg; wrapText(moveWhat(m), bx + 136, by + 94, bw - 150, 17);
+      ctx.fillStyle = C.paper; ctx.font = `13px ${BODY}`; wrapText('How: ' + m.how, bx + 20, by + 160, bw - 40, 17);
+      ctx.textAlign = 'center';
+      const tb = { x: bx + 20, y: by + bh - 50, w: bw / 2 - 26, h: 36, go: () => { PAD.guide = m; overlay = null; } }, cb = { x: cx + 6, y: by + bh - 50, w: bw / 2 - 26, h: 36, go: () => { O.pick = null; } };
+      pill(tb, 'Trace it', Wy.color); pill(cb, 'Back', C.muted);
+      buttons = [tb, cb];
+      return;
+    }
+    const close = { x: cx - 60, y: H - 46, w: 120, h: 34, go: () => { overlay = null; } };
+    pill(close, 'Close', C.muted); buttons.push(close);
+    return;
+  }
+  if (O.kind === 'learn') {
+    const f = O.foe, m = O.move, Wy = WAYS[save.way];
+    ctx.font = `${Math.min(30, W / 12)}px ${DISPLAY}`; ctx.fillStyle = C.gold; ctx.fillText(`${f.name} bows`, cx, H * 0.14);
+    ctx.font = `14px ${BODY}`; ctx.fillStyle = C.fg; ctx.fillText(m ? 'and shows you a move of your way:' : 'You already know all twenty moves.', cx, H * 0.14 + 28);
+    if (m) {
+      const r = Math.min(W * 0.3, H * 0.18), M = { cx, cy: H * 0.14 + 60 + r, r }, cyc = O.demo.reduce((a, s) => a + s.dur, 0) + 0.2 * (O.demo.length - 1) + 1.4;
+      paper(ctx, M);
+      let tt = O.t % cyc; for (const s of O.demo) { inkStroke(ctx, M, s, C.sumi, tt); tt -= s.dur + 0.2; if (tt < 0) break; }
+      glyphGuide(ctx, M, m, Wy.color, 0.35);
+      let y = M.cy + r + 38;
+      ctx.font = `${Math.min(28, W / 13)}px ${DISPLAY}`; ctx.fillStyle = Wy.color; ctx.fillText(m.name, cx, y);
+      ctx.font = `13px ${BODY}`; ctx.fillStyle = C.muted; ctx.fillText(`${ROLE[m.role].label} · ${ROLE[m.role].cost} ki`, cx, y + 22);
+      ctx.fillStyle = C.fg; ctx.font = `14px ${BODY}`; y = wrapText(moveWhat(m), cx, y + 46, Math.min(W - 40, 420), 19);
+      ctx.fillStyle = C.paper; y = wrapText('How: ' + m.how, cx, y + 8, Math.min(W - 40, 420), 19);
+    }
+    if (O.t > 0.8) { ctx.globalAlpha = 0.6 + 0.4 * Math.sin(T * 4); ctx.font = `14px ${BODY}`; ctx.fillStyle = C.gold; ctx.fillText('Tap to carry on', cx, H - 30); ctx.globalAlpha = 1; buttons.push({ x: 0, y: 0, w: W, h: H, go: afterLearn }); }
+    return;
+  }
+  if (O.kind === 'fallen') {
+    const f = O.foe;
+    ctx.font = `${Math.min(34, W / 11)}px ${DISPLAY}`; ctx.fillStyle = C.hp; ctx.fillText(`${f.name} wins this bout`, cx, H * 0.36);
+    ctx.font = `15px ${BODY}`; ctx.fillStyle = C.fg;
+    const tips = ['Watch what they write in the air above them: guard or spring away when a heavy blow is coming.', 'Out of ki? Your Focus move is free: write it to fill up fast.',
+                  'Rough glyphs still work, only weaker. Clean ones hit full strength: open MOVES and trace one to practise.', `Your way beats ${WAYS[WAYS[save.way].beats].name}: try a fighter of that hall.`];
+    wrapText(tips[(save.stats.falls - 1) % tips.length], cx, H * 0.36 + 34, Math.min(W - 40, 420), 21);
+    if (O.t > 0.8) { ctx.globalAlpha = 0.6 + 0.4 * Math.sin(T * 4); ctx.font = `14px ${BODY}`; ctx.fillStyle = C.gold; ctx.fillText('Tap to try again', cx, H - 30); ctx.globalAlpha = 1; buttons.push({ x: 0, y: 0, w: W, h: H, go: afterFall }); }
+    return;
+  }
+  if (O.kind === 'victory') {
+    const Wy = WAYS[save.way], S = save.stats, mins = Math.max(1, Math.round(((S.t1 || Date.now()) - S.t0) / 60000));
+    ctx.save(); ctx.strokeStyle = hexA(Wy.color, 0.25); ctx.lineWidth = 18; ctx.lineCap = 'round'; ctx.beginPath(); ctx.arc(cx, H * 0.3, Math.min(W, H) * 0.2, 2.4, 2.4 + TAU * 0.86 * Math.min(1, O.t / 1.5)); ctx.stroke(); ctx.restore();
+    ctx.font = `${Math.min(36, W / 10)}px ${DISPLAY}`; ctx.fillStyle = C.gold; ctx.fillText('Grandmaster', cx, H * 0.3 - 6);
+    ctx.font = `${Math.min(22, W / 16)}px ${DISPLAY}`; ctx.fillStyle = Wy.color; ctx.fillText(`of the Way of ${Wy.name}`, cx, H * 0.3 + 26);
+    ctx.font = `15px ${BODY}`; ctx.fillStyle = C.fg;
+    const lines = [`Every fighter in the dojo beaten, the Grandmaster too.`, `${mins} minute${mins === 1 ? '' : 's'} · ${S.falls} fall${S.falls === 1 ? '' : 's'} · ${S.casts} moves written · ${S.casts ? Math.round(100 * S.clean / S.casts) : 0}% clean`];
+    lines.forEach((l, i) => ctx.fillText(l, cx, H * 0.56 + i * 24, W - 30));
+    const b = { x: cx - 120, y: H * 0.56 + 70, w: 240, h: 48, go: () => { overlay = null; state = 'title'; choosing = true; pickWay = null; } };
+    pill(b, 'Try another way', C.gold); buttons.push(b);
+  }
+}
+
+// ── touch, mouse and keys ──
+cv.addEventListener('pointerdown', e => {
+  e.preventDefault(); audio();
+  const x = e.clientX, y = e.clientY;
+  if (overlay || state === 'title') { const b = [...buttons].reverse().find(b => hit(b, x, y)); if (b) { SFX.tap(); b.go(); } return; }
+  const B = panelButtons();
+  if (hit(B.moves, x, y)) { overlay = { kind: 'scroll', t: 0 }; SFX.tap(); return; }
+  if (hit(B.sound, x, y)) { setSound(!soundOn); SFX.tap(); return; }
+  if (inPad(x, y)) { if (!PAD.pen) { PAD.penId = e.pointerId; penDown(x, y, e); try { cv.setPointerCapture(e.pointerId); } catch (_) {} } return; }
+  const inArena = x >= L.arena.x && x <= L.arena.x + L.arena.w && y >= L.arena.y && y <= L.arena.y + L.arena.h;
+  if (inArena && !stick) { stick = { id: e.pointerId, x0: x, y0: y, x, y }; try { cv.setPointerCapture(e.pointerId); } catch (_) {} }
+});
+cv.addEventListener('pointermove', e => {
+  if (PAD.pen && e.pointerId === PAD.penId) { const list = e.getCoalescedEvents ? e.getCoalescedEvents() : []; for (const ev of list.length ? list : [e]) penMove(ev.clientX, ev.clientY, evTime(ev), padPressure(ev)); }
+  else if (stick && e.pointerId === stick.id) { stick.x = e.clientX; stick.y = e.clientY; }
+});
+const lift = e => { if (PAD.pen && e.pointerId === PAD.penId) penUp(); if (stick && e.pointerId === stick.id) stick = null; };
+cv.addEventListener('pointerup', lift);
+cv.addEventListener('pointercancel', lift);
+cv.addEventListener('contextmenu', e => e.preventDefault());
+// nothing on this page scrolls or zooms
+for (const ev of ['touchstart', 'touchmove', 'touchend', 'gesturestart']) document.addEventListener(ev, e => { if (e.cancelable) e.preventDefault(); }, { passive: false });
+window.addEventListener('keydown', e => {
+  keys[e.code] = true; audio();
+  if (e.code === 'Escape' && overlay && overlay.kind === 'scroll') overlay = null;
+  if ((e.code === 'KeyM' || e.code === 'Tab') && state === 'play' && !overlay) { overlay = { kind: 'scroll', t: 0 }; e.preventDefault(); }
+});
+window.addEventListener('keyup', e => { keys[e.code] = false; });
+window.addEventListener('blur', () => { for (const k in keys) keys[k] = false; stick = null; });
+
+// ── the loop ──
+let last = performance.now(), MANUAL = false;
+function frame(now) {
+  requestAnimationFrame(frame);
+  const dt = Math.min(0.05, (now - last) / 1000); last = now;
+  try { if (!MANUAL) update(dt); render(); } catch (err) { console.error(err); }
+}
+// if the page is updated while it's open, come back to the dojo rather than to the title
+const hot = window.claude && window.claude.hot;
+try { if (hot && hot.snapshot) hot.snapshot(() => ({ playing: state === 'play' })); } catch (_) {}
+function boot(data) {
+  if (data && data.playing === true) { const s = loadSave(); if (s) { save = s; continueGame(); } }
+  requestAnimationFrame(frame);
+}
+if (hot && hot.ready) hot.ready(boot); else boot(hot && hot.data || {});
+
+// ── for tests: start a way, write a move as a steady hand would, step time by hand ──
+window.INKDOJO = {
+  get state() { return state; }, get overlay() { return overlay; }, get fight() { return FIGHT; }, get player() { return player; }, get foes() { return FOES; }, get master() { return MASTERF; }, get save() { return save; },
+  begin(way) { beginGame(way); }, cont() { save = loadSave(); continueGame(); },
+  write(role, o = {}) { const m = MOVES[save.way].find(m => m.role === role); return padJudge(writeOut(m, { wobble: 0.01, ...o })); },
+  manual(on) { MANUAL = on; }, step(n = 1, dt = 1 / 60) { for (let i = 0; i < n; i++) update(dt); },
+  tapOverlay() { const b = buttons[buttons.length - 1]; if (b) b.go(); }, close() { overlay = null; },
+  teleport(x, y) { player.x = x; player.y = y; updateCam(0, true); },
+  koFoe() { if (FIGHT && FIGHT.on) knockedOut(FIGHT.foe, player); }, koMe() { if (FIGHT && FIGHT.on) knockedOut(player, FIGHT.foe); },
+  INK, ROLE, ROSTER, MOVES, learnedCount, myMoves, padJudge, startFight, setSound, spawnMaster, setupWorld, get shots() { return SHOTS; }, get waves() { return WAVES; },
+};
+})();
+</script>
+</body>
+</html>
