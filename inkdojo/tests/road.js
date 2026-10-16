@@ -1,17 +1,19 @@
 // the difficulty of the story's fights, with a bot writing by hand at a human pace: the three wolves, the four white belts
 // (each a little better than the last), and the bandits one after another (a breather of 40% health between them).
-// Usage: node road.js [N]  (env: WAYS, WOB a rougher hand, THINK and REACT how quick the bot is)
+// Usage: node road.js [N]  (env: WAYS, WOB a rougher hand, THINK and REACT how quick the bot is; BK=6,7,8 and REST=0.3 try
+// other bandit strengths and breathers; ONLY=bandits skips the rest)
 const GAME = 'file://' + require('path').resolve(__dirname, '../../inkdojo.html');
 const { chromium } = require(require('child_process').execSync('npm root -g').toString().trim() + '/playwright');
 const BOTK = { think: JSON.parse(process.env.THINK || '[1.6, 2.6]'), react: +(process.env.REACT || 0.35), wob: +(process.env.WOB || 0) };
+const BK = process.env.BK ? process.env.BK.split(',').map(Number) : null, REST = process.env.REST ? +process.env.REST : null, ONLY = process.env.ONLY;
 const N = +(process.argv[2] || 10), WAYS = (process.env.WAYS || 'water,fire,earth,air').split(',');
 (async () => {
   const b = await chromium.launch(); const p = await b.newPage({ viewport: { width: 390, height: 844 } });
   const errs = []; p.on('pageerror', e => errs.push(e.message + ' @ ' + (e.stack || '').split('\n')[1]));
   await p.goto(GAME); await p.waitForTimeout(400);
   for (const way of WAYS) {
-    const r = await p.evaluate(([N, way, BOTK]) => {
-      const D = INKDOJO; D.manual(true); D.setSound(false);
+    const r = await p.evaluate(([N, way, BOTK, BK, REST, ONLY]) => {
+      const D = INKDOJO; if (BK) D.BANDIT_TUNE.k = BK; if (REST != null) D.BANDIT_TUNE.rest = REST; D.manual(true); D.setSound(false);
       const K = { think: BOTK.think, react: BOTK.react }, wob = () => (BOTK.wob ? BOTK.wob * (0.6 + Math.random() * 0.8) : undefined);
       const fight = foe => {
         D.teleport(foe.x + 140, foe.y + 40); D.startFight(foe); D.bot(true);
@@ -30,6 +32,7 @@ const N = +(process.argv[2] || 10), WAYS = (process.env.WAYS || 'water,fire,eart
       const out = {};
       const tally = (k, won) => { out[k] = out[k] || [0, 0]; out[k][0] += won ? 1 : 0; out[k][1]++; };
       for (let n = 0; n < N; n++) {
+        if (ONLY !== 'bandits') {
         // a wolf, with the three basic moves
         setup(1, 0, false);
         const wolf = D.foes.find(f => f.id === 'wolf' + (1 + (n % 3))); wolf.hidden = false;
@@ -40,6 +43,7 @@ const N = +(process.argv[2] || 10), WAYS = (process.env.WAYS || 'water,fire,eart
           const foe = D.foes.filter(f => f.rank === 1 && !f.beaten)[0];
           tally('white' + (w + 1), fight(foe).won);
         }
+        }
         // the bandits, one after another, all eight moves known
         setup(4, 4, true);
         D.save.ambush = true;
@@ -49,7 +53,7 @@ const N = +(process.argv[2] || 10), WAYS = (process.env.WAYS || 'water,fire,eart
         tally('all 3 bandits', all);
       }
       return out;
-    }, [N, way, BOTK]);
+    }, [N, way, BOTK, BK, REST, ONLY]);
     console.log(way.padEnd(6), Object.entries(r).map(([k, [w, n]]) => `${k} ${Math.round(100 * w / n)}%`).join(' · '));
   }
   console.log('errors', errs.slice(0, 5));

@@ -240,7 +240,7 @@ window.INKDOJO = {
     const R = padJudge(writeOut(c.move, { wobble: wobble ?? (0.008 + Math.random() * 0.03), seed: Math.random() * 9 }));
     return R && R.verdict !== 'fizzle' ? c.move.key : 'fizzle';
   },
-  INK, ROSTER, MOVES, RANKS, WAYMOD, ADV, HALL, YOU, skillAt, skillFor, learnedCount, myMoves, padJudge, startFight, setSound, setupWorld, resetFighter,
+  INK, ROSTER, MOVES, RANKS, WAYMOD, ADV, HALL, YOU, skillAt, skillFor, BANDIT_TUNE, learnedCount, myMoves, padJudge, startFight, setSound, setupWorld, resetFighter,
   get shots() { return SHOTS; }, get waves() { return WAVES; }, get zones() { return ZONES; }, get ents() { return ENTS; }, get stones() { return STONES; }, get fx() { return FX; },
 };
 })();

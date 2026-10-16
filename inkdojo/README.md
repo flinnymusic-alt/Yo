@@ -4,7 +4,7 @@ A one-page calligraphy adventure for phones. You pick a way (Water, Fire, Earth 
 
 The story (chapter one, a demo): Mum sends you from your home at the edge of the valley into town to fetch a package. There are wolves on the road. In town you talk to people. The postmaster won't hand the package over until you've beaten the dojo's four white belts. On the way home three bandits attack you one after another. Back home, Mum opens the package: grandfather's golden crane, with a buyer in the far city of Kyōsei.
 
-- **Play:** https://flinnymusic-alt.github.io/Yo/inkdojo.html (add `?v=N` for a fresh copy; the last one used was `?v=8`)
+- **Play:** https://flinnymusic-alt.github.io/Yo/inkdojo.html (add `?v=N` for a fresh copy; the last one used was `?v=9`)
 - **claude.ai Artifact:** https://claude.ai/artifact/KLmvzmpV49ZY4sLsHeNvrU
 - A duplicate Artifact, https://claude.ai/artifact/S3ynonYsvUxZ2UHdP7WvAm, was made by mistake. The owner hasn't said yet whether to delete it.
 
@@ -35,7 +35,7 @@ What each source file holds (they're concatenated in this order: `lib`, `a`, `b`
 - **Ways.** Water beats Fire, Fire beats Air, Air beats Earth, Earth beats Water (`ADV`). Each way has its twist (Water soaks and freezes; Fire's heat; Earth's stones; Air's wind) and refills ki its own way (`kiFlow`).
 - **Power curve.** Accuracy runs from 0% (just readable) to 100% (`accuracy(q)`, q 0.42 → 0.985). Power is `0.4 + 0.25a + 1.35a⁴`: a scrappy glyph ×0.6, a fair one ×1.0, a very good one ×1.5, a perfect one (97%+) ×2 with a gold "Perfect!" burst. The panel shows `Clean · 91% · ×1.5`. Fighters don't write; their strength is `skillAt(k).power` (0.6 to 1).
 - **The curl.** End an attack (any tag in `HOLD`) with a small loop and it's held instead of thrown: ki is paid now, and a red seal by the top right of the pad throws it at the strength it was written (tap it, or Space). One held at a time. A stroke counts as curled only if cutting the loop off reads *better* than the whole stroke, so moves that end in loops (Meteor, Geyser) are unaffected.
-- **The story, step by step** (`save.q`): 0 talk to Mum → 1 the road and town (three wolves, `skillAt(0)` × 0.8 health) → 2 the postmaster sends you to the dojo → white belts (`skillAt(1..4)`), each teaching a move → 3 collect the package → 4 the ambush on the road home: Crow, Tusk, then the boss Kagero (`skillAt` 4.5, 5.2, 6), half your health back between them. Their ways are chosen from yours so none beats you (`banditWays`). Fall, and you wake at the top of the road and they ambush again → 5 home to Mum → 6 the end.
+- **The story, step by step** (`save.q`): 0 talk to Mum → 1 the road and town (three wolves, `skillAt(0)` × 0.8 health) → 2 the postmaster sends you to the dojo → white belts (`skillAt(1..4)`), each teaching a move → 3 collect the package → 4 the ambush on the road home: Crow, Tusk, then the boss Kagero (`BANDIT_TUNE`: `skillAt` 7.5, 8.5, 9.5, so late brown belts and a black-belt boss), a quarter of your health back between them. They're meant to be decently hard. Their ways are chosen from yours so none beats you (`banditWays`). Fall, and you wake at the top of the road and they ambush again → 5 home to Mum → 6 the end.
 - **Moves known.** The three basic moves, plus one from Old Hana the calligrapher (who also explains the curl), plus one per white belt: 8 by the bandits. The brown and black belts are in the dojo but wave you off.
 - **People.** Walk up to someone and they talk once at each point in the story (`save.heard`); after that a line shows in a bubble as you pass.
 
@@ -49,8 +49,9 @@ Run these from `inkdojo/tests/` after `python3 ../build.py`. Use `timeout` (some
 | `node adventure.js water` (any way) | The bot plays the whole story; screenshots in `out/adv/` | ends `q 6`, overlay `end`, `errors []` |
 | `node play1.js water` (any way) | Real time on a phone screen: Mum, the first wolf, a curled attack held and thrown with a tap | wolf beaten, `thrown`, `errors []` |
 | `node ui.js` | Touch: pick a way, Mum, walk, write with a finger, a finger-drawn curl and a tap on the seal, the scroll, lose to a wolf, the end | `held: Rock Throw`, `thrown`, `end 6` |
-| `node road.js 12` | Each fight of the story, many times, bot at a human pace | neat and `WOB=0.08` hands win everything |
-| `WOB=0.1 THINK='[2.4,3.6]' REACT=0.15 node road.js 16` | The same with a rough, slow "beginner" | wolves and white belts 100%; all three bandits in one go 38–94% by way |
+| `node road.js 12` | Each fight of the story, many times, bot at a human pace | wolves and white belts: every hand wins. All three bandits in one go: neat hand 81–94%, `WOB=0.05` 31–69%, `WOB=0.08` 6–31% |
+| `WOB=0.1 THINK='[2.4,3.6]' REACT=0.15 node road.js 16` | The same with a rough, slow "beginner" | wolves and white belts 100%; the bandits mostly beat them |
+| `BK=7,8,9 REST=0.3 ONLY=bandits node road.js 16` | Try other bandit strengths and breathers without rebuilding | |
 | `node practice.js` | Every spell cast outside a fight | `none` stuck |
 | `node hot.js`, `node panel.js` | Reload while playing; the pad panel | `errors []` |
 | `node tilt.js`, `node tilt2.js` | Tilt to walk, including the iPhone permission flow | moves the right ways |
