@@ -3535,12 +3535,14 @@ const WOLVES = [
   { id: 'wolf2', name: 'Lean wolf', post: [380, 1700], look: { fur: '#9a8f80', furDark: '#62584c' } },
   { id: 'wolf3', name: 'Old wolf', post: [610, 1150], look: { fur: '#6f6c6a', furDark: '#3f3d3b' } },
 ];
-// ── the bandits: brown-belt fighters who wait for you on the road home, and come at you one after another ──
+// ── the bandits: hard fighters who wait for you on the road home, and come at you one after another ──
 const BANDITS = [
   { id: 'b1', name: 'Crow', look: { gi: '#3a3530', mask: '#16131b', belt: '#8a5a2b' } },
   { id: 'b2', name: 'Tusk', look: { gi: '#4a3a2a', mask: '#16131b', belt: '#8a5a2b' } },
   { id: 'b3', name: 'Kagero', boss: true, look: { gi: '#2a1f24', mask: '#7a1f1a', belt: '#8a5a2b', trim: '#c63f2e' } },
 ];
+// how good the three are (skillAt's k: the white belts are 1 to 4, Grandmaster 13), and how much health you get back between them
+const BANDIT_TUNE = { k: [7.5, 8.5, 9.5], rest: 0.25 };
 // none of them follows the way that beats yours: first the way yours beats, then your own way, then the last one (the boss)
 function banditWays() { const mine = save.way, easy = WAYS[mine].beats, hard = WAY_ORDER.find(w => WAYS[w].beats === mine); return [easy, mine, WAY_ORDER.find(w => w !== mine && w !== easy && w !== hard)]; }
 // ── the people ──
@@ -3603,7 +3605,7 @@ function npcTalk(n) {
     case 'farmer': return { key: 'farmer', pages: [['Farmer Daisuke', 'Lost two sheep to wolves this spring. If you came up the valley road, you’ll have met them.']] };
     case 'kid': return { key: 'kid', pages: [['Little Yuki', 'Are you going to fight at the dojo? The white belts are easy. Well, easier than the brown belts. The brown belts are scary.']] };
     case 'granny': return { key: 'granny', pages: [['Granny Fuji', 'Your grandfather? Best brush in the valley. They say he once saw off ten bandits writing with his left hand.']] };
-    case 'guard': return { key: 'guard', pages: [['Botan, the gate guard', 'Bandits on the valley road again. Three of them, I hear. Their boss, Kagero, writes like a brown belt. Mind how you go.']] };
+    case 'guard': return { key: 'guard', pages: [['Botan, the gate guard', 'Bandits on the valley road again. Three of them, I hear. Their boss, Kagero, writes like a black belt. Mind how you go.']] };
     case 'sensei':
       if (w < 4) return { key: 'sensei', pages: [
         ['Master Ishida', 'So you’re the grandchild. Welcome to my dojo. Your grandfather trained on these mats.'],
@@ -3639,12 +3641,12 @@ function mayChallenge(f) {
 function waveOff(f) { return f.beast || f.bandit ? '' : f.rank > 1 ? 'Not you. Not yet.' : save.q < Q.ROAD ? '' : ''; }
 function skillFor(f) {
   if (f.beast) { const s = skillAt(0); return { ...s, hp: s.hp * 0.8, fizzle: 0, aim: 0.2, spells: 2 }; }
-  if (f.bandit) return skillAt([4.5, 5.2, 6][BANDITS.findIndex(b => b.id === f.id)]);
+  if (f.bandit) return skillAt(BANDIT_TUNE.k[BANDITS.findIndex(b => b.id === f.id)]);
   return skillAt(1 + whitesBeaten());
 }
 function challengeLine(f) {
   if (f.beast) return 'A wolf on the road';
-  if (f.bandit) return f.boss ? 'The bandits’ boss · fights like a brown belt' : 'A bandit · fights like a brown belt';
+  if (f.bandit) return f.boss ? 'The bandits’ boss · fights like a black belt' : 'A bandit · fights like a brown belt';
   return `${HALLS[f.way].label} · ${RANKS[f.rank].beltName}`;
 }
 // you've won: what happens next
@@ -3661,8 +3663,8 @@ function wonAgainst(foe) {
     const next = banditsLeft()[0];
     if (next) {
       // a breather, then the next one steps up
-      player.hp = Math.min(player.maxHp, player.hp + player.maxHp * 0.5); player.ki = player.maxKi; player.pose = 'idle';
-      calm = 1.6; say(`${foe.name} runs for the trees`, `${next.name} steps up${next.boss ? ': the boss' : ''}. You catch your breath.`, 2.6, fcol(next));
+      player.hp = Math.min(player.maxHp, player.hp + player.maxHp * BANDIT_TUNE.rest); player.ki = player.maxKi; player.pose = 'idle';
+      calm = 1.6; say(`${foe.name} runs for the trees`, `${next.name} steps up${next.boss ? ': the boss' : ''}. You catch your breath, a little.`, 2.6, fcol(next));
     } else {
       save.q = Q.LAST; save.ambush = false; writeSave();
       player.hp = player.maxHp; player.ki = player.maxKi; player.pose = 'idle';
@@ -4015,7 +4017,7 @@ window.INKDOJO = {
     const R = padJudge(writeOut(c.move, { wobble: wobble ?? (0.008 + Math.random() * 0.03), seed: Math.random() * 9 }));
     return R && R.verdict !== 'fizzle' ? c.move.key : 'fizzle';
   },
-  INK, ROSTER, MOVES, RANKS, WAYMOD, ADV, HALL, YOU, skillAt, skillFor, learnedCount, myMoves, padJudge, startFight, setSound, setupWorld, resetFighter,
+  INK, ROSTER, MOVES, RANKS, WAYMOD, ADV, HALL, YOU, skillAt, skillFor, BANDIT_TUNE, learnedCount, myMoves, padJudge, startFight, setSound, setupWorld, resetFighter,
   get shots() { return SHOTS; }, get waves() { return WAVES; }, get zones() { return ZONES; }, get ents() { return ENTS; }, get stones() { return STONES; }, get fx() { return FX; },
 };
 })();
