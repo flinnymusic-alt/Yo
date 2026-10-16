@@ -1,5 +1,8 @@
+// ── the places: the valley with your home, the town, and the town's dojo. One is on screen at a time (SCENE), with its own
+// floor, its own solids and its own ways out ──
+const WORLD = { w: 1600, h: 1700, edge: 80 };
+let SCENE = 'dojo';
 // ── the dojo: four halls round a gravel courtyard with a pond, a cherry tree and the Grandmaster's dais ──
-const WORLD = { w: 1600, h: 1700 };
 const HALLS = {
   air:   { x: 400, y: 90, w: 800, h: 440, label: 'Hall of Air', sign: { x: 800, y: 120 } },
   water: { x: 90, y: 470, w: 400, h: 760, label: 'Hall of Water', sign: { x: 120, y: 850 } },
@@ -17,20 +20,25 @@ for (const [x, y] of [[400, 90], [1200, 90], [400, 530], [1200, 530], [90, 470],
 SOLIDS.push({ x: 625, y: 690, r: 20, kind: 'tree' });
 for (const [x, y] of [[560, 1100], [1040, 1100], [1040, 600], [560, 600]]) SOLIDS.push({ x, y, r: 13, kind: 'lantern' });
 for (const [x, y, r] of [[700, 980, 16], [940, 1040, 12], [985, 760, 18]]) SOLIDS.push({ x, y, r, kind: 'rock' });
+const DOJO_SOLIDS = SOLIDS.slice();
 function blocked(p, r) {
   // the walls
-  p.x = clamp(p.x, 80 + r, WORLD.w - 80 - r); p.y = clamp(p.y, 80 + r, WORLD.h - 80 - r);
-  for (const s of SOLIDS) { const d = Math.hypot(p.x - s.x, p.y - s.y), m = s.r + r; if (d < m) { const k = (m - d) / (d || 1); p.x += (p.x - s.x) * k; p.y += (p.y - s.y) * k; } }
+  const E = WORLD.edge;
+  p.x = clamp(p.x, E + r, WORLD.w - E - r); p.y = clamp(p.y, E + r, WORLD.h - E - r);
+  for (const s of SOLIDS) {
+    // a building: pushed out of its nearest side
+    if (s.w) { const hx = s.w / 2 + r, hy = s.h / 2 + r, dx = p.x - s.x, dy = p.y - s.y; if (Math.abs(dx) < hx && Math.abs(dy) < hy) { if (hx - Math.abs(dx) < hy - Math.abs(dy)) p.x = s.x + Math.sign(dx || 1) * hx; else p.y = s.y + Math.sign(dy || 1) * hy; } continue; }
+    const d = Math.hypot(p.x - s.x, p.y - s.y), m = s.r + r; if (d < m) { const k = (m - d) / (d || 1); p.x += (p.x - s.x) * k; p.y += (p.y - s.y) * k; }
+  }
+  if (SCENE !== 'dojo') return;
   // the pond: pushed back out along its oval
   const ex = (p.x - POND.x) / (POND.rx + r), ey = (p.y - POND.y) / (POND.ry + r), e = Math.hypot(ex, ey);
   if (e < 1) { const k = 1 / (e || 1e-6); p.x = POND.x + ex * k * (POND.rx + r); p.y = POND.y + ey * k * (POND.ry + r); }
 }
 
 // the floor is painted once, onto its own canvas, and the visible part copied each frame
-const floor = document.createElement('canvas');
-floor.width = WORLD.w; floor.height = WORLD.h;
-(function paintFloor() {
-  const c = floor.getContext('2d');
+let floor = null;
+function paintDojo(c) {
   let seed = 11; const r = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
   c.fillStyle = '#0d0b12'; c.fillRect(0, 0, WORLD.w, WORLD.h);
   // wooden planks everywhere inside the walls
@@ -91,7 +99,9 @@ floor.width = WORLD.w; floor.height = WORLD.h;
   c.fillStyle = '#e8dfc8';
   for (let x = 90; x < WORLD.w - 90; x += 64) { c.fillRect(x, 60, 56, 10); c.fillRect(x, WORLD.h - 70, 56, 10); }
   for (let y = 90; y < WORLD.h - 90; y += 64) { c.fillRect(60, y, 10, 56); c.fillRect(WORLD.w - 70, y, 10, 56); }
-})();
+  // the way out to the town: a mat by the courtyard's south side
+  c.fillStyle = '#5a3a22'; c.fillRect(760, 1098, 80, 40); c.strokeStyle = '#e9bb52'; c.lineWidth = 2; c.strokeRect(763, 1101, 74, 34);
+}
 // a way's mark, in the shape its guard takes: water a circle, fire a triangle, earth a square, air an open sweep
 function wayMark(c, way, x, y, R) {
   c.beginPath();
@@ -163,7 +173,7 @@ function drawProps(t, layer) {
       ctx.globalAlpha = 1;
     }
   }
-  if (layer !== 'low') {
+  if (layer !== 'low' && SCENE === 'dojo') {
     // falling petals
     ctx.fillStyle = '#ffc6d9';
     for (let i = 0; i < 16; i++) { const ph = (t * 0.07 + i * 0.137) % 1, x = 560 + ((i * 97) % 180) + Math.sin(t + i) * 20, y = 600 + ph * 260; ctx.globalAlpha = Math.sin(ph * Math.PI) * 0.9; ctx.beginPath(); ctx.ellipse(x, y, 3, 1.7, t + i, 0, TAU); ctx.fill(); }

@@ -1,13 +1,12 @@
 // ── Ink Dojo ─────────────────────────────────────────────────────────────────
-// A dojo of four halls round a courtyard. Pick a way (Water, Fire, Earth or
-// Air) and walk the dojo; its fighters walk up and challenge you, one at a
-// time, and you fight them only with moves you write on the pad with a brush.
-// Every way has twenty moves. You start with eight; each fighter you beat
-// teaches you another, and when all twelve are beaten the Grandmaster waits on
-// the dais.
+// A calligraphy adventure. Pick a way (Water, Fire, Earth or Air); you fight
+// only with moves you write on the pad with a brush. Your mum sends you from
+// your home at the edge of the valley into town to pick up a package: wolves on
+// the road, townsfolk to talk to, the dojo's four white belts to beat (each
+// teaches you a move), and on the way home, bandits.
 (() => {
 'use strict';
-const { TAU, clamp, WAYS, WAY_ORDER, MOVES, TIERS, INKP, recognize, writeOut } = INK;
+const { TAU, clamp, WAYS, WAY_ORDER, MOVES, TIERS, INKP, recognize, writeOut, curlCut, withCurl } = INK;
 const cv = document.getElementById('game'), ctx = cv.getContext('2d');
 const DISPLAY = '"Yuji Syuku", "Hiragino Mincho ProN", "Songti SC", Georgia, serif';
 const BODY = '"Zen Kaku Gothic New", "Hiragino Sans", "Segoe UI", system-ui, sans-serif';
@@ -82,6 +81,8 @@ const SFX = {
   drum(n = 2) { for (let i = 0; i < n; i++) { tone(70, 0.3, 'sine', 0.4, i * 0.22, 0.5); noise(0.12, 0.12, 400, 120, 0.8, i * 0.22); } },
   learn() { [392, 523, 659, 784, 1046].forEach((f, i) => tone(f, 0.5, 'triangle', 0.07, i * 0.09)); },
   tap() { tone(660, 0.05, 'triangle', 0.05); },
+  hold() { tone(392, 0.25, 'triangle', 0.07); tone(587, 0.4, 'sine', 0.05, 0.08, 0.98); },
+  perfect() { [784, 988, 1175, 1568].forEach((f, i) => tone(f, 0.45, 'triangle', 0.06, i * 0.05)); },
 };
 
 // ── tilt: lean the phone to walk. However you hold it when tilt starts counts as standing still ──
@@ -154,14 +155,15 @@ function tiltTick(dt) {
   const show = Math.min(1, m / TILT.FULL); TILT.lx = m > 0 ? tx / m * show : 0; TILT.ly = m > 0 ? ty / m * show : 0;
 }
 
-// ── saved progress: your way, the fighters you've beaten, and a few numbers ──
-const SAVE_KEY = 'inkdojo-1';
+// ── saved progress: your way, where the story is (q), who you've beaten, who you've heard, and where you are ──
+const SAVE_KEY = 'inkdojo-adv-1';
 let save = null;
 function loadSave() { try { const s = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null'); if (s && WAYS[s.way]) return s; } catch (_) {} return null; }
 function writeSave() { if (!save) return; try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch (_) {} }
-function newSave(way) { return { way, beaten: [], master: false, stats: { casts: 0, clean: 0, wins: 0, falls: 0, t0: Date.now() } }; }
-// the moves you know: the three basic ones from the start; Ren, each white belt and each brown belt teach you one more (the
-// skilled moves), and each black belt two (the master moves), so you have all twenty for the Grandmaster
-const learnedCount = () => { if (!save) return 0; const b = save.beaten.length; return Math.min(20, 3 + (save.warm ? 1 : 0) + Math.min(8, b) + 2 * Math.max(0, b - 8)); };
+function newSave(way) { return { way, q: 0, beaten: [], wolves: [], scribe: false, heard: {}, scene: 'home', at: 'door', stats: { casts: 0, clean: 0, wins: 0, falls: 0, t0: Date.now() } }; }
+// the moves you know: the three basic ones from the start; the calligrapher in town teaches you one more, and each white
+// belt at the dojo one more (the skilled moves), so you have eight for the road home
+const whitesBeaten = () => (save ? save.beaten.filter(id => ROSTER.some(o => o.id === id && o.rank === 1)).length : 0);
+const learnedCount = () => (save ? Math.min(20, 3 + (save.scribe ? 1 : 0) + whitesBeaten()) : 0);
 const myMoves = () => (save ? MOVES[save.way].filter(m => m.order < learnedCount()) : []);
 

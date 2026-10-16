@@ -56,14 +56,20 @@ function padTick(dt) {
   if (!pen && PAD.judgeAt && now >= PAD.judgeAt) padJudge();
   if (PAD.shown && now - PAD.shown.t > 1200) { PAD.shown = null; PAD.strokes = []; }
 }
-// read it: the closest of your moves, how well it was written; cast it at that strength
+// read it: the closest of your moves, how well it was written; cast it at that strength. An attack that ends in a little curl
+// is held instead, and let go later with a tap on its seal by the paper
+let HELD = null;
 function padJudge(strokes) {
   PAD.judgeAt = 0;
   const S = strokes || PAD.strokes;
-  const R = S.length ? recognize(S, myMoves()) : null;
+  let R = S.length ? recognize(S, myMoves()) : null, curl = false;
+  if (S.length === 1) {
+    const cut = curlCut(S[0]), Rc = cut && recognize([cut], myMoves());
+    if (Rc && Rc.verdict !== 'fizzle' && HOLD.has(Rc.best.g.tag) && (!R || R.verdict === 'fizzle' || Rc.best.q > R.best.q)) { R = Rc; curl = true; }
+  }
   if (!R) { PAD.strokes = []; return null; }
   if (strokes) PAD.strokes = strokes;
-  const sh = PAD.shown = { R, t: performance.now(), ok: false, msg: '' };
+  const sh = PAD.shown = { R, t: performance.now(), ok: false, msg: '', curl };
   if (R.verdict === 'fizzle') {
     const all = recognize(S, MOVES[save.way]), locked = all && all.verdict !== 'fizzle' && all.best.g.order >= learnedCount();
     sh.msg = locked ? 'A move of your way, but no one has taught it to you yet' : R.best && R.best.q > 0.15 ? `The ink doesn’t take · closest: ${R.best.g.name}` : 'The ink doesn’t take';
@@ -80,16 +86,54 @@ function padJudge(strokes) {
     else if (ST.mend > 0) sh.msg = 'Still mending…';
     else if (ST.statue > 0) sh.msg = 'Still jade…';
     else if (ST.silence > 0) sh.msg = 'Silenced! No breath to write with';
+    else if (curl && !HELD) {
+      // held: the ki is spent now, and the attack waits, at the strength it was written, until you let it go
+      if (player.ki < m.cost) sh.msg = 'Not enough ki';
+      else {
+        player.ki -= m.cost; HELD = { move: m, power: R.power, acc: R.acc, perfect: R.perfect, t: 0 };
+        sh.ok = true; sh.msg = 'held';
+        words(player.x, player.y - 44, `${m.name} · held`, WAYS[m.way].color, 14, 1.1); SFX.hold();
+        if (save) { save.stats.casts++; if (R.verdict === 'clean') save.stats.clean++; }
+      }
+    }
     else if (ST.heavy > 0 && LIGHT.has(m.tag)) sh.msg = 'Too heavy to move like that';
     else if (player.act) sh.msg = 'Still moving…';
     else if (startMove(player, m, R.power, FIGHT && FIGHT.on ? FIGHT.foe : null)) {
-      sh.ok = true;
-      words(player.x, player.y - 44, m.name, WAYS[m.way].color, 15, 1.1);
+      sh.ok = true; if (curl) sh.msg = 'one held already';
+      words(player.x, player.y - 44, R.perfect ? `${m.name}!` : m.name, WAYS[m.way].color, R.perfect ? 19 : 15, 1.1);
+      if (R.perfect) perfectFx(player);
       if (save) { save.stats.casts++; if (R.verdict === 'clean') save.stats.clean++; }
       if (PAD.guide && PAD.guide.role === m.role) PAD.guide = null;
     } else sh.msg = player.ki < m.cost ? 'Not enough ki' : '';
   }
   return R;
+}
+// let the held attack go
+function releaseHeld() {
+  const Hd = HELD;
+  if (!Hd || !player) return false;
+  if (!canCast(player)) { words(player.x, player.y - 44, 'Not now!', C.muted, 13); SFX.fizzle(); return false; }
+  if (player.act) { words(player.x, player.y - 44, 'Still moving…', C.muted, 13); return false; }
+  player.ki += Hd.move.cost;
+  if (!startMove(player, Hd.move, Hd.power, FIGHT && FIGHT.on ? FIGHT.foe : null)) { player.ki -= Hd.move.cost; return false; }
+  HELD = null;
+  words(player.x, player.y - 44, `${Hd.move.name}!`, WAYS[Hd.move.way].color, Hd.perfect ? 19 : 16, 1.1);
+  if (Hd.perfect) perfectFx(player);
+  return true;
+}
+function perfectFx(f) { burst(f.x, f.y - 10, '#fff4c8', 18, 200, 0.6, 5); words(f.x, f.y - 66, 'Perfect!', C.gold, 18, 1.3); cam.shake = Math.max(cam.shake, 3); SFX.perfect(); }
+// the held attack's seal, by the top right of the paper
+function heldBtn() { const M = L.pad, r = Math.max(22, M.r * 0.15); return { cx: M.cx + M.r * 0.84, cy: M.cy - M.r * 0.84, r }; }
+function drawHeld() {
+  if (!HELD) return;
+  HELD.t += 1 / 60;
+  const b = heldBtn(), m = HELD.move, col = WAYS[m.way].color, pulse = 0.5 + 0.5 * Math.sin(HELD.t * 5);
+  ctx.save();
+  ctx.beginPath(); ctx.arc(b.cx, b.cy, b.r + 4 + pulse * 4, 0, TAU); ctx.strokeStyle = hexA(col, 0.25 + 0.35 * (1 - pulse)); ctx.lineWidth = 3; ctx.stroke();
+  ctx.beginPath(); ctx.arc(b.cx, b.cy, b.r, 0, TAU); ctx.fillStyle = C.seal; ctx.fill(); ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.stroke();
+  glyphGuide(ctx, { cx: b.cx, cy: b.cy, r: b.r * 0.72 }, m, '#fbeee0', 0.95, false, 2);
+  ctx.textAlign = 'center'; ctx.font = `bold 10px ${BODY}`; ctx.fillStyle = col; ctx.fillText('tap to throw', b.cx, b.cy + b.r + 13);
+  ctx.restore();
 }
 // drawing the ink, as on the dojo page
 function seg(c, M, a, b, color) {
@@ -157,6 +201,7 @@ function drawPad() {
   for (const s of PAD.strokes) inkStroke(ctx, M, s);
   if (PAD.pen && PAD.pen.dwell > 0) blot(ctx, M, PAD.pen.s.pts[PAD.pen.s.pts.length - 1], PAD.pen.poolW, C.sumi);
   ctx.restore();
+  drawHeld();
   if (sh && sh.ok) {
     const sz = Math.max(26, M.r * 0.22), k = clamp((now - sh.t) / 220, 0, 1), grow = 1 + 0.5 * (1 - ease(k));
     ctx.save(); ctx.translate(M.cx + M.r * 0.68, M.cy + M.r * 0.68); ctx.scale(grow, grow); ctx.globalAlpha = Math.min(1, 0.3 + k);

@@ -239,9 +239,10 @@ function shadeHex(hex, k) { const n = parseInt(hex.slice(1), 16), f = v => Math.
 // ── the extra show when a spell is written well: the glyph lit in the air, dissolving into its element ──
 // fl 0: written roughly, it sputters. fl 1: clean, the glyph flares and an aura bursts. fl 2: near perfect, a golden seal too.
 let SHOWS = [];
-const flourishLevel = P => (P >= 0.95 ? 2 : P >= 0.82 ? 1 : 0);
+// (a player's power runs from 0.4 to about 2, a fighter's from 0.6 to 1: the gold flourish is for a perfect glyph, or a master's)
+const flourishLevel = (P, f) => (P >= 1.8 || (f && !f.isPlayer && P >= 0.95) ? 2 : P >= 0.82 ? 1 : 0);
 function flourish(f, m, P, a) {
-  const way = m.way, fl = flourishLevel(P), E = ELC[way], x = f.x, y = f.y;
+  const way = m.way, fl = flourishLevel(P, f), E = ELC[way], x = f.x, y = f.y;
   if (fl === 0) { smoke(x + Math.cos(a) * 14, y + Math.sin(a) * 14 - 6, P < 0.6 ? 3 : 1, { size: 9, life: 0.6 }); if (P < 0.6) words(x, y - 44, 'sputters', '#a99fbc', 11, 0.7); return; }
   SHOWS.push({ m, x, y: y - 48, life: 0.75, max: 0.75, fl, way });
   if (way === 'fire') { flames(x, y + 6, amt(10 * fl), { sp: 70, rise: 60, size: 8, jit: 14 }); embers(x, y, amt(10 * fl), { sp: 90, rise: 50 }); }
@@ -251,7 +252,6 @@ function flourish(f, m, P, a) {
   if (fl === 2) {
     ring(x, y, 14, 64, C.gold, 0.6, 4); burst(x, y, '#ffe9a8', 14, 160, 0.6, 6); slowmo = Math.max(slowmo, 0.12); cam.shake = Math.max(cam.shake, 3);
     decal(way === 'fire' ? 'scorch' : way === 'water' ? 'wet' : way === 'earth' ? 'crack' : 'swirl', x, y + 4, 40, { life: 7 });
-    if (f.isPlayer) words(x, y - 58, 'Perfect', C.gold, 13, 0.9);
   }
 }
 function stepShows(dt) { for (const s of SHOWS) s.life -= dt; SHOWS = SHOWS.filter(s => s.life > 0); }

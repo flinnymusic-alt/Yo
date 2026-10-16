@@ -5,11 +5,11 @@ import os
 D = os.path.dirname(os.path.abspath(__file__))
 SRC = os.path.join(D, 'src')
 lib = open(os.path.join(SRC, 'lib.js')).read().replace("if (typeof module !== 'undefined') module.exports = INK;\n", '')
-game = ''.join(open(os.path.join(SRC, f'game_{k}.js')).read() for k in ['a', 'b', 'c', 'd', 'fx', 'e', 'f', 'g'])
+game = ''.join(open(os.path.join(SRC, f'game_{k}.js')).read() for k in ['a', 'b', 'm', 'c', 'd', 'fx', 'e', 'f', 'q', 'g'])
 head = """<title>Ink Dojo</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Yuji+Syuku&family=Zen+Kaku+Gothic+New:wght@400;700&display=swap">
 <style>
-/* One look: a night dojo lit by lanterns. The whole page is the game's canvas. */
+/* One look: ink on paper, by night. The whole page is the game's canvas. */
 :root { --night: #120f19; --paper: #efe6d0; color-scheme: dark; }
 html, body { margin: 0; height: 100%; background: var(--night); color: var(--paper); overflow: hidden; overscroll-behavior: none; }
 #game { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
@@ -17,7 +17,7 @@ html, body { margin: 0; height: 100%; background: var(--night); color: var(--pap
 /* the tilt button: invisible, over the circle the game draws by the paper (a real button, so iPhones accept its tap) */
 #tiltBtn { position: fixed; z-index: 2; margin: 0; padding: 0; border: 0; border-radius: 50%; background: transparent; opacity: 0; touch-action: manipulation; -webkit-tap-highlight-color: transparent; cursor: pointer; }
 </style>
-<canvas id="game" aria-label="Ink Dojo: a dojo of fighters, and a pad of paper to write your moves on"></canvas>
+<canvas id="game" aria-label="Ink Dojo: a calligraphy adventure, and a pad of paper to write your moves on"></canvas>
 <div id="safe"></div>
 <button id="tiltBtn" type="button" aria-label="Tilt to walk" hidden></button>
 """

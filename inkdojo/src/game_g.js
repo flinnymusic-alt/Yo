@@ -1,6 +1,7 @@
 // ── the title: your way ──
 const SIGNATURE = { water: 'whirlpool', fire: 'inferno', earth: 'mountain', air: 'typhoon' };
 let titleT = 0, choosing = false;
+const STAGE_NAME = ['at home', 'on the road to town', 'at the dojo', 'the package waits', 'carrying the package home', 'nearly home'];
 function drawTitle() {
   titleT += 1 / 60;
   buttons = [];
@@ -11,15 +12,15 @@ function drawTitle() {
   ctx.textAlign = 'center';
   ctx.font = `${Math.min(64, W / 6)}px ${DISPLAY}`; ctx.fillStyle = C.paper; ctx.fillText('Ink Dojo', cx, top + Math.min(W, H) * 0.2 + 18);
   ctx.font = `14px ${BODY}`; ctx.fillStyle = C.muted;
-  let y = wrapText('Write your moves with a brush. Beat every fighter in the dojo.', cx, top + Math.min(W, H) * 0.2 + 52, Math.min(W - 40, 420), 19) + 10;
+  let y = wrapText('Write your moves with a brush. Fetch the package from town, and bring it home.', cx, top + Math.min(W, H) * 0.2 + 52, Math.min(W - 40, 420), 19) + 10;
   const saved = loadSave();
   if (saved && !choosing) {
     const wcol2 = WAYS[saved.way].color, bw = Math.min(W - 40, 360);
     y += 10;
     const b1 = { x: cx - bw / 2, y, w: bw, h: 64, go: () => { save = saved; continueGame(); } };
     roundRect(b1.x, b1.y, b1.w, b1.h, 14); ctx.fillStyle = C.night2; ctx.fill(); ctx.strokeStyle = wcol2; ctx.lineWidth = 2; ctx.stroke();
-    ctx.font = `22px ${DISPLAY}`; ctx.fillStyle = wcol2; ctx.fillText(saved.master ? 'Walk the dojo again' : 'Carry on', cx, y + 28);
-    ctx.font = `13px ${BODY}`; ctx.fillStyle = C.muted; ctx.fillText(`The Way of ${WAYS[saved.way].name} · ${saved.master ? 'Grandmaster' : saved.beaten.length + ' of 12 beaten'}`, cx, y + 49);
+    ctx.font = `22px ${DISPLAY}`; ctx.fillStyle = wcol2; ctx.fillText(saved.q >= Q.DONE ? 'Walk the valley again' : 'Carry on', cx, y + 28);
+    ctx.font = `13px ${BODY}`; ctx.fillStyle = C.muted; ctx.fillText(`The Way of ${WAYS[saved.way].name} · ${saved.q >= Q.DONE ? 'chapter one done' : STAGE_NAME[saved.q]}`, cx, y + 49, bw - 16);
     buttons.push(b1);
     y += 84;
     const b2 = { x: cx - bw / 2, y, w: bw, h: 48, go: () => { choosing = true; pickWay = null; } };
@@ -51,7 +52,7 @@ function drawTitle() {
   const bw = Math.min(W - 40, 320), b = { x: cx - bw / 2, y, w: bw, h: 52, go: () => { if (pickWay) { choosing = false; beginGame(pickWay); } } };
   roundRect(b.x, b.y, b.w, b.h, 26); ctx.fillStyle = pickWay ? WAYS[pickWay].color : 'rgba(255,255,255,0.08)'; ctx.fill();
   ctx.textAlign = 'center'; ctx.font = `17px ${BODY}`; ctx.fillStyle = pickWay ? C.night : C.muted;
-  ctx.fillText(pickWay ? `Enter the dojo · ${WAYS[pickWay].name}` : 'Pick a way above', cx, y + 32);
+  ctx.fillText(pickWay ? `Begin · ${WAYS[pickWay].name}` : 'Pick a way above', cx, y + 32);
   buttons.push(b);
   if (saved) { const bb = { x: cx - 60, y: y + 60, w: 120, h: 30, go: () => { choosing = false; } }; ctx.font = `13px ${BODY}`; ctx.fillStyle = C.muted; ctx.fillText('Back', cx, y + 80); buttons.push(bb); }
 }
@@ -70,7 +71,7 @@ function drawOverlay() {
     ctx.font = `${Math.min(28, W / 13)}px ${DISPLAY}`; ctx.fillStyle = Wy.color; ctx.fillText(`The Way of ${Wy.name}`, cx, 40);
     ctx.font = `bold 12px ${BODY}`; ctx.fillStyle = C.gold; const tl = wrapLines(`${Wy.twist}: ${Wy.twistWhat}`, Math.min(W - 24, 560));
     ctx.font = `12px ${BODY}`; tl.slice(0, 3).forEach((l, i) => { ctx.fillStyle = i ? C.fg : C.fg; ctx.fillText(l, cx, 60 + i * 15); });
-    ctx.font = `11px ${BODY}`; ctx.fillStyle = C.muted; ctx.fillText('● basic · ●● skilled · ●●● master. Tap one to see it and trace it.', cx, 64 + Math.min(3, tl.length) * 15, W - 24);
+    ctx.font = `11px ${BODY}`; ctx.fillStyle = C.muted; ctx.fillText(save.scribe ? 'Tap one to see it and trace it. End an attack with a little curl to hold it.' : '● basic · ●● skilled · ●●● master. Tap one to see it and trace it.', cx, 64 + Math.min(3, tl.length) * 15, W - 24);
     const cols = W > 700 ? 5 : 4, cw = Math.min(170, (W - 16) / cols), rows = 5, top = 74 + Math.min(3, tl.length) * 15 + 8, ch = Math.min(150, (H - top - 56) / rows), r = Math.min(cw * 0.3, (ch - 40) / 2.1);
     const x0 = cx - cw * cols / 2;
     MOVES[way].forEach((m, i) => {
@@ -128,21 +129,39 @@ function drawOverlay() {
                         earth: 'Raise stones with Stone Wall and Earth Spike, then throw them with Rock Throw or burst them with Shatter.',
                         air: 'Keep moving while you write: wind makes every air spell stronger, and standing still lets it die away.' };
     const tips = ['Watch what they write in the air above them: when a big spell is coming, shield, dodge or wall it off.', TWIST_TIP[save.way],
-                  'Rough glyphs still work, only weaker and smaller. Clean ones hit full strength: open MOVES and trace one to practise.', `Your way beats ${WAYS[WAYS[save.way].beats].name}: try a fighter of that hall.`];
+                  'Rough glyphs still work, but only just. Every bit neater hits harder, and a perfect one twice as hard: open MOVES and trace one to practise.', `Your way beats ${WAYS[WAYS[save.way].beats].name}: its fighters are the easiest for you.`];
     wrapText(tips[(save.stats.falls - 1) % tips.length], cx, H * 0.36 + 34, Math.min(W - 40, 420), 21);
     if (O.t > 0.8) { ctx.globalAlpha = 0.6 + 0.4 * Math.sin(T * 4); ctx.font = `14px ${BODY}`; ctx.fillStyle = C.gold; ctx.fillText('Tap to try again', cx, H - 30); ctx.globalAlpha = 1; buttons.push({ x: 0, y: 0, w: W, h: H, go: afterFall }); }
     return;
   }
-  if (O.kind === 'victory') {
+  if (O.kind === 'talk') {
+    // someone talking: their name, their words, a tap to go on
+    const [who, text] = O.pages[O.i] || ['', ''], bw = Math.min(W - 24, 460), x0 = cx - bw / 2;
+    ctx.font = `16px ${BODY}`; const ls = wrapLines(text, bw - 36), bh = 64 + ls.length * 22, y0 = Math.min(H - bh - 24, Math.max(H * 0.3, L.wide ? H / 2 - bh / 2 : L.pad.cy - L.pad.r - bh - 4));
+    roundRect(x0, y0, bw, bh, 16); ctx.fillStyle = C.night2; ctx.fill(); ctx.strokeStyle = who ? C.gold : C.line; ctx.lineWidth = 2; ctx.stroke();
+    ctx.textAlign = 'left';
+    if (who) { ctx.font = `${Math.min(22, W / 17)}px ${DISPLAY}`; ctx.fillStyle = C.gold; ctx.fillText(who, x0 + 18, y0 + 32); }
+    ctx.font = who ? `16px ${BODY}` : `italic 16px ${BODY}`; ctx.fillStyle = who ? C.fg : C.paper;
+    ls.forEach((l, i) => ctx.fillText(l, x0 + 18, y0 + (who ? 60 : 40) + i * 22));
+    ctx.textAlign = 'center';
+    if (O.t > 0.25) { ctx.globalAlpha = 0.6 + 0.4 * Math.sin(T * 4); ctx.font = `13px ${BODY}`; ctx.fillStyle = C.gold; ctx.fillText(O.i < O.pages.length - 1 ? 'Tap to go on' : 'Tap', cx, Math.min(H - 12, y0 + bh + 22)); ctx.globalAlpha = 1; }
+    buttons.push({ x: 0, y: 0, w: W, h: H, go: talkNext });
+    return;
+  }
+  if (O.kind === 'end') {
     const Wy = WAYS[save.way], S = save.stats, mins = Math.max(1, Math.round(((S.t1 || Date.now()) - S.t0) / 60000));
-    ctx.save(); ctx.strokeStyle = hexA(Wy.color, 0.25); ctx.lineWidth = 18; ctx.lineCap = 'round'; ctx.beginPath(); ctx.arc(cx, H * 0.3, Math.min(W, H) * 0.2, 2.4, 2.4 + TAU * 0.86 * Math.min(1, O.t / 1.5)); ctx.stroke(); ctx.restore();
-    ctx.font = `${Math.min(36, W / 10)}px ${DISPLAY}`; ctx.fillStyle = C.gold; ctx.fillText('Grandmaster', cx, H * 0.3 - 6);
-    ctx.font = `${Math.min(22, W / 16)}px ${DISPLAY}`; ctx.fillStyle = Wy.color; ctx.fillText(`of the Way of ${Wy.name}`, cx, H * 0.3 + 26);
+    ctx.save(); ctx.strokeStyle = hexA(C.gold, 0.25); ctx.lineWidth = 18; ctx.lineCap = 'round'; ctx.beginPath(); ctx.arc(cx, H * 0.28, Math.min(W, H) * 0.2, 2.4, 2.4 + TAU * 0.86 * Math.min(1, O.t / 1.5)); ctx.stroke(); ctx.restore();
+    ctx.font = `${Math.min(34, W / 11)}px ${DISPLAY}`; ctx.fillStyle = C.gold; ctx.fillText('The Golden Crane', cx, H * 0.28 - 4);
+    ctx.font = `${Math.min(20, W / 17)}px ${DISPLAY}`; ctx.fillStyle = Wy.color; ctx.fillText('End of chapter one', cx, H * 0.28 + 26);
     ctx.font = `15px ${BODY}`; ctx.fillStyle = C.fg;
-    const lines = [`Every fighter in the dojo beaten, the Grandmaster too.`, `${mins} minute${mins === 1 ? '' : 's'} · ${S.falls} fall${S.falls === 1 ? '' : 's'} · ${S.casts} moves written · ${S.casts ? Math.round(100 * S.clean / S.casts) : 0}% clean`];
-    lines.forEach((l, i) => ctx.fillText(l, cx, H * 0.56 + i * 24, W - 30));
-    const b = { x: cx - 120, y: H * 0.56 + 70, w: 240, h: 48, go: () => { overlay = null; state = 'title'; choosing = true; pickWay = null; } };
-    pill(b, 'Try another way', C.gold); buttons.push(b);
+    let y = wrapText('The package was your grandfather’s golden crane, and a buyer waits in the far city of Kyōsei. The road there is long. To be continued.', cx, H * 0.5, Math.min(W - 40, 420), 21);
+    ctx.fillStyle = C.muted; ctx.font = `13px ${BODY}`;
+    ctx.fillText(`${mins} minute${mins === 1 ? '' : 's'} · ${S.wins} fights won · ${S.falls} fall${S.falls === 1 ? '' : 's'} · ${S.casts ? Math.round(100 * S.clean / S.casts) : 0}% clean`, cx, y + 16, W - 30);
+    const b = { x: cx - 120, y: y + 50, w: 240, h: 48, go: () => { overlay = null; state = 'title'; choosing = true; pickWay = null; } };
+    pill(b, 'Play again', C.gold); buttons.push(b);
+    const c2 = { x: cx - 120, y: y + 108, w: 240, h: 40, go: () => { overlay = null; } };
+    pill(c2, 'Stay in the valley', C.muted); buttons.push(c2);
+    return;
   }
 }
 
@@ -154,6 +173,7 @@ cv.addEventListener('pointerdown', e => {
   const B = panelButtons();
   if (hit(B.moves, x, y)) { overlay = { kind: 'scroll', t: 0 }; SFX.tap(); return; }
   if (hit(B.sound, x, y)) { setSound(!soundOn); SFX.tap(); return; }
+  if (HELD) { const b = heldBtn(); if (Math.hypot(x - b.cx, y - b.cy) < b.r + 12) { releaseHeld(); return; } }
   if (TILT.on) { const b = tiltBubble(); if (Math.hypot(x - b.cx, y - b.cy) < b.r + 8) { TILT.relevel = true; SFX.tap(); return; } }
   if (inPad(x, y)) { if (!PAD.pen) { PAD.penId = e.pointerId; penDown(x, y, e); try { cv.setPointerCapture(e.pointerId); } catch (_) {} } return; }
   const inArena = x >= L.arena.x && x <= L.arena.x + L.arena.w && y >= L.arena.y && y <= L.arena.y + L.arena.h;
@@ -172,6 +192,7 @@ for (const ev of ['touchstart', 'touchmove', 'touchend', 'gesturestart']) docume
 window.addEventListener('keydown', e => {
   keys[e.code] = true; audio();
   if (e.code === 'Escape' && overlay && overlay.kind === 'scroll') overlay = null;
+  if (e.code === 'Space' && state === 'play' && !overlay) { releaseHeld(); e.preventDefault(); }
   if ((e.code === 'KeyM' || e.code === 'Tab') && state === 'play' && !overlay) { overlay = { kind: 'scroll', t: 0 }; e.preventDefault(); }
 });
 window.addEventListener('keyup', e => { keys[e.code] = false; });
@@ -195,16 +216,17 @@ if (hot && hot.ready) hot.ready(boot); else boot(hot && hot.data || {});
 
 // ── for tests: start a way, write a move as a steady hand would, step time by hand ──
 window.INKDOJO = {
-  get state() { return state; }, get overlay() { return overlay; }, get fight() { return FIGHT; }, get player() { return player; }, get foes() { return FOES; }, get master() { return MASTERF; }, get student() { return STUDENTF; }, get save() { return save; },
+  get state() { return state; }, get overlay() { return overlay; }, get fight() { return FIGHT; }, get player() { return player; }, get foes() { return FOES; }, get npcs() { return NPCS; }, get save() { return save; },
+  get scene() { return SCENE; }, get held() { return HELD; }, Q, goal, enterScene, talkNext, afterLearn, afterFall, releaseHeld, whitesBeaten, fighters,
   begin(way) { beginGame(way); }, cont() { save = loadSave(); continueGame(); },
-  write(key, o = {}) { const m = MOVES[save.way].find(m => m.key === key); return padJudge(writeOut(m, { wobble: 0.01, ...o })); },
+  write(key, o = {}) { const m = MOVES[save.way].find(m => m.key === key); let s = writeOut(m, { wobble: 0.01, ...o }); if (o.curl) s = withCurl(s); return padJudge(s); },
   // cast any spell straight away, as anyone, at a given strength (for looking at spells)
   castAs(who, id, P = 1) { const f = who === 'foe' ? FIGHT && FIGHT.foe : player, [way, key] = id.split(':'), m = MOVES[way].find(m => m.key === key); if (!f || !m) return false; f.ki = Math.max(f.ki, m.cost); if (!startMove(f, m, P, foeOf(f))) return false; f.act.t = 0; return true; },
   manual(on) { MANUAL = on; }, step(n = 1, dt = 1 / 60) { for (let i = 0; i < n; i++) update(dt); },
   tapOverlay() { const b = buttons[buttons.length - 1]; if (b) b.go(); }, close() { overlay = null; },
   teleport(x, y) { player.x = x; player.y = y; updateCam(0, true); },
   koFoe() { if (FIGHT && FIGHT.on) knockedOut(FIGHT.foe, player); }, koMe() { if (FIGHT && FIGHT.on) knockedOut(player, FIGHT.foe); },
-  get tilt() { return TILT; }, tiltBubble,
+  get tilt() { return TILT; }, tiltBubble, heldBtn,
   // a bot plays you: it walks as a fighter would and writes the spell a fighter would pick, by hand (so not always neatly)
   // the player played by a fighter's mind too, so two ways can be weighed against each other on equal terms
   dmgLog(on) { if (on) DMGLOG = {}; const L = DMGLOG; if (!on) DMGLOG = null; return L; },
@@ -218,7 +240,7 @@ window.INKDOJO = {
     const R = padJudge(writeOut(c.move, { wobble: wobble ?? (0.008 + Math.random() * 0.03), seed: Math.random() * 9 }));
     return R && R.verdict !== 'fizzle' ? c.move.key : 'fizzle';
   },
-  INK, ROSTER, MOVES, RANKS, WAYMOD, ADV, HALL, YOU, skillAt, tierNow, learnedCount, myMoves, padJudge, startFight, setSound, spawnMaster, setupWorld, resetFighter,
+  INK, ROSTER, MOVES, RANKS, WAYMOD, ADV, HALL, YOU, skillAt, skillFor, learnedCount, myMoves, padJudge, startFight, setSound, setupWorld, resetFighter,
   get shots() { return SHOTS; }, get waves() { return WAVES; }, get zones() { return ZONES; }, get ents() { return ENTS; }, get stones() { return STONES; }, get fx() { return FX; },
 };
 })();

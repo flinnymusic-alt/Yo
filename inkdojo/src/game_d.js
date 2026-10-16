@@ -106,6 +106,9 @@ function castMult(f, m) {
   if (m.tier === 2) k *= 1.12;
   return k;
 }
+// attacks that throw something out at the foe: end one with a little curl and it's held, to be let go later with a tap
+const HOLD = new Set(['Shot', 'Strike', 'Volley', 'Chill', 'Homing', 'Pierce', 'Break', 'Flurry', 'Throw', 'Cone', 'Push', 'Burst', 'Blast', 'Lob', 'Spike', 'Roll', 'Rockfall',
+  'Wave', 'Storm', 'Slam', 'Launch', 'Detonate', 'Bomb', 'Freeze', 'Wash', 'Summon', 'Ultimate', 'Trap', 'Zone', 'Sink']);
 // spells that act on the caster, or all round them, rather than going at the foe
 const SELF = new Set(['Absorb', 'Heal', 'Glide', 'Conceal', 'Reflect', 'Counter', 'Ki', 'Decoy', 'Thorns', 'Dash', 'Release', 'Sweep', 'Fury', 'Armor', 'Statue', 'Lift', 'Stance', 'Dodge', 'Deflect', 'Cleanse', 'Haste', 'Echo', 'Free', 'Wall', 'Barrier', 'Stun']);
 function cast(f, A) {
@@ -132,7 +135,7 @@ function cast(f, A) {
   if (m.way === 'fire' && HEAT[m.key]) { f.heat = Math.min(100, f.heat + HEAT[m.key] * (f.st.soak > 0 ? 0.5 : 1)); f.heatT = 0; }
   f.lastCast = m;
   if (m.tag !== 'Echo') f.lastSpell = m;
-  if (!A.echo) flourish(f, m, P, a);
+  if (!A.echo && WAYS[m.way]) flourish(f, m, P, a);
   const fn = SPELL[m.id];
   if (DMGLOG) { const k = '#' + m.id; DMGLOG[k] = (DMGLOG[k] || 0) + 1; }
   CUR = m.key; if (fn) fn(c); stamp(m.key); CUR = null;
@@ -1048,7 +1051,7 @@ const AIH = {
   'air:crane': { r: [100, 500], w: 1.1 }, 'air:whistle': { vsWind: 1, r: [0, 400], w: 0.2, ok: (f, t) => (t.act && t.act.phase === 'wind' ? 7 : 0.4) }, 'air:gale': { r: [60, 420], w: 1.3 },
   'air:echo': { r: [0, 500], w: 0.6, ok: (f) => (f.lastSpell && !SELF.has(f.lastSpell.tag) && f.lastSpell.tag !== 'Ultimate' ? 1.5 : 0) }, 'air:weightless': { def: 1, w: 0.3, ok: (f) => (troubles(f) ? 3 : 1) }, 'air:typhoon': { ult: 1, r: [0, 500], w: 1 },
 };
-const allowedFor = f => { const way = moveWay(f), n = skillOf(f).spells; return MOVES[way].filter(m => m.order < n); };
+const allowedFor = f => { if (f.kit) return f.kit; const way = moveWay(f), n = skillOf(f).spells; return MOVES[way].filter(m => m.order < n); };
 // where to walk: the distance this fighter likes, circling; air never stands still, earth hardly strolls; out of their pools
 function aiWalk(f, foe, dt) {
   const ai = f.ai, way = moveWay(f), d = dist(f, foe), a = angTo(f, foe);

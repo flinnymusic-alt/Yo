@@ -1,60 +1,61 @@
-// ── the game: title, the way you choose, the dojo, challenges, fights, lessons, the Grandmaster ──
+// ── the game: title, the way you choose, the valley, the town, the dojo, fights, lessons ──
 let state = 'title', FIGHT = null, T = 0, slowmo = 0, banner = null, overlay = null, pickWay = null, buttons = [], calm = 0;
-const fighters = () => [...(STUDENTF ? [STUDENTF] : []), ...FOES, ...(MASTERF ? [MASTERF] : [])];
-// who may challenge you now: the first-day student, then the white belts until all four are beaten, then the brown, then the black
-function tierNow() { if (!save || !save.warm) return 0; for (const r of [1, 2, 3]) if (ROSTER.some(o => o.rank === r && !save.beaten.includes(o.id))) return r; return 4; }
-const BELTS = { 1: 'white belts', 2: 'brown belts', 3: 'black belts' };
-const canChallenge = f => !f.beaten && f.rank === tierNow();
+// the fighters in this place (the bandits stay hidden until they step out of the trees)
+const fighters = () => FOES.filter(f => f.scene === SCENE && !f.hidden);
 function setupWorld() {
   player = makeFighter({ isPlayer: true, way: save.way, name: 'You' });
-  FOES = ROSTER.map(o => { const f = makeFighter(o); if (save.beaten.includes(o.id)) { f.beaten = true; f.mode = 'beaten'; f.pose = 'bow'; } return f; });
-  if (save.beaten.length) save.warm = true; // (a save from before there was a warm-up)
-  STUDENTF = makeFighter({ ...STUDENT, way: WAYS[save.way].beats }); STUDENTF.student = true; STUDENTF.gi = '#f6f1e6'; STUDENTF.face = angTo(STUDENTF, START);
-  if (save.warm) { STUDENTF.beaten = true; STUDENTF.mode = 'beaten'; STUDENTF.pose = 'bow'; }
-  MASTERF = null;
-  if (save.beaten.length >= ROSTER.length && !save.master) spawnMaster(true);
-  FX = []; TEXTS = []; GHOSTS = []; DECALS = []; SHOWS = []; clearSpells(); FIGHT = null; slowmo = 0;
+  player.carry = save.q === Q.HOME || save.q === Q.LAST;
+  if (save.q === Q.HOME) save.ambush = false;
+  const mk = (o, extra) => { const f = makeFighter({ ...o, ...extra }); Object.assign(f, extra); f.scene = extra.scene; return f; };
+  FOES = [
+    ...ROSTER.map(o => mk(o, { scene: 'dojo' })),
+    ...WOLVES.map(o => mk({ ...o, way: 'beast', rank: 0 }, { scene: 'home', beast: true, kit: WOLF_KIT, col: '#b9b2a6', hidden: save.wolves.includes(o.id) || save.q >= Q.HOME })),
+    ...BANDITS.map((o, i) => mk({ ...o, way: banditWays()[i], rank: 2, post: [500, 1200] }, { scene: 'home', bandit: true, boss: !!o.boss, hidden: true })),
+  ];
+  for (const f of FOES) if (save.beaten.includes(f.id) || save.wolves.includes(f.id)) { f.beaten = true; f.mode = 'beaten'; f.pose = 'bow'; }
+  NPCS = NPC_LIST.map(makeNpc);
+  FX = []; TEXTS = []; GHOSTS = []; DECALS = []; SHOWS = []; clearSpells(); FIGHT = null; slowmo = 0; HELD = null;
   PAD.strokes = []; PAD.shown = null; PAD.pen = null; PAD.guide = null;
+  enterScene(save.scene || 'home', save.at || 'door');
   updateCam(0, true);
 }
-function spawnMaster(quiet) {
-  MASTERF = makeFighter(MASTER); MASTERF.face = Math.PI / 2;
-  if (!quiet) { say('Grandmaster Sumi waits on the dais', 'Every hall is beaten. One fight left.', 4); SFX.gong(); }
-}
 function say(title, sub, life = 2.6, col) { banner = { title, sub, life, max: life, col: col || C.gold }; }
-function beginGame(way) { save = newSave(way); writeSave(); setupWorld(); state = 'play'; calm = 3.5; say(`The Way of ${WAYS[way].name}`, `${WAYS[way].animal} · ${WAYS[way].style}. Open MOVES to see how to write your first three. Ren, a student on their first day, wants to spar with you.`, 5.5, WAYS[way].color); }
-function continueGame() { setupWorld(); state = 'play'; say(`The Way of ${WAYS[save.way].name}`, `${save.beaten.length} of 12 fighters beaten`, 3, WAYS[save.way].color); }
+function beginGame(way) { save = newSave(way); writeSave(); setupWorld(); state = 'play'; calm = 1; say(`The Way of ${WAYS[way].name}`, `${WAYS[way].animal} · ${WAYS[way].style}`, 2.4, WAYS[way].color); }
+function continueGame() { setupWorld(); state = 'play'; say(SCENES[SCENE].name, goal().text, 3, WAYS[save.way].color); }
 
-// a fighter sees you coming, walks up, bows, and the fight begins
+// a fighter (or a wolf) sees you coming, walks up, and the fight begins
 // (nobody interrupts you while you're writing)
 const writing = () => !!(PAD.pen || PAD.judgeAt || (PAD.strokes.length && !PAD.shown) || (player && player.act));
 function lookForChallenger() {
-  if (FIGHT || state !== 'play' || calm > 0 || writing() || fighters().some(f => f.mode === 'approach')) return;
+  if (FIGHT || state !== 'play' || calm > 0 || overlay || writing() || fighters().some(f => f.mode === 'approach')) return;
   let best = null, bd = Infinity;
-  const tier = tierNow();
   for (const f of fighters()) {
     if (f.beaten || f.mode !== 'post') continue;
-    const d = dist(f, player), reach = f === MASTERF ? 250 : f.student ? 600 : 215;
-    // a fighter of a later belt waves you off
-    if (f.rank > tier) { if (d < 150 && T - (f.nagT ?? -99) > 6) { f.nagT = T; words(f.x, f.y - 42, tier ? `The ${BELTS[tier]} first` : 'Spar with Ren first', C.muted, 12, 1.4); } continue; }
+    const d = dist(f, player);
+    // a fighter who won't fight you waves you off
+    if (!mayChallenge(f)) { const w = waveOff(f); if (w && d < 150 && T - (f.nagT ?? -99) > 6) { f.nagT = T; words(f.x, f.y - 42, w, C.muted, 12, 1.4); } continue; }
+    const reach = f.beast ? 270 : f.bandit ? 4000 : 215;
     if (d < reach && d < bd) { best = f; bd = d; }
   }
   if (best) {
     best.mode = 'approach';
-    const hall = best.way === 'master' ? 'the dais' : HALLS[best.way].label;
-    say(`${best.name} challenges you`, best === MASTERF ? 'The last fight' : best.student ? 'First day at the dojo · a warm-up' : `${hall} · ${RANKS[best.rank].beltName}`, 2.2, best.way === 'master' ? C.seal : WAYS[best.way].color);
+    say(best.beast ? `A wolf!` : `${best.name} challenges you`, challengeLine(best), 2.2, fcol(best));
     words(best.x, best.y - 40, '!', '#ffe08a', 24, 0.9);
+    if (best.beast) noise(0.5, 0.12, 300, 120, 2);
   }
 }
 function startFight(f) {
   const cx = (player.x + f.x) / 2, cy = (player.y + f.y) / 2;
   FIGHT = { foe: f, on: false, intro: 1.9, t: 0, cx, cy, r: 255, dealt: 0, taken: 0, over: null };
-  // how good they are: the student is the weakest; after that, each win makes the next fighter a little better
-  f.sk = skillAt(f.student ? 0 : f === MASTERF ? 13 : save.beaten.length + 1);
-  f.maxHp = Math.round(f.sk.hp * WAYMOD[f.way].hp / 100);
-  f.mode = 'fight'; resetFighter(f); f.hp = f.maxHp; f.ki = f.maxKi; f.ai.think = rr(0.8, 1.3) * (f.sk.think[0] / 0.95); f.ai.cd = {}; f.ai.range = 0;
+  // how good they are: the wolves are feeble; each white belt you beat makes the next a little better; the bandits fight
+  // like brown belts
+  f.sk = skillFor(f);
+  f.maxHp = Math.round(f.sk.hp * (WAYMOD[f.way] || WAYMOD.master).hp / 100);
+  f.mode = 'fight'; resetFighter(f); f.hp = f.maxHp; f.ki = f.maxKi; f.ai.think = rr(0.8, 1.3) * (f.sk.think[0] / 0.95); f.ai.cd = {}; f.ai.range = f.beast ? rr(40, 90) : 0;
+  const keepHp = f.bandit && banditsLeft().length < BANDITS.length;
   resetFighter(player); player.pose = 'bow'; player.poseT = 0; f.pose = 'bow'; f.poseT = 0;
-  player.hp = player.maxHp; player.ki = player.maxKi;
+  if (!keepHp) player.hp = player.maxHp;
+  player.ki = player.maxKi;
   clearSpells();
   PAD.strokes = []; PAD.shown = null;
   SFX.drum(2);
@@ -72,15 +73,8 @@ function endFight() {
   FIGHT = null; clearSpells();
   resetFighter(player); resetFighter(foe);
   if (O.winner === player) {
-    foe.beaten = true; foe.mode = 'return'; foe.hp = foe.maxHp; foe.pose = 'idle';
-    if (foe === MASTERF) { save.master = true; save.stats.wins++; save.stats.t1 = Date.now(); writeSave(); overlay = { kind: 'victory', t: 0 }; SFX.learn(); return; }
-    if (foe.student) { const before = learnedCount(); save.warm = true; save.stats.wins++; writeSave(); overlay = lesson(foe, before, learnedCount(), { warm: true }); SFX.learn(); return; }
-    const before = learnedCount(), tier0 = tierNow();
-    if (!save.beaten.includes(foe.id)) save.beaten.push(foe.id);
-    save.stats.wins++; writeSave();
-    const after = learnedCount(), tier1 = tierNow();
-    overlay = lesson(foe, before, after, { tierUp: tier1 !== tier0 && tier1 < 4 ? tier1 : 0 });
-    SFX.learn();
+    foe.beaten = true; foe.hp = foe.maxHp; foe.pose = 'idle'; save.stats.wins++;
+    wonAgainst(foe);
   } else {
     save.stats.falls++; writeSave();
     overlay = { kind: 'fallen', t: 0, foe };
@@ -95,14 +89,15 @@ function lesson(foe, before, after, o = {}) {
 function afterLearn() {
   const O = overlay; overlay = null;
   if (O && O.more && O.more.length) { const m = O.more[0]; overlay = { ...O, t: 0, move: m, more: O.more.slice(1), demo: writeOut(m, { wobble: 0.006 }), next: true }; return; }
-  if (O && O.warm) say('The halls are open', 'The white belts will fight you first. Each one is a little better than the last.', 4.5);
-  else if (O && O.tierUp) say(`The ${BELTS[O.tierUp]} will fight you now`, `All four ${BELTS[O.tierUp - 1]} are beaten. Each fighter is a little better than the last.`, 4.5);
+  if (O && O.allWhite) say('All four white belts beaten', save.q === Q.PACKAGE ? 'Go back to the post office for the package.' : 'Now find the post office in town.', 4.5);
+  if (O && O.teach) say('Hold an attack', 'End an attack with a little curl to hold it. Tap its red seal by the paper to throw it.', 5);
   resetFighter(player); player.hp = player.maxHp; player.ki = player.maxKi; player.pose = 'idle';
-  if (save.beaten.length >= ROSTER.length && !save.master && !MASTERF) spawnMaster(false);
 }
 function afterFall() {
-  overlay = null;
-  player.x = START.x; player.y = START.y; resetFighter(player); player.hp = player.maxHp; player.ki = player.maxKi; player.pose = 'idle';
+  const foe = overlay && overlay.foe;
+  overlay = null; HELD = null;
+  resetFighter(player); player.hp = player.maxHp; player.ki = player.maxKi; player.pose = 'idle';
+  fellTo(foe);
   updateCam(0, true);
 }
 
@@ -150,6 +145,10 @@ function update(dt) {
       const d = dist(f, player), a = angTo(f, player); f.face = a;
       if (FIGHT) { f.mode = 'return'; continue; }
       if (d > 140) { f.vx = Math.cos(a) * f.speed * 0.9; f.vy = Math.sin(a) * f.speed * 0.9; } else { f.vx = f.vy = 0; if (!writing()) startFight(f); }
+    } else if (f.mode === 'flee') {
+      // beaten on the road: off into the trees
+      const a = angTo(player, f); f.vx = Math.cos(a) * f.speed * 1.2; f.vy = Math.sin(a) * f.speed * 1.2; f.face = a;
+      f.fleeT = (f.fleeT || 0) + dt; if (f.fleeT > 2.2) { f.hidden = true; f.vx = f.vy = 0; smoke(f.x, f.y, 4, { size: 12 }); }
     } else if (f.mode === 'return') {
       const d = dist(f, f.post), a = angTo(f, f.post);
       if (d > 6) { f.vx = Math.cos(a) * f.speed * 0.7; f.vy = Math.sin(a) * f.speed * 0.7; f.face = a; }
@@ -157,9 +156,11 @@ function update(dt) {
     } else {
       f.vx = f.vy = 0;
       // practising at their post now and then
-      if (f.mode === 'post' && Math.random() < dt * 0.25 && f.poseT >= 1) { f.pose = Math.random() < 0.5 ? 'strike' : 'kick'; f.poseT = 0; }
+      if (f.mode === 'post' && !f.beast && Math.random() < dt * 0.25 && f.poseT >= 1) { f.pose = Math.random() < 0.5 ? 'strike' : 'kick'; f.poseT = 0; }
     }
   }
+  if (!FIGHT) storyTick(dt);
+  if (overlay) return;
   lookForChallenger();
   // moves in progress, statuses, motion
   const live = FIGHT ? [player, FIGHT.foe] : [player];
@@ -196,24 +197,26 @@ function render() {
   ctx.beginPath(); ctx.rect(L.arena.x, L.arena.y, L.arena.w, L.arena.h); ctx.clip();
   worldTransform();
   drawFloor();
-  drawPond(T);
+  if (SCENE === 'dojo') drawPond(T);
+  drawExits(T);
   if (FIGHT) { ctx.save(); ctx.strokeStyle = 'rgba(20,14,24,0.55)'; ctx.lineWidth = 9; ctx.setLineDash([28, 10, 6, 10]); ctx.beginPath(); ctx.arc(FIGHT.cx, FIGHT.cy, FIGHT.r, 0, TAU); ctx.stroke(); ctx.restore(); }
   drawDecals();
   drawZones(T);
   drawEnts(T, 'floor');
   drawWaves(T);
-  drawProps(T, 'low');
+  drawProps(T, 'low'); drawScenery(T, 'low');
   drawFx('under');
   drawStones();
-  const all = [player, ...fighters()].sort((a, b) => a.y - b.y);
+  const all = [player, ...fighters(), ...npcsHere()].sort((a, b) => a.y - b.y);
   for (const f of all) drawFighter(f, T);
-  for (const f of all) drawStatus(f, T);
+  for (const f of all) if (!f.isNpc) drawStatus(f, T);
   drawEnts(T, 'up');
   drawShots(T);
   drawBeams(T);
   drawFx('over');
-  drawProps(T, 'high');
-  for (const f of fighters()) if (!FIGHT || f !== FIGHT.foe) nameTag(f);
+  drawProps(T, 'high'); drawScenery(T, 'high');
+  for (const f of [...fighters(), ...npcsHere()]) if (!FIGHT || f !== FIGHT.foe) nameTag(f);
+  drawBubbles();
   if (FIGHT) drawAirGlyph(FIGHT.foe);
   drawShows();
   drawTexts();
@@ -232,25 +235,25 @@ function render() {
 function nameTag(f) {
   if (dist(f, player) > 330) return;
   ctx.textAlign = 'center'; ctx.font = `bold 12px ${BODY}`;
-  const y = f.y - 30, txt = f.beaten ? `${f.name} ✓` : f.name, later = !f.beaten && f.rank > tierNow();
+  if (f.isNpc && dist(f, player) < 140) return;
+  const y = f.y - 30, txt = f.beaten ? `${f.name} ✓` : f.name, later = !f.isNpc && !f.beaten && !mayChallenge(f);
   ctx.globalAlpha = later ? 0.45 : 1;
   ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(10,8,16,0.8)'; ctx.strokeText(txt, f.x, y);
-  ctx.fillStyle = f.beaten ? '#bfb8cc' : f.way === 'master' ? '#ff9a8a' : WAYS[f.way].color; ctx.fillText(txt, f.x, y);
+  ctx.fillStyle = f.isNpc ? C.paper : f.beaten ? '#bfb8cc' : fcol(f); ctx.fillText(txt, f.x, y);
   ctx.globalAlpha = 1;
 }
-// an arrow at the edge of the view toward the nearest fighter still to beat
+// an arrow at the edge of the view toward where the story goes next
 function pointToNext() {
-  let best = null, bd = Infinity;
-  for (const f of fighters()) if (canChallenge(f)) { const d = dist(f, player); if (d < bd) { bd = d; best = f; } }
+  const G = goal(), best = G.at;
   if (!best) return;
   const s = toScreen(best.x, best.y), A = L.arena, m = 30;
   if (s.x > A.x + m && s.x < A.x + A.w - m && s.y > A.y + 90 && s.y < A.y + A.h - m) return;
   const cx = A.x + A.w / 2, cy = A.y + A.h * 0.56, a = Math.atan2(s.y - cy, s.x - cx);
   const rx = A.w / 2 - m, ry = A.h * 0.42 - m, k = 1 / Math.max(Math.abs(Math.cos(a)) / rx, Math.abs(Math.sin(a)) / ry);
-  const x = cx + Math.cos(a) * k, y = cy + Math.sin(a) * k, col = best.way === 'master' ? C.seal : WAYS[best.way].color;
+  const x = cx + Math.cos(a) * k, y = cy + Math.sin(a) * k, col = best.label ? C.gold : best.isNpc ? C.paper : fcol(best);
   ctx.save(); ctx.translate(x, y); ctx.rotate(a); ctx.fillStyle = col; ctx.globalAlpha = 0.85 + 0.15 * Math.sin(T * 5);
   ctx.beginPath(); ctx.moveTo(12, 0); ctx.lineTo(-8, -9); ctx.lineTo(-4, 0); ctx.lineTo(-8, 9); ctx.closePath(); ctx.fill(); ctx.restore();
-  ctx.textAlign = 'center'; ctx.font = `bold 11px ${BODY}`; ctx.fillStyle = col; ctx.fillText(best.name, x - Math.cos(a) * 26, y - Math.sin(a) * 26 + 4);
+  ctx.textAlign = 'center'; ctx.font = `bold 11px ${BODY}`; ctx.fillStyle = col; ctx.fillText(best.label || best.name, x - Math.cos(a) * 26, y - Math.sin(a) * 26 + 4);
 }
 function bar(x, y, w, h, k, col, back = 'rgba(255,255,255,0.12)') { roundRect(x, y, w, h, h / 2); ctx.fillStyle = back; ctx.fill(); if (k > 0) { roundRect(x, y, Math.max(h, w * k), h, h / 2); ctx.fillStyle = col; ctx.fill(); } }
 // a fighter's twist, as a short bar and a few words: fire's heat, air's wind, water's puddle, earth's stones
@@ -271,20 +274,20 @@ function drawHud() {
   if (save.way === 'fire' || save.way === 'air') { bar(pad, pad + 36, w, 4, tw.k, tw.col); if (save.way === 'fire') { ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.fillRect(pad + w * 0.75, pad + 35, 1.5, 6); } }
   ctx.font = `10px ${BODY}`; ctx.fillStyle = C.muted; ctx.fillText(`ki ${Math.floor(player.ki)}${kiFlow(player) > 1 ? ' ↑' : ''}${tw.text ? ' · ' + tw.text : ''}`, pad, pad + 50);
   if (FIGHT && FIGHT.foe) {
-    const f = FIGHT.foe, x = L.arena.x + L.arena.w - pad - w, col = f.way === 'master' ? C.seal : WAYS[f.way].color, ft = twistLine(f), fw = moveWay(f);
+    const f = FIGHT.foe, x = L.arena.x + L.arena.w - pad - w, col = fcol(f), ft = twistLine(f), fw = moveWay(f);
     ctx.fillStyle = 'rgba(18,15,25,0.72)'; roundRect(x - 6, pad - 6, w + 12, 56, 10); ctx.fill();
     ctx.textAlign = 'right'; ctx.font = `bold 12px ${BODY}`; ctx.fillStyle = col; ctx.fillText(f.name, x + w, pad + 8);
     bar(x, pad + 14, w, 9, f.hp / f.maxHp, C.hp);
     bar(x, pad + 27, w, 6, f.ki / f.maxKi, f.way === 'master' ? wcol(f.ai.way) : col);
     if (fw === 'fire' || fw === 'air') bar(x, pad + 36, w, 4, ft.k, ft.col);
-    ctx.font = `10px ${BODY}`; ctx.fillStyle = C.muted; ctx.fillText(f.way === 'master' ? `every way · now ${WAYS[f.ai.way].name}` : `${RANKS[f.rank].beltName}${beats(save.way, f.way) ? ' · your way beats theirs' : beats(f.way, save.way) ? ' · their way beats yours' : ''}`, x + w, pad + 50);
+    ctx.font = `10px ${BODY}`; ctx.fillStyle = C.muted; ctx.fillText(f.beast ? 'wolf' : f.way === 'master' ? `every way · now ${WAYS[f.ai.way].name}` : `${f.bandit ? (f.boss ? 'bandit boss' : 'bandit') + ' · ' + WAYS[f.way].name : RANKS[f.rank].beltName}${beats(save.way, f.way) ? ' · your way beats theirs' : beats(f.way, save.way) ? ' · their way beats yours' : ''}`, x + w, pad + 50, w);
   } else {
-    const bx = L.arena.x + L.arena.w - pad - 132;
-    ctx.fillStyle = 'rgba(18,15,25,0.72)'; roundRect(bx - 6, pad - 6, 144, 40, 10); ctx.fill();
-    ctx.textAlign = 'right'; ctx.font = `bold 12px ${BODY}`; ctx.fillStyle = C.fg;
-    const tier = tierNow(), inTier = tier >= 1 && tier <= 3 ? ROSTER.filter(o => o.rank === tier && save.beaten.includes(o.id)).length : 0;
-    ctx.fillText(tier === 0 ? 'A warm-up first' : tier < 4 ? `${BELTS[tier][0].toUpperCase() + BELTS[tier].slice(1)} · ${inTier} of 4` : save.master ? 'Grandmaster' : 'The Grandmaster waits', L.arena.x + L.arena.w - pad, pad + 8);
-    ctx.font = `11px ${BODY}`; ctx.fillStyle = C.muted; ctx.fillText(`${learnedCount()} of 20 moves`, L.arena.x + L.arena.w - pad, pad + 24);
+    // what to do next
+    const G = goal(), bw = Math.min(196, L.arena.w - w - 44), bx = L.arena.x + L.arena.w - pad - bw;
+    ctx.font = `bold 12px ${BODY}`; const ls = wrapLines(G.text, bw).slice(0, 3), bh = 26 + ls.length * 15;
+    ctx.fillStyle = 'rgba(18,15,25,0.72)'; roundRect(bx - 6, pad - 6, bw + 12, bh, 10); ctx.fill();
+    ctx.textAlign = 'right'; ctx.fillStyle = C.gold; ls.forEach((l, i) => ctx.fillText(l, L.arena.x + L.arena.w - pad, pad + 8 + i * 15));
+    ctx.font = `11px ${BODY}`; ctx.fillStyle = C.muted; ctx.fillText(`${learnedCount()} moves known${HELD ? ' · one held' : ''}`, L.arena.x + L.arena.w - pad, pad + 8 + ls.length * 15 + 2);
   }
 }
 // round the pad: the line that says what was read, the Moves button, the sound button
@@ -310,10 +313,10 @@ function drawPanel() {
   if (sh) {
     const R = sh.R, took = R.verdict !== 'fizzle' && R.best;
     if (took) {
-      ctx.font = `bold 14px ${BODY}`; ctx.fillStyle = sh.ok ? WAYS[R.best.g.way].color : C.rough;
+      ctx.font = `bold 14px ${BODY}`; ctx.fillStyle = R.perfect && sh.ok ? C.gold : sh.ok ? WAYS[R.best.g.way].color : C.rough;
       ctx.fillText(R.best.g.name, mid, y - 2, maxW);
       ctx.font = `12px ${BODY}`; ctx.fillStyle = sh.ok ? C.fg : C.rough;
-      ctx.fillText(`${R.verdict === 'clean' ? 'Clean' : 'Rough'} · ${Math.round(R.power * 100)}%${sh.msg ? ' · ' + sh.msg : ''}`, mid, y + 14, maxW);
+      ctx.fillText(`${R.perfect ? 'Perfect' : R.verdict === 'clean' ? 'Clean' : 'Rough'} · ${Math.round(R.acc * 100)}% · ×${R.power.toFixed(1)}${sh.msg ? ' · ' + sh.msg : ''}`, mid, y + 14, maxW);
     } else lines(sh.msg, `bold 13px ${BODY}`, C.fizzle);
   } else lines(PAD.guide ? `Trace: ${PAD.guide.name}` : FIGHT && FIGHT.on ? 'Write a move' : TILT.on ? 'Tilt to walk · Write moves on the paper' : TILT.need && !TILT.denied ? 'Tap tilt (by the paper) to walk by leaning the phone' : 'Walk: drag the floor · Write moves on the paper', `italic 13px ${BODY}`, 'rgba(214,208,228,0.6)');
 }

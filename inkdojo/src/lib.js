@@ -375,8 +375,50 @@ function recognize(strokes, moves) {
   const verdict = b.q >= CLEAN ? 'clean' : b.q >= ROUGH ? 'rough' : 'fizzle';
   let pbonus = 0;
   if (b.pr != null) { const want = { light: 0.3, steady: 0.55, heavy: 0.85, any: b.pr }[b.g.ink]; pbonus = 0.08 * (1 - 2 * Math.min(0.5, Math.abs(b.pr - want))); b.parts.pressure = clamp(1 - 2 * Math.abs(b.pr - want), 0, 1); }
-  const power = verdict === 'fizzle' ? 0 : clamp(0.4 + 0.6 * (b.q - ROUGH) / (0.95 - ROUGH), 0.4, 1) + pbonus;
-  return { verdict, best: b, power: Math.max(0, power), all };
+  const acc = accuracy(b.q), perfect = verdict === 'clean' && acc >= PERFECT;
+  const power = verdict === 'fizzle' ? 0 : powerOf(acc) + pbonus * (1 + acc);
+  return { verdict, perfect, best: b, acc, power: Math.max(0, power), all };
+}
+// how accurate a glyph is (0 to 1, shown as a percentage), and how strong that makes it: a curve that keeps getting steeper,
+// so a scrappy glyph is a little weaker than a fair one, but every point near the top counts for more than the last, and a
+// perfect glyph hits about twice as hard as a merely good one
+const QTOP = 0.985, PERFECT = 0.97;
+const accuracy = q => clamp((q - ROUGH) / (QTOP - ROUGH), 0, 1);
+const powerOf = a => 0.4 + 0.25 * a + 1.35 * a ** 4;
+
+// ── the curl: an attack that ends in a little loop is held rather than thrown ──
+// Finds where a stroke's end curls back on itself in a small loop, and returns the stroke without it (or null).
+function curlCut(s) {
+  const P = s.pts, n = P.length;
+  if (n < 14) return null;
+  const cum = [0];
+  for (let i = 1; i < n; i++) cum.push(cum[i - 1] + Math.hypot(P[i].x - P[i - 1].x, P[i].y - P[i - 1].y));
+  const total = cum[n - 1];
+  for (let k = 3; k < n - 8; k++) {
+    if (total - cum[k] > 0.42 * total) continue;
+    for (let j = n - 1; j > k + 6 && total - cum[j] < 0.1 * total + 0.04; j--) {
+      const loop = cum[j] - cum[k];
+      if (loop < 0.16 || loop > 0.7 * cum[k] || Math.hypot(P[j].x - P[k].x, P[j].y - P[k].y) > 0.085) continue;
+      let turn = 0, x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+      for (let i = k + 1; i < j; i++) {
+        const a1 = Math.atan2(P[i].y - P[i - 1].y, P[i].x - P[i - 1].x), a2 = Math.atan2(P[i + 1].y - P[i].y, P[i + 1].x - P[i].x);
+        turn += ((a2 - a1 + 3 * Math.PI) % TAU) - Math.PI;
+        x0 = Math.min(x0, P[i].x); x1 = Math.max(x1, P[i].x); y0 = Math.min(y0, P[i].y); y1 = Math.max(y1, P[i].y);
+      }
+      if (Math.abs(turn) < 4.4 || Math.max(x1 - x0, y1 - y0) > 0.5) continue;
+      return { ...s, pts: P.slice(0, k + 1), pools: (s.pools || []).filter(p => p.s <= cum[k] + 0.02), len: cum[k], dwells: (s.dwells || []).filter(d => d.i <= k), curled: true };
+    }
+  }
+  return null;
+}
+// for demonstrations and tests: a written stroke with a little curl added at its end, carrying on the way it was going
+function withCurl(strokes, r = 0.09) {
+  const s = strokes[strokes.length - 1], P = s.pts, a = P[P.length - 1], b = P[Math.max(0, P.length - 6)], d = Math.atan2(a.y - b.y, a.x - b.x);
+  // a loop that leaves along the stroke, turns right round, and comes back across it
+  const cx = a.x + Math.cos(d + Math.PI / 2) * r, cy = a.y + Math.sin(d + Math.PI / 2) * r, out = [];
+  let t = a.t;
+  for (let i = 1; i <= 40; i++) { const th = d - Math.PI / 2 + TAU * 1.08 * i / 40; t += 0.012; out.push({ ...a, x: cx + Math.cos(th) * r, y: cy + Math.sin(th) * r, t, dry: false }); }
+  return [...strokes.slice(0, -1), { ...s, pts: [...P, ...out], dur: (s.dur || 0) + 0.5 }];
 }
 
 // ── a believable hand, for demonstrations and tests: a template, written at the speed its ink wants ──
@@ -411,6 +453,6 @@ function writeOut(g, o = {}) {
   });
 }
 
-return { TAU, clamp, WAYS, WAY_ORDER, MOVES, TIERS, INKP, CLEAN, ROUGH, recognize, writeOut, resample, pathLen, scoreGlyph, prepDrawn };
+return { TAU, clamp, WAYS, WAY_ORDER, MOVES, TIERS, INKP, CLEAN, ROUGH, PERFECT, recognize, accuracy, powerOf, curlCut, withCurl, writeOut, resample, pathLen, scoreGlyph, prepDrawn };
 })();
 if (typeof module !== 'undefined') module.exports = INK;

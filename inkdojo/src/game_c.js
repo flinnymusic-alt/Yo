@@ -17,9 +17,6 @@ const ROSTER = [
   { id: 'e1', name: 'Tomo', way: 'earth', rank: 1, post: [1395, 640] }, { id: 'e2', name: 'Gan', way: 'earth', rank: 2, post: [1265, 850] }, { id: 'e3', name: 'Sensei Iwao', way: 'earth', rank: 3, post: [1395, 1060] },
   { id: 'a1', name: 'Sora', way: 'air', rank: 1, post: [560, 245] }, { id: 'a2', name: 'Fei', way: 'air', rank: 2, post: [800, 330] }, { id: 'a3', name: 'Sensei Kaze', way: 'air', rank: 3, post: [1040, 245] },
 ];
-const MASTER = { id: 'm', name: 'Grandmaster Sumi', way: 'master', rank: 4, post: [DAIS.x, DAIS.y] };
-// your first sparring partner, waiting by the pond: a student on their first day, of the way yours beats
-const STUDENT = { id: 's', name: 'Ren', rank: 0, student: true, post: [880, 1012] };
 // how good a fighter is depends on how far through the dojo you are: your first sparring partner (k = 0) is feeble, and each
 // fighter after is a little better than the one before (k = how many you've beaten, plus one), up to the twelfth; then the
 // Grandmaster. Everything grows smoothly with k: their health, how hard they hit, how quick their telegraph, how often they
@@ -40,7 +37,10 @@ const WAYMOD = {
   earth:  { dmg: 1.08, heal: 1.0, speed: 0.84, hp: 130, steady: 0.5 },
   air:    { dmg: 1.05, heal: 1.0, speed: 1.24, hp: 90, knock: 1.4 },
   master: { dmg: 1.0, heal: 1.0, speed: 1.1, hp: 100 },
+  beast:  { dmg: 1.0, heal: 1.0, speed: 1.2, hp: 80 },
 };
+// a fighter's colour: their way's, the Grandmaster's red, or a beast's grey
+const fcol = f => (f.way === 'master' ? C.seal : WAYS[f.way] ? WAYS[f.way].color : f.col || '#b9b2a6');
 // how hard each hall's fighters hit: the ways are even with each other, but against you (who writes in an instant, with no
 // warning) some ways' fighters would be far easier to beat than others; this evens out the four halls
 const HALL = { water: 1.1, fire: 0.92, earth: 1.18, air: 1.3 };
@@ -52,7 +52,7 @@ const freshStatus = () => ({ stun: 0, slow: 0, soak: 0, frozen: 0, burn: 0, air:
   counter: 0, statue: 0, heavy: 0, silence: 0, crosswind: 0, brand: 0, fury: 0, free: 0 });
 function resetFighter(f) { f.st = freshStatus(); f.heat = 0; f.heatT = 9; f.wind = 0; f.dash = null; f.lift = 0; f.act = null; f.glyph = null; f.spinT = 0; f.burrowTo = null; f.lastSpell = null; f.brandBy = null; f.statueHeal = 0; f.stillT = 0; }
 function makeFighter(o) {
-  const k = o.isPlayer ? null : RANKS[o.rank], mod = WAYMOD[o.way], n = (o.id || 'p').charCodeAt(0) + (o.id || 'p').charCodeAt(1 % (o.id || 'p').length);
+  const k = o.isPlayer ? null : RANKS[o.rank || 0], mod = WAYMOD[o.way] || WAYMOD.master, n = (o.id || 'p').charCodeAt(0) + (o.id || 'p').charCodeAt(1 % (o.id || 'p').length);
   const maxHp = o.isPlayer ? mod.hp : Math.round(k.hp * mod.hp / 100);
   return {
     id: o.id || 'you', name: o.name || 'You', way: o.way, rank: o.rank || 0, isPlayer: !!o.isPlayer,
@@ -64,17 +64,19 @@ function makeFighter(o) {
     pose: 'idle', poseT: 0, walk: 0,
     post: o.post ? { x: o.post[0], y: o.post[1] } : null, mode: 'post', beaten: false,
     glyph: null, ai: { think: rr(0.6, 1.2), cd: {}, strafe: Math.random() < 0.5 ? 1 : -1, way: o.way === 'master' ? 'water' : o.way },
-    gi: o.isPlayer ? '#f6f1e6' : GI[o.way], trim: o.way === 'master' ? '#c63f2e' : WAYS[o.way].color,
+    gi: o.isPlayer ? '#f6f1e6' : GI[o.way] || '#d8d0c4', trim: o.way === 'master' ? '#c63f2e' : WAYS[o.way] ? WAYS[o.way].color : '#8a7a66',
     belt: o.isPlayer ? '#16131b' : k.belt, skin: o.isPlayer ? '#e9bf98' : SKIN[n % SKIN.length], hair: o.isPlayer ? '#1d1a20' : HAIR[(n * 7) % HAIR.length],
+    ...(o.look || {}),
   };
 }
-let player = null, FOES = [], MASTERF = null, STUDENTF = null;
+let player = null, FOES = [];
 function moveWay(f) { return f.way === 'master' ? f.ai.way : f.way; }
 
 // a fighter, seen from above: shadow, feet, gi and belt, arms (in the pose of the moment), head
 function drawFighter(f, t) {
   const down = f.hp <= 0 || f.pose === 'down', lift = f.lift || 0;
   // underground: only a mound of earth moving through the floor
+  if (f.beast) { drawWolf(f, t); return; }
   if (f.st.under > 0) { ctx.save(); ctx.fillStyle = '#6e5a40'; ctx.beginPath(); ctx.ellipse(f.x, f.y + 4, 16, 9, 0, 0, TAU); ctx.fill(); ctx.fillStyle = '#9a8060'; ctx.beginPath(); ctx.ellipse(f.x - 2, f.y + 1, 10, 5, 0, 0, TAU); ctx.fill(); ctx.restore(); return; }
   ctx.save(); ctx.translate(f.x, f.y);
   ctx.fillStyle = 'rgba(0,0,0,0.32)'; ctx.beginPath(); ctx.ellipse(2, 9, Math.max(5, 16 - lift * 0.08), Math.max(2.5, 7 - lift * 0.03), 0, 0, TAU); ctx.fill();
@@ -125,6 +127,10 @@ function drawFighter(f, t) {
   ctx.fillStyle = f.hair; ctx.beginPath(); ctx.arc(-0.5, 0, 7.8, Math.PI * 0.55, Math.PI * 1.45); ctx.lineTo(1, 0); ctx.fill();
   if (f.way === 'master' && !f.isPlayer) { ctx.fillStyle = '#e8e2d8'; ctx.beginPath(); ctx.arc(-2, 0, 4.5, 0, TAU); ctx.fill(); }
   if (f.isPlayer) { ctx.fillStyle = WAYS[f.way].color; ctx.fillRect(-3, -7.5, 2.5, 15); }
+  // a bandit's mask; a headscarf; something carried on the back
+  if (f.mask) { ctx.fillStyle = f.mask; ctx.fillRect(3, -7, 3.2, 14); }
+  if (f.scarf) { ctx.fillStyle = f.scarf; ctx.beginPath(); ctx.arc(-0.5, 0, 8, Math.PI * 0.5, Math.PI * 1.5); ctx.fill(); }
+  if (f.isPlayer && f.carry) { ctx.fillStyle = '#8a5a2b'; ctx.fillRect(-17, -7, 9, 14); ctx.strokeStyle = '#e9bb52'; ctx.lineWidth = 1.2; ctx.strokeRect(-17, -7, 9, 14); ctx.beginPath(); ctx.moveTo(-12.5, -7); ctx.lineTo(-12.5, 7); ctx.stroke(); }
   ctx.restore();
   ctx.shadowBlur = 0; ctx.globalAlpha = 1;
 }
@@ -186,11 +192,43 @@ function drawStatus(f, t) {
   if (S.free > 0) { ctx.save(); ctx.strokeStyle = '#ffffff'; ctx.lineCap = 'round'; ctx.lineWidth = 1.6; ctx.globalAlpha = Math.min(1, S.free * 2) * 0.7; for (let i = 0; i < 3; i++) { const a = t * 5 + i * TAU / 3; ctx.beginPath(); ctx.ellipse(f.x, f.y + 8, 18, 6, 0, a, a + 1.4); ctx.stroke(); } ctx.restore(); }
   if (S.mend > 0) { ctx.save(); ctx.fillStyle = 'rgba(150,110,70,0.75)'; for (let i = 0; i < 4; i++) { const a = i * 1.7 + 0.5; ctx.beginPath(); ctx.ellipse(f.x + Math.cos(a) * 8, y + Math.sin(a) * 8, 4, 3, a, 0, TAU); ctx.fill(); } ctx.restore(); }
 }
+// a wolf, from above: a long grey body, legs at a trot, a tail, a narrow head with ears
+function drawWolf(f, t) {
+  const down = f.hp <= 0 || f.pose === 'down', lift = f.lift || 0, run = Math.sin(f.walk * 1.3);
+  ctx.save(); ctx.translate(f.x, f.y);
+  ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.beginPath(); ctx.ellipse(2, 8, 22, 8, 0, 0, TAU); ctx.fill();
+  ctx.translate(0, -lift); ctx.rotate(f.face);
+  if (f.st.flash > 0) { ctx.shadowColor = '#fff'; ctx.shadowBlur = 14; }
+  if (down) ctx.scale(1, 0.75);
+  const fur = f.fur || '#8d8a86', dark = f.furDark || '#5e5b58';
+  // legs
+  ctx.fillStyle = dark;
+  for (const [lx, ly, ph] of [[10, -7, 1], [10, 7, -1], [-10, -7, -1], [-10, 7, 1]]) { ctx.beginPath(); ctx.ellipse(lx + (down ? 0 : run * 4 * ph), ly * 1.15, 4, 2.6, 0, 0, TAU); ctx.fill(); }
+  // tail
+  ctx.strokeStyle = fur; ctx.lineWidth = 6; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(-15, 0); ctx.quadraticCurveTo(-24, Math.sin(t * 8 + f.x) * 5, -30, Math.sin(t * 8 + f.x) * 8); ctx.stroke();
+  // body
+  ctx.fillStyle = fur; ctx.beginPath(); ctx.ellipse(0, 0, 18, 9, 0, 0, TAU); ctx.fill();
+  ctx.fillStyle = dark; ctx.beginPath(); ctx.ellipse(-2, 0, 12, 3.5, 0, 0, TAU); ctx.fill();
+  // head, snout and ears
+  ctx.fillStyle = fur; ctx.beginPath(); ctx.ellipse(19, 0, 8, 7, 0, 0, TAU); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(24, -4); ctx.lineTo(33, 0); ctx.lineTo(24, 4); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#1d1a20'; ctx.beginPath(); ctx.arc(33, 0, 1.8, 0, TAU); ctx.fill();
+  ctx.fillStyle = dark; for (const s of [-1, 1]) { ctx.beginPath(); ctx.moveTo(15, s * 4); ctx.lineTo(13, s * 10); ctx.lineTo(19, s * 6); ctx.closePath(); ctx.fill(); }
+  if (!down) { ctx.fillStyle = '#ffd36a'; for (const s of [-1, 1]) { ctx.beginPath(); ctx.arc(23, s * 3, 1.3, 0, TAU); ctx.fill(); } }
+  ctx.restore(); ctx.shadowBlur = 0;
+}
 function star5(x, y, r, col) { ctx.fillStyle = col; ctx.beginPath(); for (let i = 0; i < 10; i++) { const a = -Math.PI / 2 + i * Math.PI / 5, rr2 = i % 2 ? r * 0.45 : r; ctx[i ? 'lineTo' : 'moveTo'](x + Math.cos(a) * rr2, y + Math.sin(a) * rr2); } ctx.closePath(); ctx.fill(); }
 // the move a fighter is about to make, written in the air above them as it winds up (so you can see it coming)
 function drawAirGlyph(f) {
   const G = f.glyph;
   if (!G) return;
+  // a beast doesn't write: it gathers itself to spring, and you can see it coming
+  if (f.beast) {
+    const k = clamp(G.t / G.dur, 0, 1), x = f.x, y = f.y - 34;
+    ctx.save(); ctx.strokeStyle = '#ff8a6a'; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.arc(x, y, 11, -Math.PI / 2, -Math.PI / 2 + TAU * k); ctx.stroke();
+    ctx.font = `bold 14px ${BODY}`; ctx.textAlign = 'center'; ctx.fillStyle = '#ffd0c0'; ctx.fillText('!', x, y + 5); ctx.restore();
+    return;
+  }
   const k = clamp(G.t / G.dur, 0, 1), col = WAYS[G.move.way].color, R = 22, x = f.x, y = f.y - 46 - (f.lift || 0);
   ctx.save();
   ctx.fillStyle = 'rgba(239,230,208,0.78)'; ctx.beginPath(); ctx.arc(x, y, R + 5, 0, TAU); ctx.fill();
