@@ -769,6 +769,7 @@ function drawProps(t, layer) {
 // each rank: how tough, how hard they hit, how long their telegraph, how often they think, how often they see a blow coming,
 // how many of their way's spells they know, and how well they write them (their spells' strength)
 const RANKS = {
+  0: { belt: '#f2efe6', beltName: 'first day', hp: 45, dmg: 0.4, windup: 0.95, think: [2.4, 3.4], react: 0, spells: 2, power: 0.6 },
   1: { belt: '#f2efe6', beltName: 'white belt', hp: 70, dmg: 0.8, windup: 0.62, think: [1.2, 1.9], react: 0.1, spells: 6, power: 0.8 },
   2: { belt: '#8a5a2b', beltName: 'brown belt', hp: 100, dmg: 0.75, windup: 0.52, think: [1.0, 1.6], react: 0.25, spells: 11, power: 0.9 },
   3: { belt: '#16131b', beltName: 'black belt', hp: 125, dmg: 0.76, windup: 0.46, think: [0.95, 1.5], react: 0.38, spells: 19, power: 0.95 },
@@ -784,6 +785,20 @@ const ROSTER = [
   { id: 'a1', name: 'Sora', way: 'air', rank: 1, post: [560, 245] }, { id: 'a2', name: 'Fei', way: 'air', rank: 2, post: [800, 330] }, { id: 'a3', name: 'Sensei Kaze', way: 'air', rank: 3, post: [1040, 245] },
 ];
 const MASTER = { id: 'm', name: 'Grandmaster Sumi', way: 'master', rank: 4, post: [DAIS.x, DAIS.y] };
+// your first sparring partner, waiting by the pond: a student on their first day, of the way yours beats
+const STUDENT = { id: 's', name: 'Ren', rank: 0, student: true, post: [880, 1012] };
+// how good a fighter is depends on how far through the dojo you are: your first sparring partner (k = 0) is feeble, and each
+// fighter after is a little better than the one before (k = how many you've beaten, plus one), up to the twelfth; then the
+// Grandmaster. Everything grows smoothly with k: their health, how hard they hit, how quick their telegraph, how often they
+// think, how often they see a blow coming, how many spells they know and how well they write them; and a beginner's spells
+// sometimes fizzle or go wide, and they walk a little slower.
+function skillAt(k) {
+  if (k >= 13) return { k, hp: 160, dmg: 0.74, windup: 0.44, think: [0.9, 1.4], react: 0.42, spells: 20, power: 1, fizzle: 0, aim: 0, move: 1 };
+  const u = clamp(k / 12, 0, 1), think = 2.4 - 1.48 * u ** 0.7;
+  return { k, hp: 45 + 81 * u ** 1.1, dmg: 0.42 + 0.32 * u ** 0.9, windup: 0.95 - 0.5 * u ** 0.8, think: [think, think * 1.55], react: 0.4 * u ** 1.2,
+           spells: Math.round(2 + 17 * u), power: 0.6 + 0.36 * u ** 0.8, fizzle: 0.3 * (1 - u) ** 3, aim: 0.35 * (1 - u) ** 3, move: 0.75 + 0.25 * Math.min(1, u * 2) };
+}
+const skillOf = f => f.sk || RANKS[f.rank];
 // what each way is: water hits softly but heals best; fire hits hardest and heals least; earth is the toughest and slowest
 // (and hard to knock about); air is the fastest, the frailest, and throws foes furthest
 const WAYMOD = {
@@ -820,7 +835,7 @@ function makeFighter(o) {
     belt: o.isPlayer ? '#16131b' : k.belt, skin: o.isPlayer ? '#e9bf98' : SKIN[n % SKIN.length], hair: o.isPlayer ? '#1d1a20' : HAIR[(n * 7) % HAIR.length],
   };
 }
-let player = null, FOES = [], MASTERF = null;
+let player = null, FOES = [], MASTERF = null, STUDENTF = null;
 function moveWay(f) { return f.way === 'master' ? f.ai.way : f.way; }
 
 // a fighter, seen from above: shadow, feet, gi and belt, arms (in the pose of the moment), head
@@ -1034,7 +1049,7 @@ function startMove(f, move, power, target) {
   if (!canCast(f)) return false;
   f.ki -= cost;
   const [w, , aw] = timing(move), slowCast = move.way === 'earth' ? 0.1 : 0, fury = f.st.fury > 0 ? 0.5 : 1;
-  const wind = (f.isPlayer ? w + slowCast : RANKS[f.rank].windup * aw * (move.way === 'earth' ? 1.15 : 1)) * fury;
+  const wind = (f.isPlayer ? w + slowCast : skillOf(f).windup * aw * (move.way === 'earth' ? 1.15 : 1)) * fury;
   f.act = { move, power, target, phase: 'wind', t: wind, wind, hits: 0, next: 0 };
   if (!f.isPlayer) f.glyph = { move, t: 0, dur: wind };
   f.pose = 'cast'; f.poseT = 0;
@@ -1065,6 +1080,8 @@ function castMult(f, m) {
 const SELF = new Set(['Absorb', 'Heal', 'Glide', 'Conceal', 'Reflect', 'Counter', 'Ki', 'Decoy', 'Thorns', 'Dash', 'Release', 'Sweep', 'Fury', 'Armor', 'Statue', 'Lift', 'Stance', 'Dodge', 'Deflect', 'Cleanse', 'Haste', 'Echo', 'Free', 'Wall', 'Barrier', 'Stun']);
 function cast(f, A) {
   const m = A.move, foe = foeOf(f), P = A.power;
+  // a beginner's spell sometimes comes to nothing
+  if (f.sk && f.sk.fizzle && !A.echo && Math.random() < f.sk.fizzle) { smoke(f.x, f.y - 8, 3, { size: 9 }); words(f.x, f.y - 44, 'fizzles', '#a99fbc', 12, 0.9); SFX.fizzle(); return; }
   let t = A.target || foe;
   if (t && t === foe && !SELF.has(m.tag)) {
     const dec = decoyOf(foe);
@@ -1078,7 +1095,7 @@ function cast(f, A) {
       swirl(f.x, f.y, 26, 8, { spin: 9, vr: 0, life: 0.5 }); words(f.x, f.y - 46, 'Blown wide!', ELC.air.light, 13);
     }
   }
-  const a = t && !gone(t) ? angTo(f, t) + (f.st.blind > 0 ? rr(-0.5, 0.5) : 0) + (t.st.veil > 0 && !f.isPlayer ? rr(-0.35, 0.35) : 0) : f.face;
+  const a = t && !gone(t) ? angTo(f, t) + (f.sk && f.sk.aim ? rr(-f.sk.aim, f.sk.aim) : 0) + (f.st.blind > 0 ? rr(-0.5, 0.5) : 0) + (t.st.veil > 0 && !f.isPlayer ? rr(-0.35, 0.35) : 0) : f.face;
   f.face = a;
   const c = { f, t: t && t.hp > 0 ? t : null, m, A, way: m.way, P, pw: P * castMult(f, m), sz: 0.45 + 0.55 * Math.min(P, 1.05), am: Math.pow(clamp(P, 0.4, 1.05), 1.6), a };
   if (m.way === 'fire' && f.st.soak > 0) { smoke(f.x, f.y - 6, 3, { size: 10 }); if (f.isPlayer) words(f.x, f.y - 58, 'Damp', '#bfe6ff', 11, 0.8); }
@@ -1856,7 +1873,7 @@ function hurt(t, src, base, o = {}) {
     hurt(src, t, 6, { power: t.counterPow || 1, stun: 0.6, soak: 3, knock: 260, ang: a, big: true });
     return false;
   }
-  let dmg = base * (o.power ?? 1) * WAYMOD[sw].dmg * advMul(sw, tw) * (src.isPlayer ? YOU[sw] || 1 : RANKS[src.rank].dmg * (HALL[sw] || 1));
+  let dmg = base * (o.power ?? 1) * WAYMOD[sw].dmg * advMul(sw, tw) * (src.isPlayer ? YOU[sw] || 1 : skillOf(src).dmg * (HALL[sw] || 1));
   if (S.brand > 0 && t.brandBy === src) dmg *= 1.3;
   if (src.st.fury > 0) dmg *= 1.2;
   if (o.airHit && t.st.air > 0) dmg *= 1.3;
@@ -2001,7 +2018,7 @@ const AIH = {
   'air:crane': { r: [100, 500], w: 1.1 }, 'air:whistle': { vsWind: 1, r: [0, 400], w: 0.2, ok: (f, t) => (t.act && t.act.phase === 'wind' ? 7 : 0.4) }, 'air:gale': { r: [60, 420], w: 1.3 },
   'air:echo': { r: [0, 500], w: 0.6, ok: (f) => (f.lastSpell && !SELF.has(f.lastSpell.tag) && f.lastSpell.tag !== 'Ultimate' ? 1.5 : 0) }, 'air:weightless': { def: 1, w: 0.3, ok: (f) => (troubles(f) ? 3 : 1) }, 'air:typhoon': { ult: 1, r: [0, 500], w: 1 },
 };
-const allowedFor = f => { const way = moveWay(f), n = f.rank >= 4 ? 20 : RANKS[f.rank].spells; return MOVES[way].filter(m => m.order < n); };
+const allowedFor = f => { const way = moveWay(f), n = skillOf(f).spells; return MOVES[way].filter(m => m.order < n); };
 // where to walk: the distance this fighter likes, circling; air never stands still, earth hardly strolls; out of their pools
 function aiWalk(f, foe, dt) {
   const ai = f.ai, way = moveWay(f), d = dist(f, foe), a = angTo(f, foe);
@@ -2072,16 +2089,16 @@ function aiFight(f, foe, dt) {
   if (f.hp <= 0 || held(f) && !(f.st.mend > 0)) { if (f.st.air <= 0 && !f.dash) { f.vx = 0; f.vy = 0; } return; }
   f.face = angTo(f, foe);
   const stuck = f.st.root > 0 || f.st.high > 0 || f.st.stance > 0 || f.st.mend > 0 || (f.act && f.act.chan > 0);
-  if (!f.act && !stuck) { const dir = aiWalk(f, foe, dt), sp = f.speed * moveMul(f) * 0.85; f.vx = dir.mx * sp; f.vy = dir.my * sp; }
+  if (!f.act && !stuck) { const dir = aiWalk(f, foe, dt), sp = f.speed * moveMul(f) * 0.85 * (skillOf(f).move || 1); f.vx = dir.mx * sp; f.vy = dir.my * sp; }
   else { f.vx = 0; f.vy = 0; }
   if (f.act || !canCast(f)) return;
   if (f.way === 'master' && Math.random() < dt * 0.12) f.ai.way = WAY_ORDER[(Math.random() * 4) | 0];
-  const c = aiChoose(f, foe, allowedFor(f), dt, RANKS[f.rank]);
+  const c = aiChoose(f, foe, allowedFor(f), dt, skillOf(f));
   if (c) useAi(f, c.move, foe, c.quick);
 }
 function useAi(f, move, foe, quick) {
   if (!move) return;
-  const P = RANKS[f.rank].power;
+  const P = skillOf(f).power;
   if (startMove(f, move, P, foe)) {
     const h = AIH[move.id] || {};
     f.ai.cd[move.id] = h.ult ? 16 : h.heal ? 10 : h.ki ? 6 : h.def || h.vsClose || h.vsWind ? 4 : h.evade ? 3 : (move.cost >= 18 ? 6 : move.cost >= 12 ? 3.5 : 1.6);
@@ -2793,10 +2810,17 @@ function roundRect(x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.a
 
 // ── the game: title, the way you choose, the dojo, challenges, fights, lessons, the Grandmaster ──
 let state = 'title', FIGHT = null, T = 0, slowmo = 0, banner = null, overlay = null, pickWay = null, buttons = [], calm = 0;
-const fighters = () => [...FOES, ...(MASTERF ? [MASTERF] : [])];
+const fighters = () => [...(STUDENTF ? [STUDENTF] : []), ...FOES, ...(MASTERF ? [MASTERF] : [])];
+// who may challenge you now: the first-day student, then the white belts until all four are beaten, then the brown, then the black
+function tierNow() { if (!save || !save.warm) return 0; for (const r of [1, 2, 3]) if (ROSTER.some(o => o.rank === r && !save.beaten.includes(o.id))) return r; return 4; }
+const BELTS = { 1: 'white belts', 2: 'brown belts', 3: 'black belts' };
+const canChallenge = f => !f.beaten && f.rank === tierNow();
 function setupWorld() {
   player = makeFighter({ isPlayer: true, way: save.way, name: 'You' });
   FOES = ROSTER.map(o => { const f = makeFighter(o); if (save.beaten.includes(o.id)) { f.beaten = true; f.mode = 'beaten'; f.pose = 'bow'; } return f; });
+  if (save.beaten.length) save.warm = true; // (a save from before there was a warm-up)
+  STUDENTF = makeFighter({ ...STUDENT, way: WAYS[save.way].beats }); STUDENTF.student = true; STUDENTF.gi = '#f6f1e6'; STUDENTF.face = angTo(STUDENTF, START);
+  if (save.warm) { STUDENTF.beaten = true; STUDENTF.mode = 'beaten'; STUDENTF.pose = 'bow'; }
   MASTERF = null;
   if (save.beaten.length >= ROSTER.length && !save.master) spawnMaster(true);
   FX = []; TEXTS = []; GHOSTS = []; DECALS = []; SHOWS = []; clearSpells(); FIGHT = null; slowmo = 0;
@@ -2808,29 +2832,37 @@ function spawnMaster(quiet) {
   if (!quiet) { say('Grandmaster Sumi waits on the dais', 'Every hall is beaten. One fight left.', 4); SFX.gong(); }
 }
 function say(title, sub, life = 2.6, col) { banner = { title, sub, life, max: life, col: col || C.gold }; }
-function beginGame(way) { save = newSave(way); writeSave(); setupWorld(); state = 'play'; say(`The Way of ${WAYS[way].name}`, `${WAYS[way].animal} · ${WAYS[way].style}. Open MOVES to see how to write your first eight. Walk the dojo: its fighters will come to you.`, 5.5, WAYS[way].color); }
+function beginGame(way) { save = newSave(way); writeSave(); setupWorld(); state = 'play'; calm = 3.5; say(`The Way of ${WAYS[way].name}`, `${WAYS[way].animal} · ${WAYS[way].style}. Open MOVES to see how to write your first eight. Ren, a student on their first day, wants to spar with you.`, 5.5, WAYS[way].color); }
 function continueGame() { setupWorld(); state = 'play'; say(`The Way of ${WAYS[save.way].name}`, `${save.beaten.length} of 12 fighters beaten`, 3, WAYS[save.way].color); }
 
 // a fighter sees you coming, walks up, bows, and the fight begins
+// (nobody interrupts you while you're writing)
+const writing = () => !!(PAD.pen || PAD.judgeAt || (PAD.strokes.length && !PAD.shown) || (player && player.act));
 function lookForChallenger() {
-  if (FIGHT || state !== 'play' || calm > 0 || fighters().some(f => f.mode === 'approach')) return;
+  if (FIGHT || state !== 'play' || calm > 0 || writing() || fighters().some(f => f.mode === 'approach')) return;
   let best = null, bd = Infinity;
+  const tier = tierNow();
   for (const f of fighters()) {
     if (f.beaten || f.mode !== 'post') continue;
-    const d = dist(f, player), reach = f === MASTERF ? 250 : 215;
+    const d = dist(f, player), reach = f === MASTERF ? 250 : f.student ? 600 : 215;
+    // a fighter of a later belt waves you off
+    if (f.rank > tier) { if (d < 150 && T - (f.nagT ?? -99) > 6) { f.nagT = T; words(f.x, f.y - 42, tier ? `The ${BELTS[tier]} first` : 'Spar with Ren first', C.muted, 12, 1.4); } continue; }
     if (d < reach && d < bd) { best = f; bd = d; }
   }
   if (best) {
     best.mode = 'approach';
     const hall = best.way === 'master' ? 'the dais' : HALLS[best.way].label;
-    say(`${best.name} challenges you`, best === MASTERF ? 'The last fight' : `${hall} · ${RANKS[best.rank].beltName}`, 2.2, best.way === 'master' ? C.seal : WAYS[best.way].color);
+    say(`${best.name} challenges you`, best === MASTERF ? 'The last fight' : best.student ? 'First day at the dojo · a warm-up' : `${hall} · ${RANKS[best.rank].beltName}`, 2.2, best.way === 'master' ? C.seal : WAYS[best.way].color);
     words(best.x, best.y - 40, '!', '#ffe08a', 24, 0.9);
   }
 }
 function startFight(f) {
   const cx = (player.x + f.x) / 2, cy = (player.y + f.y) / 2;
   FIGHT = { foe: f, on: false, intro: 1.9, t: 0, cx, cy, r: 255, dealt: 0, taken: 0, over: null };
-  f.mode = 'fight'; resetFighter(f); f.hp = f.maxHp; f.ki = f.maxKi; f.ai.think = rr(0.8, 1.3); f.ai.cd = {}; f.ai.range = 0;
+  // how good they are: the student is the weakest; after that, each win makes the next fighter a little better
+  f.sk = skillAt(f.student ? 0 : f === MASTERF ? 13 : save.beaten.length + 1);
+  f.maxHp = Math.round(f.sk.hp * WAYMOD[f.way].hp / 100);
+  f.mode = 'fight'; resetFighter(f); f.hp = f.maxHp; f.ki = f.maxKi; f.ai.think = rr(0.8, 1.3) * (f.sk.think[0] / 0.95); f.ai.cd = {}; f.ai.range = 0;
   resetFighter(player); player.pose = 'bow'; player.poseT = 0; f.pose = 'bow'; f.poseT = 0;
   player.hp = player.maxHp; player.ki = player.maxKi;
   clearSpells();
@@ -2852,11 +2884,12 @@ function endFight() {
   if (O.winner === player) {
     foe.beaten = true; foe.mode = 'return'; foe.hp = foe.maxHp; foe.pose = 'idle';
     if (foe === MASTERF) { save.master = true; save.stats.wins++; save.stats.t1 = Date.now(); writeSave(); overlay = { kind: 'victory', t: 0 }; SFX.learn(); return; }
-    const before = learnedCount();
+    if (foe.student) { save.warm = true; save.stats.wins++; writeSave(); overlay = { kind: 'learn', t: 0, foe, move: null, warm: true }; SFX.learn(); return; }
+    const before = learnedCount(), tier0 = tierNow();
     if (!save.beaten.includes(foe.id)) save.beaten.push(foe.id);
     save.stats.wins++; writeSave();
-    const after = learnedCount(), move = after > before ? MOVES[save.way].find(m => m.order === after - 1) : null;
-    overlay = { kind: 'learn', t: 0, foe, move, demo: move ? writeOut(move, { wobble: 0.006 }) : null };
+    const after = learnedCount(), move = after > before ? MOVES[save.way].find(m => m.order === after - 1) : null, tier1 = tierNow();
+    overlay = { kind: 'learn', t: 0, foe, move, demo: move ? writeOut(move, { wobble: 0.006 }) : null, tierUp: tier1 !== tier0 && tier1 < 4 ? tier1 : 0 };
     SFX.learn();
   } else {
     save.stats.falls++; writeSave();
@@ -2865,7 +2898,9 @@ function endFight() {
   }
 }
 function afterLearn() {
-  overlay = null;
+  const O = overlay; overlay = null;
+  if (O && O.warm) say('The halls are open', 'The white belts will fight you first. Each one is a little better than the last.', 4.5);
+  else if (O && O.tierUp) say(`The ${BELTS[O.tierUp]} will fight you now`, `All four ${BELTS[O.tierUp - 1]} are beaten. Each fighter is a little better than the last.`, 4.5);
   resetFighter(player); player.hp = player.maxHp; player.ki = player.maxKi; player.pose = 'idle';
   if (save.beaten.length >= ROSTER.length && !save.master && !MASTERF) spawnMaster(false);
 }
@@ -2918,7 +2953,7 @@ function update(dt) {
     if (f.mode === 'approach') {
       const d = dist(f, player), a = angTo(f, player); f.face = a;
       if (FIGHT) { f.mode = 'return'; continue; }
-      if (d > 140) { f.vx = Math.cos(a) * f.speed * 0.9; f.vy = Math.sin(a) * f.speed * 0.9; } else { f.vx = f.vy = 0; startFight(f); }
+      if (d > 140) { f.vx = Math.cos(a) * f.speed * 0.9; f.vy = Math.sin(a) * f.speed * 0.9; } else { f.vx = f.vy = 0; if (!writing()) startFight(f); }
     } else if (f.mode === 'return') {
       const d = dist(f, f.post), a = angTo(f, f.post);
       if (d > 6) { f.vx = Math.cos(a) * f.speed * 0.7; f.vy = Math.sin(a) * f.speed * 0.7; f.face = a; }
@@ -3001,14 +3036,16 @@ function render() {
 function nameTag(f) {
   if (dist(f, player) > 330) return;
   ctx.textAlign = 'center'; ctx.font = `bold 12px ${BODY}`;
-  const y = f.y - 30, txt = f.beaten ? `${f.name} ✓` : f.name;
+  const y = f.y - 30, txt = f.beaten ? `${f.name} ✓` : f.name, later = !f.beaten && f.rank > tierNow();
+  ctx.globalAlpha = later ? 0.45 : 1;
   ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(10,8,16,0.8)'; ctx.strokeText(txt, f.x, y);
   ctx.fillStyle = f.beaten ? '#bfb8cc' : f.way === 'master' ? '#ff9a8a' : WAYS[f.way].color; ctx.fillText(txt, f.x, y);
+  ctx.globalAlpha = 1;
 }
 // an arrow at the edge of the view toward the nearest fighter still to beat
 function pointToNext() {
   let best = null, bd = Infinity;
-  for (const f of fighters()) if (!f.beaten) { const d = dist(f, player); if (d < bd) { bd = d; best = f; } }
+  for (const f of fighters()) if (canChallenge(f)) { const d = dist(f, player); if (d < bd) { bd = d; best = f; } }
   if (!best) return;
   const s = toScreen(best.x, best.y), A = L.arena, m = 30;
   if (s.x > A.x + m && s.x < A.x + A.w - m && s.y > A.y + 90 && s.y < A.y + A.h - m) return;
@@ -3049,8 +3086,8 @@ function drawHud() {
     const bx = L.arena.x + L.arena.w - pad - 132;
     ctx.fillStyle = 'rgba(18,15,25,0.72)'; roundRect(bx - 6, pad - 6, 144, 40, 10); ctx.fill();
     ctx.textAlign = 'right'; ctx.font = `bold 12px ${BODY}`; ctx.fillStyle = C.fg;
-    const left = ROSTER.length - save.beaten.length;
-    ctx.fillText(left ? `${save.beaten.length} of 12 beaten` : save.master ? 'Grandmaster' : 'The Grandmaster waits', L.arena.x + L.arena.w - pad, pad + 8);
+    const tier = tierNow(), inTier = tier >= 1 && tier <= 3 ? ROSTER.filter(o => o.rank === tier && save.beaten.includes(o.id)).length : 0;
+    ctx.fillText(tier === 0 ? 'A warm-up first' : tier < 4 ? `${BELTS[tier][0].toUpperCase() + BELTS[tier].slice(1)} · ${inTier} of 4` : save.master ? 'Grandmaster' : 'The Grandmaster waits', L.arena.x + L.arena.w - pad, pad + 8);
     ctx.font = `11px ${BODY}`; ctx.fillStyle = C.muted; ctx.fillText(`${learnedCount()} of 20 moves`, L.arena.x + L.arena.w - pad, pad + 24);
   }
 }
@@ -3252,7 +3289,8 @@ function drawOverlay() {
   if (O.kind === 'learn') {
     const f = O.foe, m = O.move, Wy = WAYS[save.way];
     ctx.font = `${Math.min(30, W / 12)}px ${DISPLAY}`; ctx.fillStyle = C.gold; ctx.fillText(`${f.name} bows`, cx, H * 0.14);
-    ctx.font = `14px ${BODY}`; ctx.fillStyle = C.fg; ctx.fillText(m ? 'and shows you a move of your way:' : 'You already know all twenty moves.', cx, H * 0.14 + 28);
+    ctx.font = `14px ${BODY}`; ctx.fillStyle = C.fg; ctx.fillText(m ? 'and shows you a move of your way:' : O.warm ? 'Well fought. The halls are open now.' : 'You already know all twenty moves.', cx, H * 0.14 + 28);
+    if (O.warm) { ctx.fillStyle = C.paper; wrapText('The white belts will fight you first: beat all four, then the brown belts, then the black belts, then the Grandmaster. Each fighter is a little better than the last, and each one you beat teaches you a new move.', cx, H * 0.14 + 70, Math.min(W - 40, 420), 21); }
     if (m) {
       const r = Math.min(W * 0.3, H * 0.18), M = { cx, cy: H * 0.14 + 60 + r, r }, cyc = O.demo.reduce((a, s) => a + s.dur, 0) + 0.2 * (O.demo.length - 1) + 1.4;
       paper(ctx, M);
@@ -3343,7 +3381,7 @@ if (hot && hot.ready) hot.ready(boot); else boot(hot && hot.data || {});
 
 // ── for tests: start a way, write a move as a steady hand would, step time by hand ──
 window.INKDOJO = {
-  get state() { return state; }, get overlay() { return overlay; }, get fight() { return FIGHT; }, get player() { return player; }, get foes() { return FOES; }, get master() { return MASTERF; }, get save() { return save; },
+  get state() { return state; }, get overlay() { return overlay; }, get fight() { return FIGHT; }, get player() { return player; }, get foes() { return FOES; }, get master() { return MASTERF; }, get student() { return STUDENTF; }, get save() { return save; },
   begin(way) { beginGame(way); }, cont() { save = loadSave(); continueGame(); },
   write(key, o = {}) { const m = MOVES[save.way].find(m => m.key === key); return padJudge(writeOut(m, { wobble: 0.01, ...o })); },
   // cast any spell straight away, as anyone, at a given strength (for looking at spells)
@@ -3366,7 +3404,7 @@ window.INKDOJO = {
     const R = padJudge(writeOut(c.move, { wobble: wobble ?? (0.008 + Math.random() * 0.03), seed: Math.random() * 9 }));
     return R && R.verdict !== 'fizzle' ? c.move.key : 'fizzle';
   },
-  INK, ROSTER, MOVES, RANKS, WAYMOD, ADV, HALL, YOU, learnedCount, myMoves, padJudge, startFight, setSound, spawnMaster, setupWorld, resetFighter,
+  INK, ROSTER, MOVES, RANKS, WAYMOD, ADV, HALL, YOU, skillAt, tierNow, learnedCount, myMoves, padJudge, startFight, setSound, spawnMaster, setupWorld, resetFighter,
   get shots() { return SHOTS; }, get waves() { return WAVES; }, get zones() { return ZONES; }, get ents() { return ENTS; }, get stones() { return STONES; }, get fx() { return FX; },
 };
 })();
