@@ -45,20 +45,20 @@ const sawRing = (cx, cy, r1, r2, k) => Array.from({ length: 2 * k + 1 }, (_, i) 
 // the four ways: what each is good at, what it lacks, and its twist
 const WAYS = {
   water: { name: 'Water', animal: 'Snake', style: 'Tai Chi', color: '#4ab4ff', beats: 'fire',
-    blurb: 'Heals best and controls the fight from range, but hits softly.', twist: 'Soak and freeze',
-    twistWhat: 'Water soaks them and slows them; ice freezes a soaked foe solid. Puddles you leave on the floor make your water spells stronger while you stand in them.',
+    blurb: 'Heals best and controls the fight from range, and puts fire out, but its hits are light and earth drinks it up.', twist: 'Soak and freeze',
+    twistWhat: 'Water soaks them and slows them; ice freezes a soaked foe solid. Puddles you leave on the floor make your water spells stronger, and fill your ki faster, while you stand in them. A soaked fire fighter’s flames come out damp.',
     ink: 'Light, unbroken ink.' },
   fire: { name: 'Fire', animal: 'Leopard', style: 'Muay Thai', color: '#ff6a3a', beats: 'air',
-    blurb: 'Hits hardest and its burns keep hurting, but it defends poorly and barely heals.', twist: 'Heat',
-    twistWhat: 'Every fire spell heats you up. Hot fire hits harder, but past the red line you start to burn yourself. Vent lets it all out in one blast.',
+    blurb: 'Hits hardest and its burns keep hurting, but it defends poorly, barely heals, and water damps it.', twist: 'Heat',
+    twistWhat: 'Every fire spell heats you up. Hot fire hits harder, but past the red line you start to burn yourself. Vent lets it all out in one blast. Running hot brings your ki back faster; being soaked damps your fire and slows the heat.',
     ink: 'A pooled start, then quick and thin.' },
   earth: { name: 'Earth', animal: 'Tiger', style: 'Hung Gar', color: '#c9a35c', beats: 'water',
     blurb: 'The toughest, and its stones block shots, but it is slow on its feet and slow to cast.', twist: 'Stones',
-    twistWhat: 'Some spells raise rocks and walls that stay on the floor and block the way. Others throw them, roll them, or shatter them into shards.',
+    twistWhat: 'Some spells raise rocks and walls that stay on the floor and block the way. Others throw them, roll them, or shatter them into shards. Standing your ground brings your ki back faster, and stone can’t burn.',
     ink: 'Heavy, slow, pressed ink.' },
   air: { name: 'Air', animal: 'Crane', style: 'Capoeira', color: '#f1dc6a', beats: 'earth',
     blurb: 'The fastest, and it throws foes about, but it has the least health and its single hits are small.', twist: 'Wind',
-    twistWhat: 'Moving builds wind. Your air spells hit harder the more wind you carry, and standing still lets it die away.',
+    twistWhat: 'Moving builds wind. Your air spells hit harder the more wind you carry, and standing still lets it die away. Keep moving and your ki comes back faster too.',
     ink: 'Light, fast ink.' },
 };
 const WAY_ORDER = ['water', 'fire', 'earth', 'air'];
@@ -73,40 +73,40 @@ const MOVES = {
       join(quad(-0.7, 0.62, -0.72, 0, -0.05, 0), quad(-0.05, 0, 0.6, 0, 0.58, -0.45), arc(0.4, -0.45, 0.18, 0, -230)), { ink: 'light' }),
     S('bullet', 'Water Bullet', 'Shot', 8, 'A fast bullet of water that soaks them.', 'A raindrop: from its point at the top, round the bottom and back up to the point.',
       curve(u => { const t = u * TAU; return { x: 0.42 * Math.sin(t) * Math.sin(t / 2), y: 0.05 - 0.55 * Math.cos(t) }; }), { closed: [true], ink: 'light' }),
-    S('bubble', 'Bubble Shield', 'Shield', 12, 'A bubble of water round you takes the next hits for you. When it bursts, it splashes and soaks them.', 'A big circle near the rim.',
+    S('bubble', 'Bubble Shield', 'Absorb', 12, 'A bubble of water round you takes the next hits for you. When it bursts, it splashes and soaks them.', 'A big circle near the rim.',
       arc(0, 0, 0.72, -90, 270), { closed: [true], ink: 'light', loose: true }),
-    S('puddle', 'Puddle', 'Setup', 8, 'Splash a puddle under them: it soaks and slows whoever stands in it. Your water spells are stronger while you stand in one.', 'A wide flat oval low on the pad.',
+    S('puddle', 'Puddle', 'Pool', 8, 'Splash a puddle under them: it soaks and slows whoever stands in it. Your water spells are stronger while you stand in one.', 'A wide flat oval low on the pad.',
       ellipse(0, 0.42, 0.62, 0.2), { closed: [true], ink: 'light' }),
     S('rain', 'Healing Rain', 'Heal', 18, 'A little cloud rains on you and mends you, more if you stand in water. It puts out burns.', 'A cloud: along the flat bottom, then three bumps back over the top.',
       join(poly(-0.514, 0.2, 0.514, 0.2), arc(0.38, 0, 0.24, 56, -120), arc(0, -0.14, 0.3, -20, -160), arc(-0.38, 0, 0.24, -60, 124)), { closed: [true], ink: 'light' }),
-    S('glide', 'Stream Glide', 'Move', 8, 'Ride a stream across the floor, fast, leaving a trail of water behind you.', 'A long ripple across the middle: two waves.',
+    S('glide', 'Stream Glide', 'Glide', 8, 'Ride a stream across the floor, fast, leaving a trail of water behind you.', 'A long ripple across the middle: two waves.',
       hwave(-0.78, 0.78, 0, 0.21, 2), { ink: 'light' }),
-    S('geyser', 'Geyser', 'Launch', 14, 'A jet of water bursts up under them and throws them into the air. Far bigger if they stand in a puddle.', 'Straight up the left of the middle, then arch over to the right and down a little, like a fountain.',
+    S('geyser', 'Geyser', 'Burst', 14, 'A jet of water bursts up under them: it hits, drenches them for a long time and slows them. Twice as strong if they stand in a puddle.', 'Straight up the left of the middle, then arch over to the right and down a little, like a fountain.',
       join(poly(-0.2, 0.75, -0.2, -0.3), arc(0.08, -0.3, 0.28, 180, 360), poly(0.36, -0.3, 0.36, -0.05)), { ink: 'light' }),
-    S('shards', 'Ice Shards', 'Shot', 12, 'Three shards of ice. A soaked foe they hit freezes solid.', 'Three spikes from one point low in the middle: up to the left and back, straight up and back, up to the right.',
+    S('shards', 'Ice Shards', 'Chill', 12, 'Three shards of ice that chill them and slow them down, for longer if they are soaked.', 'Three spikes from one point low in the middle: up to the left and back, straight up and back, up to the right.',
       poly(0, 0.55, -0.5, -0.35, 0, 0.55, 0, -0.65, 0, 0.55, 0.5, -0.35), { ink: 'light' }),
-    S('whirlpool', 'Whirlpool', 'Control', 18, 'A whirlpool opens under them: it drags them to its middle and soaks them.', 'From the right-hand rim, spiral in two turns and pool in the centre.',
+    S('whirlpool', 'Whirlpool', 'Trap', 18, 'A whirlpool opens under them: it drags them to its middle and soaks them.', 'From the right-hand rim, spiral in two turns and pool in the centre.',
       spiral(0, 0, 0.85, 0.1, 0, 2), { pools: [[1]], ink: 'steady' }),
-    S('freeze', 'Freeze', 'Combo', 16, 'A soaked foe freezes solid wherever they stand, and every puddle turns to ice. A dry foe is only chilled.', 'A snowflake’s arms: one stroke straight down the middle, then one straight across.',
+    S('freeze', 'Freeze', 'Freeze', 16, 'The only way to freeze: a soaked foe freezes solid wherever they stand, and every puddle turns to ice. A dry foe is only chilled.', 'A snowflake’s arms: one stroke straight down the middle, then one straight across.',
       [poly(0, -0.65, 0, 0.65), poly(-0.65, 0, 0.65, 0)]),
-    S('tidal', 'Tidal Wave', 'Wave', 20, 'A wide wave rolls across the ring: it hits hard, soaks them and sweeps them back.', 'A big wave: rise from the bottom left to a crest at the top right, then curl over.',
+    S('tidal', 'Tidal Wave', 'Wash', 20, 'A wide wave rolls across the ring: it soaks them, puts out their fire and lava, and wears away their stones.', 'A big wave: rise from the bottom left to a crest at the top right, then curl over.',
       join(quad(-0.8, 0.5, -0.3, -0.55, 0.3, -0.45), arc(0.3, -0.2, 0.25, -90, 140)), { ink: 'light' }),
-    S('mist', 'Mist Veil', 'Veil', 12, 'A mist wraps round you: most of their shots miss, and they lose track of you.', 'A sideways figure of eight across the middle, without lifting the brush.',
+    S('mist', 'Mist Veil', 'Conceal', 12, 'A mist wraps round you: most of their shots miss, and they lose track of you.', 'A sideways figure of eight across the middle, without lifting the brush.',
       curve(u => { const t = u * TAU; return { x: 0.68 * Math.sin(t), y: 0.28 * Math.sin(2 * t) }; }), { closed: [true], ink: 'light' }),
-    S('undertow', 'Undertow', 'Pull', 12, 'A current drags them to you, soaked and slowed.', 'From the top right, hook round and in to the centre. Pool the ink at the end.',
+    S('undertow', 'Undertow', 'Yank', 12, 'A current drags them to you, soaked and slowed.', 'From the top right, hook round and in to the centre. Pool the ink at the end.',
       spiral(0, 0, 0.72, 0.1, -45, 0.85), { pools: [[1]], ink: 'steady' }),
-    S('mirror', 'Reflecting Pool', 'Counter', 10, 'A mirror of water at your feet sends the next shot back at whoever threw it.', 'A bowl: straight across, then round underneath back to the start.',
+    S('mirror', 'Reflecting Pool', 'Reflect', 10, 'A mirror of water at your feet sends the next shot back at whoever threw it.', 'A bowl: straight across, then round underneath back to the start.',
       join(poly(-0.6, -0.12, 0.6, -0.12), arc(0, -0.12, 0.6, 0, 180)), { closed: [true], ink: 'light' }),
     S('dragon', 'Water Dragon', 'Summon', 22, 'A serpent of water coils out, chases them and bites three times.', 'A tall snaking line from the bottom to the top: two and a half bends.',
       vwave(0.75, -0.75, 0, 0.22, 2.5), { ink: 'light' }),
-    S('jet', 'Pressure Jet', 'Beam', 16, 'A thin jet of water cuts straight through to them and pushes them back.', 'A small loop on the left, then a long straight line to the right.',
-      join(arc(-0.55, 0, 0.17, 0, 360), poly(-0.38, 0, 0.8, 0)), { ink: 'light' }),
-    S('icearmor', 'Ice Armor', 'Armor', 16, 'A coat of ice: you take far less damage but move slower, and whoever strikes you is chilled.', 'A roof of ice over you: up the left side, to a peak at the top, and down the right side.',
-      poly(-0.55, 0.6, -0.55, -0.05, 0, -0.62, 0.55, -0.05, 0.55, 0.6), { ink: 'light' }),
+    S('pushhands', 'Push Hands', 'Counter', 10, 'Stand ready for a moment: if they strike you up close, you catch the blow and throw them, soaked.', 'A long level line across the middle with one loop in it, like a hand turning a blow aside.',
+      join(poly(-0.8, 0.1, 0, 0.1), arc(0, -0.12, 0.22, 90, -270), poly(0, 0.1, 0.8, 0.1)), { ink: 'light' }),
+    S('ebb', 'Ebb and Flow', 'Swap', 12, 'Flow past them: you trade places in an instant, and they are left soaked.', 'Two currents passing: two strokes, a ripple along the top, then another along the bottom.',
+      [hwave(-0.62, 0.62, -0.24, 0.13, 1.5), hwave(-0.62, 0.62, 0.24, 0.13, 1.5)], { ink: 'light' }),
     S('draw', 'Draw from the Pond', 'Ki', 0, 'Draw ki from the water round you. Far more if you stand in a puddle.', 'A deep cup in the middle.',
       arc(0, -0.15, 0.5, 180, 0), { ink: 'light' }),
-    S('needles', 'Rain of Needles', 'Area', 16, 'Fine needles of rain pour down on them: lots of small hits that soak.', 'Two strokes: a ripple across the top, then rain slanting down from under it to the bottom left.',
-      [hwave(-0.6, 0.6, -0.5, 0.09, 1.5), poly(0.35, -0.3, -0.35, 0.65)], { ink: 'light' }),
+    S('double', 'Water Double', 'Decoy', 12, 'A double of you, made of water, stays behind while you slip aside. Their spells go at it, and it bursts into a puddle.', 'Two strokes: two small circles side by side.',
+      [arc(-0.3, 0, 0.22, -90, 270), arc(0.3, 0, 0.22, -90, 270)], { closed: [true, true], ink: 'light' }),
     S('flood', 'Great Flood', 'Ultimate', 60, 'The ring floods: a huge wave crashes over them, then everything freezes.', 'Pool in the centre, spiral out one and a half turns, then climb to the top.',
       join(spiral(0, 0, 0.04, 0.5, 0, 1.5), quad(-0.5, 0, -0.58, -0.62, 0.06, -0.92)), { pools: [[0]], ink: 'steady' }),
   ],
@@ -117,37 +117,37 @@ const MOVES = {
       poly(0, -0.72, 0.25, -0.3, -0.25, -0.3, 0, -0.72), { closed: [true], ink: 'light' }),
     S('breath', 'Flame Breath', 'Cone', 14, 'Breathe a cone of fire at them for a moment.', 'A wide < opening to the right: from the top right to a point on the left and back out. Pool the ink first.',
       poly(0.62, -0.55, -0.45, 0, 0.62, 0.55), { pools: [[0]] }),
-    S('rocket', 'Rocket Step', 'Move', 9, 'Jets of fire hurl you across the floor, leaving a burning trail.', 'Two little zigzags at the bottom left, then one long stroke to the top right. Pool the ink first.',
+    S('rocket', 'Rocket Step', 'Dash', 9, 'Jets of fire hurl you away across the floor, leaving a burning trail behind you for them.', 'Two little zigzags at the bottom left, then one long stroke to the top right. Pool the ink first.',
       join(poly(-0.72, 0.72, -0.6, 0.5, -0.5, 0.66, -0.38, 0.46), poly(-0.38, 0.46, 0.66, -0.62)), { pools: [[0]], ink: 'light' }),
-    S('flameshield', 'Flame Shield', 'Shield', 10, 'A ring of flame round you: it blunts their blows and burns whoever hits you.', 'A sun: a jagged circle of ten points round the centre.',
+    S('flameshield', 'Flame Shield', 'Thorns', 10, 'A ring of flame round you: it blunts their blows and burns whoever hits you.', 'A sun: a jagged circle of ten points round the centre.',
       sawRing(0, 0, 0.62, 0.42, 10), { closed: [true] }),
     S('roundhouse', 'Roundhouse Flame', 'Sweep', 14, 'A spinning kick throws a ring of fire all round you.', 'A Z: across the top, down to the bottom left, across the bottom.',
       poly(-0.55, -0.5, 0.55, -0.5, -0.55, 0.5, 0.55, 0.5)),
-    S('firewall', 'Fire Wall', 'Wall', 16, 'A wall of flame between you and them: it burns whoever crosses it and swallows their shots.', 'A row of flames: a zigzag of four peaks across the middle.',
+    S('firewall', 'Fire Wall', 'Barrier', 16, 'A line of flame between you and them: it burns and slows whoever crosses it.', 'A row of flames: a zigzag of four peaks across the middle.',
       poly(-0.8, 0.2, -0.6, -0.25, -0.4, 0.2, -0.2, -0.25, 0, 0.2, 0.2, -0.25, 0.4, 0.2, 0.6, -0.25, 0.8, 0.2), { ink: 'light' }),
-    S('vent', 'Vent', 'Combo', 6, 'Let all your heat out in one blast round you. The hotter you are, the bigger it is.', 'A big peak: from the bottom left up to the top and down to the bottom right. Pool the ink first.',
+    S('vent', 'Vent', 'Release', 6, 'Let all your heat out in one blast round you. The hotter you are, the bigger it is.', 'A big peak: from the bottom left up to the top and down to the bottom right. Pool the ink first.',
       poly(-0.6, 0.62, 0, -0.68, 0.6, 0.62), { pools: [[0]] }),
     S('embers', 'Ember Spray', 'Volley', 12, 'A fan of embers. Each one sets them burning.', 'An M across the top of the pad.',
       poly(-0.55, -0.1, -0.3, -0.66, 0, -0.3, 0.3, -0.66, 0.55, -0.1), { ink: 'light' }),
-    S('explosion', 'Explosion', 'Blast', 18, 'A fizzing fuse under their feet, then a blast.', 'An X: one stroke, then the other.',
+    S('charge', 'Sticky Charge', 'Bomb', 18, 'A burning charge sticks to them and blows up a moment later, unless they shake it off with a dodge or a dash.', 'An X: one stroke, then the other.',
       [poly(-0.5, -0.5, 0.5, 0.5), poly(0.5, -0.5, -0.5, 0.5)]),
-    S('knee', 'Burning Knee', 'Launch', 14, 'A rising knee bursting with fire throws them into the air.', 'A tall N: up, slash down to the bottom right, up again. Pool the ink first.',
+    S('knee', 'Burning Knee', 'Break', 14, 'A rising knee bursting with fire that smashes through shields, armour and guards, and burns.', 'A tall N: up, slash down to the bottom right, up again. Pool the ink first.',
       poly(-0.35, 0.65, -0.35, -0.65, 0.35, 0.65, 0.35, -0.65), { pools: [[0]] }),
-    S('whip', 'Fire Whip', 'Pull', 12, 'A whip of flame catches them and drags them in, burning.', 'A 7: across the top, then a long slash down to the left.',
+    S('whip', 'Fire Whip', 'Grapple', 12, 'A whip of flame catches them and hauls you in to them for a burning blow.', 'A 7: across the top, then a long slash down to the left.',
       poly(-0.5, -0.55, 0.5, -0.55, -0.15, 0.68), { ink: 'light' }),
     S('lava', 'Lava Pool', 'Zone', 18, 'The floor under them melts: they slow to a crawl and burn.', 'A W low on the pad.',
       poly(-0.6, 0.15, -0.3, 0.66, 0, 0.32, 0.3, 0.66, 0.6, 0.15)),
-    S('ignite', 'Ignite', 'Combo', 10, 'Every burn on them flares up at once. The longer they have been burning, the harder it hits.', 'A lightning bolt from the top to the bottom.',
+    S('ignite', 'Ignite', 'Detonate', 10, 'Every burn on them flares up at once. The longer they have been burning, the harder it hits.', 'A lightning bolt from the top to the bottom.',
       poly(0.25, -0.75, -0.2, -0.05, 0.2, 0.05, -0.25, 0.75), { ink: 'light' }),
-    S('haze', 'Heat Haze', 'Veil', 10, 'The air shimmers round you: most shots at you veer off.', 'A triangle that spirals in: round the outside once, then in to the middle.',
+    S('fury', 'Fury', 'Fury', 10, 'Let the fire take you: for a few seconds your spells come out twice as fast and hit harder, but your heat climbs fast.', 'A triangle that spirals in: round the outside once, then in to the middle.',
       poly(0, -0.7, 0.65, 0.5, -0.65, 0.5, 0, -0.38, 0.32, 0.22, -0.3, 0.22, 0, -0.05), { ink: 'light' }),
     S('meteor', 'Meteor', 'Blast', 26, 'A burning rock falls from the sky onto them and leaves molten ground.', 'An arrow pointing down to the left: the shaft from the top right, then the head.',
       [poly(0.6, -0.6, -0.45, 0.45), poly(-0.45, 0.02, -0.45, 0.45, -0.02, 0.45)]),
-    S('firework', 'Firework', 'Volley', 16, 'A rocket arcs over onto them and bursts into a shower of sparks.', 'A diamond round the centre.',
+    S('firework', 'Firework', 'Lob', 16, 'A rocket arcs over walls and stones and bursts over them in a shower of sparks.', 'A diamond round the centre.',
       poly(0, -0.62, 0.42, 0, 0, 0.62, -0.42, 0, 0, -0.62), { closed: [true], ink: 'light' }),
     S('phoenix', 'Phoenix Rise', 'Heal', 14, 'Burn your heat into life: the hotter you are, the more it mends. It puts out your own burns.', 'A big V: from the top left down to a point and up to the top right.',
       poly(-0.62, -0.55, 0, 0.62, 0.62, -0.55)),
-    S('stoke', 'Stoke the Fire', 'Ki', 0, 'Fan the flames: a big gulp of ki, and a lot of heat.', 'A star of two triangles: one pointing up, then one pointing down.',
+    S('brand', 'Searing Brand', 'Mark', 10, 'Burn your mark onto them: for a while every spell of yours hits them harder.', 'A star of two triangles: one pointing up, then one pointing down.',
       [poly(0, -0.62, 0.54, 0.31, -0.54, 0.31, 0, -0.62), poly(0, 0.62, -0.54, -0.31, 0.54, -0.31, 0, 0.62)], { closed: [true, true] }),
     S('inferno', 'Inferno', 'Ultimate', 60, 'A star of fire bursts across the ring, then explodes again.', 'A five-pointed star in one stroke.',
       star(0, 0.05, 0.75), { closed: [true] }),
@@ -159,37 +159,37 @@ const MOVES = {
       poly(0, 0.7, 0, -0.7), { pools: [[0]], ink: 'heavy' }),
     S('wall', 'Stone Wall', 'Wall', 12, 'A wall of stone rises between you: it stops shots and blocks the way.', 'Battlements: across the middle, a square tooth up at each end and a dip between.',
       poly(-0.75, 0.2, -0.75, -0.25, -0.3, -0.25, -0.3, 0.2, 0.3, 0.2, 0.3, -0.25, 0.75, -0.25, 0.75, 0.2), { ink: 'heavy' }),
-    S('spike', 'Earth Spike', 'Launch', 14, 'A spike of rock bursts up under them and throws them into the air. It stays as a stone.', 'Two strokes: the ground along the bottom, then a spike straight up from its middle.',
+    S('spike', 'Earth Spike', 'Spike', 14, 'A spike of rock bursts up under them. It stays there as a stone.', 'Two strokes: the ground along the bottom, then a spike straight up from its middle.',
       [poly(-0.6, 0.55, 0.6, 0.55), poly(0, 0.55, 0, -0.7)], { ink: 'heavy' }),
-    S('skin', 'Stone Skin', 'Armor', 14, 'Your skin turns to stone: you take half the damage and nothing knocks you back, but you move slower.', 'A big square round the centre. Pool the ink where you start.',
+    S('skin', 'Stone Skin', 'Armor', 14, 'Your skin turns to stone: you take half the damage, burns can’t take hold and nothing knocks you back, but you move slower.', 'A big square round the centre. Pool the ink where you start.',
       poly(-0.55, -0.55, 0.55, -0.55, 0.55, 0.55, -0.55, 0.55, -0.55, -0.55), { closed: [true], pools: [[0]], ink: 'heavy' }),
-    S('quake', 'Quake', 'Sweep', 16, 'Stamp: a shockwave runs through the ground all round you and knocks them off their feet. It can’t touch anyone in the air.', 'A long level line low on the pad. Pool at both ends, like two planted feet.',
+    S('quake', 'Quake', 'Stun', 16, 'Stamp: a shockwave runs through the ground all round you and knocks them off their feet. It can’t touch anyone in the air.', 'A long level line low on the pad. Pool at both ends, like two planted feet.',
       poly(-0.75, 0.45, 0.75, 0.45), { pools: [[0, 1]], ink: 'heavy' }),
-    S('clay', 'Clay Mend', 'Heal', 18, 'Pack clay into your wounds and mend. You can’t move while you mend.', 'A square cup: down, across the bottom, back up.',
+    S('statue', 'Jade Statue', 'Statue', 14, 'Turn to jade for a moment: nothing can hurt or move you, but you can’t act either. You come out of it mended a little.', 'A square cup: down, across the bottom, back up.',
       poly(-0.42, -0.1, -0.42, 0.55, 0.42, 0.55, 0.42, -0.1), { ink: 'heavy' }),
-    S('shatter', 'Shatter', 'Combo', 12, 'Every stone you have raised bursts into flying shards. The more stones near them, the more it hurts.', 'A broken line: a short stroke on the left, a gap, then a short stroke on the right.',
+    S('shatter', 'Shatter', 'Burst', 12, 'Every stone you have raised bursts into flying shards. The more stones near them, the more it hurts.', 'A broken line: a short stroke on the left, a gap, then a short stroke on the right.',
       [poly(-0.7, 0, -0.22, 0), poly(0.22, 0, 0.7, 0)], { ink: 'heavy' }),
     S('boulder', 'Boulder Roll', 'Roll', 18, 'A boulder rolls across the ring at them, crushing. It uses one of your stones if it can.', 'Two strokes: a small square on the left, then a line rolling out to the right.',
       [poly(-0.68, -0.18, -0.32, -0.18, -0.32, 0.18, -0.68, 0.18, -0.68, -0.18), poly(-0.2, 0, 0.72, 0)], { closed: [true, false], ink: 'heavy' }),
-    S('quicksand', 'Quicksand', 'Zone', 16, 'The floor under them turns to sand: they’re stuck at first, then sink and slow.', 'A funnel: across the top, slant in to a narrow bottom, and back up.',
+    S('quicksand', 'Quicksand', 'Sink', 16, 'The floor under them turns to sand: they sink, slow to a crawl, and take damage while they are in it.', 'A funnel: across the top, slant in to a narrow bottom, and back up.',
       poly(-0.62, -0.45, 0.62, -0.45, 0.2, 0.5, -0.2, 0.5, -0.62, -0.45), { closed: [true], ink: 'heavy' }),
-    S('sand', 'Sand Blast', 'Cone', 12, 'A spray of sand stings them and blinds them, so their spells come out weak.', 'Two long level lines, one above the other.',
-      [poly(-0.6, -0.22, 0.6, -0.22), poly(-0.6, 0.22, 0.6, 0.22)]),
+    S('sand', 'Sand Blast', 'Blind', 12, 'A spray of sand stings them and blinds them, so their spells come out weak.', 'A dune: from the bottom left, two square steps up, across the top, and two steps down again.',
+      poly(-0.75, 0.4, -0.45, 0.4, -0.45, 0.1, -0.15, 0.1, -0.15, -0.2, 0.15, -0.2, 0.15, 0.1, 0.45, 0.1, 0.45, 0.4, 0.75, 0.4), { ink: 'heavy' }),
     S('pillar', 'Rock Pillar', 'Lift', 14, 'A pillar of rock lifts you up: shots from below can’t reach you, and your rocks hit harder. The pillar stays.', 'Two tall lines side by side.',
       [poly(-0.22, -0.65, -0.22, 0.65), poly(0.22, -0.65, 0.22, 0.65)], { ink: 'heavy' }),
-    S('grip', 'Gravel Grip', 'Hold', 12, 'Hands of earth grab their feet: they can’t move for a moment.', 'A bracket: across the top to the left, down, and back across the bottom.',
+    S('grip', 'Gravel Grip', 'Root', 12, 'Hands of earth grab their feet: they can’t move for a moment.', 'A bracket: across the top to the left, down, and back across the bottom.',
       poly(0.32, -0.55, -0.3, -0.55, -0.3, 0.55, 0.32, 0.55), { ink: 'heavy' }),
-    S('landslide', 'Landslide', 'Area', 20, 'Rocks pour down over them, and some stay as stones.', 'Stairs going down from the top left to the bottom right.',
+    S('landslide', 'Landslide', 'Rockfall', 20, 'Rocks pour down over them, and some stay as stones.', 'Stairs going down from the top left to the bottom right.',
       poly(-0.7, -0.6, -0.3, -0.6, -0.3, -0.2, 0.1, -0.2, 0.1, 0.2, 0.5, 0.2, 0.5, 0.6)),
-    S('burrow', 'Burrow', 'Move', 14, 'Sink into the ground and burst up beside them, throwing them off their feet.', 'An L: down the left side and along the bottom. Pool at the end.',
+    S('burrow', 'Burrow', 'Tunnel', 14, 'Sink into the ground and burst up beside them, throwing them off their feet.', 'An L: down the left side and along the bottom. Pool at the end.',
       poly(-0.5, -0.6, -0.5, 0.5, 0.6, 0.5), { pools: [[1]], ink: 'heavy' }),
-    S('crystal', 'Crystal Spear', 'Shot', 16, 'A long spear of crystal, so fast it goes straight through walls and stones.', 'One long stroke from the top left to the bottom right.',
+    S('crystal', 'Crystal Spear', 'Pierce', 16, 'A long spear of crystal that goes straight through walls and stones, even your own, so you can shoot from behind a wall.', 'One long stroke from the top left to the bottom right.',
       poly(-0.62, -0.62, 0.62, 0.62)),
     S('stance', 'Mountain Stance', 'Stance', 14, 'Root yourself like a mountain: nothing moves you, you mend a little, and your next blow lands half as hard again.', 'A square arch: up, across the top, and down. Pool at both ends.',
       poly(-0.6, 0.6, -0.6, -0.4, 0.6, -0.4, 0.6, 0.6), { pools: [[0, 1]], ink: 'heavy' }),
-    S('pulse', 'Earth Pulse', 'Ki', 0, 'Draw ki up from the ground. More if one of your stones is beside you.', 'A heartbeat: level, a sharp dip and a peak, then level again.',
+    S('weight', 'Weight of Stone', 'Ground', 12, 'Make them as heavy as stone: for a while they can’t dash, leap, glide or dodge, and they walk slower.', 'A heartbeat: level, a sharp dip and a peak, then level again.',
       poly(-0.75, 0.1, -0.25, 0.1, -0.1, 0.45, 0.1, -0.35, 0.25, 0.1, 0.75, 0.1)),
-    S('fault', 'Fault Line', 'Wave', 18, 'A crack races along the ground at them, knocks them off balance and leaves stones along its path.', 'A step: across to the middle, straight down, then across again.',
+    S('toss', 'Tiger Toss', 'Throw', 14, 'Grab them up close and hurl them over you onto the floor behind. Throw them into a stone and it hurts far more.', 'A step: across to the middle, straight down, then across again.',
       poly(-0.75, -0.25, 0, -0.25, 0, 0.25, 0.75, 0.25), { ink: 'heavy' }),
     S('mountain', 'Mountain Falls', 'Ultimate', 60, 'The ground splits and a mountain falls on them, leaving a ring of stones round them.', 'A square spiral: round the rim and in, corner by corner.',
       poly(-0.7, -0.7, 0.7, -0.7, 0.7, 0.7, -0.7, 0.7, -0.7, -0.32, 0.32, -0.32, 0.32, 0.32, -0.32, 0.32, -0.32, 0.02), { ink: 'heavy' }),
@@ -201,27 +201,27 @@ const MOVES = {
       join(poly(-0.75, 0.15, 0.2, 0.15), arc(0.2, -0.12, 0.27, 90, -180)), { ink: 'light' }),
     S('feather', 'Feather Step', 'Dodge', 6, 'Leap away on the wind. Nothing touches you as you go.', 'A hop, then a leap: a small arch, then a big one, low on the pad.',
       join(arc(-0.45, 0.35, 0.2, 180, 360), arc(0.15, 0.35, 0.4, 180, 360)), { ink: 'light' }),
-    S('meialua', 'Meia-lua Gale', 'Sweep', 10, 'A half-moon kick throws a wide crescent of wind in front of you.', 'A wide arc over the top of the pad, left to right. Pool at the start: the planted foot.',
+    S('meialua', 'Meia-lua Gale', 'Strike', 10, 'A half-moon kick throws a wide crescent of wind in front of you.', 'A wide arc over the top of the pad, left to right. Pool at the start: the planted foot.',
       arc(0, 0.15, 0.8, 200, 340), { pools: [[0]], ink: 'light' }),
     S('updraft', 'Updraft', 'Launch', 12, 'A column of wind lifts them into the air, helpless. Air hits harder on a foe in the air.', 'A standing S, like the line in a yin-yang.',
       join(arc(0, -0.33, 0.33, -90, 90), arc(0, 0.33, 0.33, -90, -270)), { ink: 'light' }),
-    S('airshield', 'Air Shield', 'Shield', 10, 'Wind whirls round you and turns their shots aside.', 'An Ω: a short foot, a big loop round over the top, and a short foot out.',
+    S('airshield', 'Air Shield', 'Deflect', 10, 'Wind whirls round you and turns their shots aside.', 'An Ω: a short foot, a big loop round over the top, and a short foot out.',
       join(poly(-0.62, 0.5, -0.3, 0.45), arc(0, 0.05, 0.5, 126.9, 413.1), poly(0.3, 0.45, 0.62, 0.5)), { ink: 'light' }),
-    S('breath', 'Breath of Life', 'Heal', 14, 'Clean wind mends you and blows away burns, water, sand and slows.', 'From the centre, spiral out one turn, then sweep away to the right.',
+    S('breath', 'Breath of Life', 'Cleanse', 14, 'Clean wind blows away burns, water, sand, slows and holds, and mends you a little.', 'From the centre, spiral out one turn, then sweep away to the right.',
       join(spiral(-0.1, 0, 0.04, 0.38, 90, 1.0), quad(-0.1, 0.38, 0.5, 0.4, 0.75, -0.1)), { ink: 'light' }),
-    S('tornado', 'Tornado', 'Summon', 18, 'A whirlwind chases them and throws them about.', 'A funnel: three loops from the bottom to the top, getting wider as they rise.',
+    S('tornado', 'Tornado', 'Storm', 18, 'A whirlwind sets off in a straight line, throwing up anyone it passes.', 'A funnel: three loops from the bottom to the top, getting wider as they rise.',
       curve(u => { const t = u * 3 * TAU, w = 0.1 + 0.4 * u; return { x: w * Math.cos(t), y: 0.72 - 1.4 * u + 0.1 * Math.sin(t) }; }, 180), { ink: 'light' }),
     S('flurry', 'Hurricane Flurry', 'Flurry', 14, 'Five quick strikes riding gusts of wind.', 'Four small loops in a row across the middle, without lifting the brush.',
       curve(u => { const t = u * 4 * TAU; return { x: -0.66 + 1.32 * u - 0.16 * Math.sin(t), y: 0.05 + 0.2 * Math.cos(t) }; }, 200), { ink: 'light' }),
-    S('vacuum', 'Vacuum', 'Pull', 14, 'Suck the air out of a spot in front of you: it drags them in, then pops.', 'Two strokes back to back: an arc bulging right on the left, then one bulging left on the right.',
+    S('vacuum', 'Vacuum', 'Silence', 14, 'Suck the air from round them: for a moment they cannot write a single spell.', 'Two strokes back to back: an arc bulging right on the left, then one bulging left on the right.',
       [arc(-0.55, 0, 0.5, -50, 50), arc(0.55, 0, 0.5, 130, 230)], { ink: 'light' }),
-    S('twin', 'Twin Blades', 'Volley', 12, 'Two blades of wind that curve in on them from both sides.', 'Two strokes: two arcs crossing in an X, each bowed upward.',
+    S('twin', 'Twin Blades', 'Homing', 12, 'Two blades of wind that curve in on them from both sides, round walls and stones.', 'Two strokes: two arcs crossing in an X, each bowed upward.',
       [arc(-0.5, 0.5, 1.0, -90, 0), arc(0.5, 0.5, 1.0, -90, -180)], { ink: 'light' }),
     S('walk', 'Wind Walk', 'Haste', 10, 'The wind at your back: much faster for a while, and you gather wind twice as fast.', 'One long curve from the bottom left, bending up to the top right.',
       quad(-0.68, 0.62, -0.5, -0.45, 0.65, -0.58), { ink: 'light' }),
     S('downdraft', 'Downdraft', 'Slam', 14, 'A hammer of air from above. On a foe in the air, it slams them down hard.', 'Two strokes: a dome across the top, then a line straight down through it, like an umbrella.',
       [arc(0, -0.1, 0.55, 180, 360), poly(0, -0.65, 0, 0.6)], { ink: 'light' }),
-    S('pressure', 'Pressure Bullet', 'Shot', 12, 'A ball of squeezed air that bursts on them and throws them back.', 'A small standing 8, without lifting the brush.',
+    S('crosswind', 'Crosswind', 'Misdirect', 10, 'Their next spell is blown off course and goes wide.', 'A small standing 8, without lifting the brush.',
       curve(u => { const t = u * TAU; return { x: 0.22 * Math.sin(2 * t), y: 0.42 * Math.sin(t) }; }), { closed: [true], ink: 'light' }),
     S('crane', 'Sky Crane', 'Leap', 18, 'Leap high where nothing can reach you, then dive down on them.', 'A tall arch with a small loop at the top: up from the bottom left, loop over, and down to the bottom right.',
       join(quad(-0.45, 0.72, -0.3, -0.2, -0.086, -0.505), arc(0.02, -0.58, 0.13, 145, 505), quad(-0.086, -0.505, 0.25, -0.2, 0.45, 0.72)), { ink: 'light' }),
@@ -229,9 +229,9 @@ const MOVES = {
       join(hwave(-0.65, 0.15, 0.35, 0.13, 1), poly(0.15, 0.35, 0.62, -0.55)), { ink: 'light' }),
     S('gale', 'Gale Force', 'Wave', 18, 'A wide wall of wind drives them all the way back to the edge of the ring.', 'One big wave across the middle: a crest, then a trough.',
       hwave(-0.8, 0.8, 0, 0.34, 1), { ink: 'light' }),
-    S('gather', 'Gather Wind', 'Ki', 0, 'Breathe the wind in: a big gulp of ki, and a lot of wind.', 'Two strokes: ( then ), like brackets round the centre.',
+    S('echo', 'Echo', 'Echo', 8, 'The wind repeats your last spell, a little weaker.', 'Two strokes: ( then ), like brackets round the centre.',
       [arc(0.2, 0, 0.6, 125, 235), arc(-0.2, 0, 0.6, -55, 55)], { ink: 'light' }),
-    S('spin', 'Cyclone Spin', 'Dash', 14, 'Cartwheel through them on a spinning wind, hitting as you pass. Nothing touches you as you spin.', 'A cartwheel: a circle in the middle, then a line straight through it from left to right.',
+    S('weightless', 'Featherweight', 'Free', 12, 'Weigh nothing for a while: nothing can slow you, hold you, stun you or throw you about, and you move faster.', 'A cartwheel: a circle in the middle, then a line straight through it from left to right.',
       [arc(0, 0, 0.42, -90, 270), poly(-0.75, 0, 0.75, 0)], { closed: [true, false], ink: 'light' }),
     S('typhoon', 'Typhoon', 'Ultimate', 60, 'A great storm lifts them and spins them. All your wind goes into it.', 'A ring of five loops round the centre, without lifting the brush.',
       curve(u => { const t = u * TAU; return { x: 0.5 * Math.cos(t) + 0.2 * Math.cos(6 * t), y: 0.5 * Math.sin(t) + 0.2 * Math.sin(6 * t) }; }, 240), { closed: [true], ink: 'light' }),
@@ -787,18 +787,25 @@ const MASTER = { id: 'm', name: 'Grandmaster Sumi', way: 'master', rank: 4, post
 // what each way is: water hits softly but heals best; fire hits hardest and heals least; earth is the toughest and slowest
 // (and hard to knock about); air is the fastest, the frailest, and throws foes furthest
 const WAYMOD = {
-  water:  { dmg: 1.12, heal: 1.5, speed: 1.0, hp: 100 },
-  fire:   { dmg: 1.18, heal: 0.7, speed: 1.05, hp: 95 },
-  earth:  { dmg: 1.2, heal: 1.0, speed: 0.84, hp: 130, steady: 0.5 },
-  air:    { dmg: 0.95, heal: 1.0, speed: 1.24, hp: 90, knock: 1.4 },
+  water:  { dmg: 1.14, heal: 1.5, speed: 1.0, hp: 100 },
+  fire:   { dmg: 1.02, heal: 0.7, speed: 1.05, hp: 95 },
+  earth:  { dmg: 1.08, heal: 1.0, speed: 0.84, hp: 130, steady: 0.5 },
+  air:    { dmg: 1.05, heal: 1.0, speed: 1.24, hp: 90, knock: 1.4 },
   master: { dmg: 1.0, heal: 1.0, speed: 1.1, hp: 100 },
 };
+// how hard each hall's fighters hit: the ways are even with each other, but against you (who writes in an instant, with no
+// warning) some ways' fighters would be far easier to beat than others; this evens out the four halls
+const HALL = { water: 1.1, fire: 0.92, earth: 1.18, air: 1.3 };
+// and how hard you hit with each way: a person writes slower than a fighter thinks, and at that pace some ways pay off less;
+// this keeps all four as good a choice as each other
+const YOU = { water: 0.92, fire: 1, earth: 1.15, air: 1.08 };
 const freshStatus = () => ({ stun: 0, slow: 0, soak: 0, frozen: 0, burn: 0, air: 0, airMax: 0, root: 0, blind: 0, armor: 0, armorK: 0, armorKind: '', shield: 0, shieldT: 0, shieldKind: '',
-  veil: 0, veilK: 0, veilKind: '', haste: 0, invuln: 0, reflect: 0, thorns: 0, deflect: 0, regen: 0, regenRate: 0, stance: 0, high: 0, under: 0, leap: 0, mend: 0, flash: 0, galeT: 0, lavaSlow: 0, sandSlow: 0 });
-function resetFighter(f) { f.st = freshStatus(); f.heat = 0; f.heatT = 9; f.wind = 0; f.dash = null; f.lift = 0; f.act = null; f.glyph = null; f.spinT = 0; f.burrowTo = null; }
+  veil: 0, veilK: 0, veilKind: '', haste: 0, invuln: 0, reflect: 0, thorns: 0, deflect: 0, regen: 0, regenRate: 0, stance: 0, high: 0, under: 0, leap: 0, mend: 0, flash: 0, galeT: 0, lavaSlow: 0, sandSlow: 0,
+  counter: 0, statue: 0, heavy: 0, silence: 0, crosswind: 0, brand: 0, fury: 0, free: 0 });
+function resetFighter(f) { f.st = freshStatus(); f.heat = 0; f.heatT = 9; f.wind = 0; f.dash = null; f.lift = 0; f.act = null; f.glyph = null; f.spinT = 0; f.burrowTo = null; f.lastSpell = null; f.brandBy = null; f.statueHeal = 0; f.stillT = 0; }
 function makeFighter(o) {
   const k = o.isPlayer ? null : RANKS[o.rank], mod = WAYMOD[o.way], n = (o.id || 'p').charCodeAt(0) + (o.id || 'p').charCodeAt(1 % (o.id || 'p').length);
-  const maxHp = o.isPlayer ? mod.hp : k.hp;
+  const maxHp = o.isPlayer ? mod.hp : Math.round(k.hp * mod.hp / 100);
   return {
     id: o.id || 'you', name: o.name || 'You', way: o.way, rank: o.rank || 0, isPlayer: !!o.isPlayer,
     x: o.post ? o.post[0] : START.x, y: o.post ? o.post[1] : START.y, r: 15, face: o.isPlayer ? -Math.PI / 2 : angTo({ x: o.post[0], y: o.post[1] }, { x: 800, y: 850 }),
@@ -825,7 +832,7 @@ function drawFighter(f, t) {
   ctx.fillStyle = 'rgba(0,0,0,0.32)'; ctx.beginPath(); ctx.ellipse(2, 9, Math.max(5, 16 - lift * 0.08), Math.max(2.5, 7 - lift * 0.03), 0, 0, TAU); ctx.fill();
   ctx.translate(0, -lift);
   if (f.st.leap > 0) { const k = 1 + lift / 320; ctx.scale(k, k); }
-  if (f.st.veil > 0) ctx.globalAlpha = f.st.veilKind === 'haze' ? 0.5 + 0.15 * Math.sin(t * 25) : 0.45;
+  if (f.st.veil > 0) ctx.globalAlpha = 0.45;
   if (f.spinT > 0) ctx.rotate(t * 30);
   if (f.st.flash > 0) { ctx.shadowColor = '#fff'; ctx.shadowBlur = 16; }
   if (down) {
@@ -907,6 +914,28 @@ function drawStatus(f, t) {
   if (S.slow > 0 && S.soak <= 0 && S.frozen <= 0) { ctx.fillStyle = hexA('#7cc7ff', 0.6); for (let i = 0; i < 2; i++) { const ph = (t * 1.2 + i / 2) % 1; ctx.beginPath(); ctx.arc(f.x - 6 + i * 12, f.y + 8 - ph * 6, 2, 0, TAU); ctx.fill(); } }
   if (S.burn > 0) { ctx.save(); ctx.globalCompositeOperation = 'lighter'; for (let i = 0; i < 4; i++) { const ph = (t * 2 + i / 4) % 1; ctx.fillStyle = `rgba(255,${120 + i * 20},40,${0.7 * (1 - ph)})`; ctx.beginPath(); ctx.ellipse(f.x - 9 + i * 6, y - 4 - ph * 22, 3 * (1 - ph) + 1, 5 * (1 - ph) + 1, 0, 0, TAU); ctx.fill(); } ctx.restore(); }
   if (S.regen > 0) { ctx.save(); ctx.globalCompositeOperation = 'lighter'; for (let i = 0; i < 5; i++) { const ph = (t * 0.9 + i / 5) % 1; ctx.fillStyle = `rgba(150,255,190,${0.6 * (1 - ph)})`; ctx.beginPath(); ctx.arc(f.x + Math.cos(i * 2.4) * 14, y + 6 - ph * 34, 2.4, 0, TAU); ctx.fill(); } ctx.restore(); }
+  // jade: a green stone sheen over them
+  if (S.statue > 0) {
+    ctx.save(); const k = Math.min(1, S.statue * 5);
+    const g = ctx.createLinearGradient(f.x - 16, y - 20, f.x + 16, y + 16); g.addColorStop(0, 'rgba(210,255,225,0.9)'); g.addColorStop(0.5, 'rgba(90,190,130,0.75)'); g.addColorStop(1, 'rgba(40,120,80,0.8)');
+    ctx.globalAlpha = k; ctx.fillStyle = g; ctx.beginPath(); ctx.ellipse(f.x, y, 15, 17, 0, 0, TAU); ctx.fill(); ctx.strokeStyle = 'rgba(220,255,230,0.9)'; ctx.lineWidth = 1.5; ctx.stroke();
+    ctx.strokeStyle = 'rgba(255,255,255,0.8)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(f.x, y, 11, -2.5, -1.7); ctx.stroke();
+    ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = k * (0.5 + 0.5 * Math.sin(t * 7)); ctx.drawImage(sprite('#9fe0b8'), f.x + 4, y - 14, 10, 10); ctx.restore();
+  }
+  // ready to turn a blow: two currents circling the other way round each other
+  if (S.counter > 0) { ctx.save(); ctx.lineCap = 'round'; ctx.globalAlpha = Math.min(1, S.counter * 4); for (let i = 0; i < 2; i++) { const a = (i ? -1 : 1) * t * 6 + i * Math.PI; ctx.strokeStyle = i ? '#bfe6ff' : '#4ab4ff'; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.arc(f.x, y, 22 + i * 4, a, a + 2.2); ctx.stroke(); } ctx.restore(); }
+  // weights of stone hung on them
+  if (S.heavy > 0) { ctx.save(); ctx.globalAlpha = Math.min(1, S.heavy * 3); ctx.strokeStyle = 'rgba(60,44,28,0.8)'; ctx.lineWidth = 1.2; for (const sx of [-9, 9]) { const bob = Math.sin(t * 3 + sx) * 1.5; ctx.beginPath(); ctx.moveTo(f.x + sx * 0.6, f.y + 2); ctx.lineTo(f.x + sx, f.y + 10 + bob); ctx.stroke(); ctx.save(); ctx.translate(f.x + sx, f.y + 14 + bob); rockPath(5, 40 + sx); ctx.fillStyle = '#6e5a40'; ctx.fill(); ctx.restore(); } ctx.restore(); }
+  // silenced: the breath gone, a pale ring with a bar through it
+  if (S.silence > 0) { ctx.save(); ctx.globalAlpha = Math.min(1, S.silence * 4) * 0.9; ctx.strokeStyle = '#fbf6d8'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(f.x, y - 30, 6, 0, TAU); ctx.moveTo(f.x - 5, y - 26); ctx.lineTo(f.x + 5, y - 34); ctx.stroke(); ctx.restore(); }
+  // a crosswind round their head
+  if (S.crosswind > 0) { ctx.save(); ctx.lineCap = 'round'; ctx.strokeStyle = '#fbf6d8'; ctx.lineWidth = 1.8; ctx.globalAlpha = 0.85; for (let i = 0; i < 2; i++) { const a = t * 8 + i * Math.PI; ctx.beginPath(); ctx.ellipse(f.x, y - 22, 16, 6, 0, a, a + 1.8); ctx.stroke(); } ctx.restore(); }
+  // the fire brand: a burning star over them
+  if (S.brand > 0) { ctx.save(); const k = 0.6 + 0.4 * Math.sin(t * 6), r = 7; ctx.globalAlpha = Math.min(1, S.brand * 2) * k; ctx.strokeStyle = '#ffb04a'; ctx.lineWidth = 1.8; for (const s of [1, -1]) { ctx.beginPath(); for (let i = 0; i < 3; i++) { const a = -Math.PI / 2 * s + i * TAU / 3; ctx[i ? 'lineTo' : 'moveTo'](f.x + Math.cos(a) * r, y - 34 + Math.sin(a) * r); } ctx.closePath(); ctx.stroke(); } ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha *= 0.6; ctx.drawImage(sprite('#ff8a3a'), f.x - 10, y - 44, 20, 20); ctx.restore(); }
+  // fury: a red blaze round them
+  if (S.fury > 0) { ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = Math.min(1, S.fury * 2) * (0.35 + 0.15 * Math.sin(t * 14)); ctx.drawImage(sprite('#ff4a2a'), f.x - 30, y - 34, 60, 60); ctx.restore(); if (Math.random() < 0.5) flames(f.x + rr(-12, 12), f.y + rr(-4, 8), 1, { sp: 10, rise: 60, size: 7, life: 0.45 }); }
+  // weightless: a little wind under them
+  if (S.free > 0) { ctx.save(); ctx.strokeStyle = '#ffffff'; ctx.lineCap = 'round'; ctx.lineWidth = 1.6; ctx.globalAlpha = Math.min(1, S.free * 2) * 0.7; for (let i = 0; i < 3; i++) { const a = t * 5 + i * TAU / 3; ctx.beginPath(); ctx.ellipse(f.x, f.y + 8, 18, 6, 0, a, a + 1.4); ctx.stroke(); } ctx.restore(); }
   if (S.mend > 0) { ctx.save(); ctx.fillStyle = 'rgba(150,110,70,0.75)'; for (let i = 0; i < 4; i++) { const a = i * 1.7 + 0.5; ctx.beginPath(); ctx.ellipse(f.x + Math.cos(a) * 8, y + Math.sin(a) * 8, 4, 3, a, 0, TAU); ctx.fill(); } ctx.restore(); }
 }
 function star5(x, y, r, col) { ctx.fillStyle = col; ctx.beginPath(); for (let i = 0; i < 10; i++) { const a = -Math.PI / 2 + i * Math.PI / 5, rr2 = i % 2 ? r * 0.45 : r; ctx[i ? 'lineTo' : 'moveTo'](x + Math.cos(a) * rr2, y + Math.sin(a) * rr2); } ctx.closePath(); ctx.fill(); }
@@ -929,23 +958,32 @@ function drawAirGlyph(f) {
 // A spell's strength (P) is how well it was written; the caster's twist multiplies it (fire's heat, air's wind,
 // water standing in a puddle). Size and reach grow with P, and so does the amount of element it throws out.
 const beats = (a, b) => WAYS[a] && WAYS[a].beats === b;
-const advMul = (a, b) => (beats(a, b) ? 1.25 : beats(b, a) ? 0.8 : 1);
+// the way that beats another hits it a little harder, and takes a little less from it
+const ADV = { up: 1.05, down: 0.95, damp: 0.88 };
+const advMul = (a, b) => (beats(a, b) ? ADV.up : beats(b, a) ? ADV.down : 1);
 const wcol = way => (WAYS[way] ? WAYS[way].color : '#fff');
 let SHOTS = [], WAVES = [], ZONES = [], ENTS = [], STONES = [], TIMERS = [], BEAMS = [];
 
 // how long after it's written a spell comes out (wind), how long you're busy after (rec), and how long a fighter's
 // telegraph lasts for it (aiWind, times their rank's windup)
 const TIMING = {
-  Strike: [0.05, 0.18, 1.0], Shot: [0.06, 0.2, 1.0], Volley: [0.08, 0.25, 1.1], Shield: [0, 0.05, 0.4], Veil: [0, 0.05, 0.4], Armor: [0, 0.05, 0.45], Counter: [0, 0.05, 0.4],
-  Setup: [0.06, 0.2, 0.9], Heal: [0.08, 0.25, 1.0], Move: [0, 0.1, 0.35], Dodge: [0, 0.1, 0.3], Dash: [0.02, 0.15, 0.6], Leap: [0.04, 0.2, 0.8], Launch: [0.08, 0.3, 1.15],
-  Control: [0.08, 0.25, 1.1], Combo: [0.06, 0.25, 1.0], Wave: [0.1, 0.3, 1.15], Beam: [0.08, 0.3, 1.1], Cone: [0.06, 0.2, 1.05], Sweep: [0.08, 0.3, 1.1], Blast: [0.08, 0.3, 1.15],
-  Pull: [0.06, 0.25, 1.0], Push: [0.06, 0.22, 1.0], Hold: [0.06, 0.22, 1.0], Summon: [0.08, 0.3, 1.1], Roll: [0.08, 0.28, 1.1], Lift: [0.04, 0.2, 0.7], Stance: [0.04, 0.15, 0.6],
-  Haste: [0.02, 0.1, 0.5], Wall: [0.04, 0.15, 0.6], Zone: [0.08, 0.25, 1.1], Area: [0.08, 0.25, 1.1], Slam: [0.08, 0.28, 1.1], Flurry: [0.05, 0.2, 1.0], Interrupt: [0.02, 0.15, 0.55],
-  Ki: [0.06, 0.2, 0.9], Ultimate: [0.2, 0.5, 1.6],
+  // reaching out to hit
+  Strike: [0.05, 0.18, 1.0], Shot: [0.06, 0.2, 1.0], Volley: [0.08, 0.25, 1.1], Chill: [0.06, 0.2, 1.0], Homing: [0.06, 0.2, 1.0], Pierce: [0.08, 0.25, 1.1], Break: [0.06, 0.25, 1.05],
+  Flurry: [0.05, 0.2, 1.0], Throw: [0.05, 0.25, 0.9], Grapple: [0.06, 0.22, 1.0], Cone: [0.06, 0.2, 1.05], Push: [0.06, 0.22, 1.0], Yank: [0.06, 0.25, 1.0], Interrupt: [0.02, 0.15, 0.55],
+  // at a place, or all round
+  Pool: [0.06, 0.2, 0.9], Burst: [0.08, 0.25, 1.1], Trap: [0.08, 0.25, 1.1], Freeze: [0.06, 0.2, 1.0], Wash: [0.1, 0.3, 1.15], Summon: [0.08, 0.3, 1.1], Sweep: [0.08, 0.3, 1.1],
+  Barrier: [0.04, 0.15, 0.7], Release: [0.06, 0.25, 1.0], Bomb: [0.06, 0.2, 1.0], Zone: [0.08, 0.25, 1.1], Detonate: [0.06, 0.22, 1.0], Blast: [0.08, 0.3, 1.15], Lob: [0.08, 0.25, 1.1],
+  Spike: [0.08, 0.25, 1.1], Stun: [0.08, 0.28, 1.1], Roll: [0.08, 0.28, 1.1], Sink: [0.08, 0.25, 1.1], Blind: [0.06, 0.22, 1.0], Root: [0.06, 0.22, 1.0], Rockfall: [0.08, 0.3, 1.15], Ground: [0.06, 0.22, 1.0],
+  Launch: [0.08, 0.3, 1.15], Storm: [0.08, 0.25, 1.1], Slam: [0.08, 0.28, 1.1], Wave: [0.1, 0.3, 1.15], Silence: [0.06, 0.2, 0.9], Misdirect: [0.04, 0.15, 0.7], Mark: [0.04, 0.15, 0.7],
+  // on yourself
+  Absorb: [0, 0.05, 0.4], Reflect: [0, 0.05, 0.4], Counter: [0, 0.05, 0.35], Conceal: [0, 0.05, 0.4], Thorns: [0, 0.05, 0.45], Armor: [0, 0.05, 0.45], Deflect: [0, 0.05, 0.4], Statue: [0, 0.05, 0.35],
+  Decoy: [0, 0.08, 0.35], Dodge: [0, 0.1, 0.3], Glide: [0, 0.1, 0.35], Dash: [0.02, 0.15, 0.6], Swap: [0.04, 0.15, 0.6], Tunnel: [0.04, 0.2, 0.8], Leap: [0.04, 0.2, 0.8], Lift: [0.04, 0.2, 0.7],
+  Wall: [0.04, 0.15, 0.6], Stance: [0.04, 0.15, 0.6], Free: [0.02, 0.1, 0.45], Fury: [0.02, 0.1, 0.5], Haste: [0.02, 0.1, 0.5], Cleanse: [0.04, 0.15, 0.6], Echo: [0.02, 0.1, 0.5],
+  Heal: [0.08, 0.25, 1.0], Ki: [0.06, 0.2, 0.9], Ultimate: [0.2, 0.5, 1.6],
 };
 const timing = m => TIMING[m.tag] || [0.06, 0.22, 1.0];
 // fire's heat: what each spell adds
-const HEAT = { jab: 6, fireball: 10, breath: 14, rocket: 8, flameshield: 8, roundhouse: 12, firewall: 12, embers: 10, explosion: 16, knee: 10, whip: 10, lava: 14, ignite: 6, haze: 8, meteor: 20, firework: 12, stoke: 25, inferno: 30 };
+const HEAT = { jab: 6, fireball: 10, breath: 14, rocket: 8, flameshield: 8, roundhouse: 12, firewall: 12, embers: 10, charge: 14, knee: 10, whip: 10, lava: 14, ignite: 6, meteor: 20, firework: 12, brand: 6, inferno: 30 };
 
 // ── where things are ──
 const foeOf = f => (FIGHT ? (f === player ? FIGHT.foe : f === FIGHT.foe ? player : null) : null);
@@ -965,17 +1003,38 @@ function closeIn(f, t, reach, lunge) {
   return gap - (f.st.root > 0 || f.st.high > 0 ? 0 : step) <= reach && !(t.st.high > 0 && f.st.high <= 0) && t.st.air <= 0.5;
 }
 const later = (t, fn) => TIMERS.push({ t, fn });
+// (for testing: which spell each bit of damage came from)
+let DMGLOG = null, CUR = null;
+function stamp(key) { if (!DMGLOG) return; for (const L of [SHOTS, WAVES, ZONES, ENTS, TIMERS]) for (const o of L) if (o.spell === undefined) o.spell = key; for (const f of [player, FIGHT && FIGHT.foe]) if (f && f.dash && f.dash.spell === undefined) f.dash.spell = key; }
+// what a spell goes at: the foe, or a water double of them standing in for them
+const decoyOf = g => (g ? ENTS.find(e => e.kind === 'double' && e.owner === g && e.life > 0) : null);
+const aimOf = f => { const t = foeOf(f); return decoyOf(t) || t; };
+function popDecoy(e, quiet) {
+  if (e.popped) return;
+  e.popped = true; e.life = 0;
+  splash(e.x, e.y, 22, { r: 40, up: 220 }); ripple(e.x, e.y, 40);
+  if (!quiet) { words(e.x, e.y - 40, 'Only water!', ELC.water.light, 14); SFX.block(); }
+  ZONES.push({ kind: 'puddle', owner: e.owner, way: 'water', x: e.x, y: e.y, r: 50, grow: 0, life: 7, max: 7, tick: 0, P: 1 });
+}
+function hitDecoy(owner, x, y, r) { const d = decoyOf(foeOf(owner)); if (d && Math.hypot(d.x - x, d.y - y) < r + d.r) { popDecoy(d); return true; } return false; }
+// rooted like a mountain, turned to jade, weightless or cased in stone: nothing shoves them about
+const unmoved = t => t.st.stance > 0 || t.st.statue > 0 || t.st.free > 0 || (t.st.armorKind === 'stone' && t.st.armor > 0);
 function mark(x, y, r, life, way) { ZONES.push({ kind: 'mark', owner: null, way, x, y, r, life, max: life, tick: 0 }); }
 
 // ── a spell, from the moment it's written (or a fighter starts writing it in the air) to its end ──
-function canCast(f) { const S = f.st; return f.hp > 0 && S.stun <= 0 && S.frozen <= 0 && S.air <= 0 && S.under <= 0 && S.leap <= 0 && S.mend <= 0; }
+// stunned, frozen, thrown up, underground, mid-leap or turned to jade: can't do a thing. Silenced: can walk, can't write.
+const held = f => { const S = f.st; return S.stun > 0 || S.frozen > 0 || S.air > 0 || S.under > 0 || S.leap > 0 || S.mend > 0 || S.statue > 0; };
+function canCast(f) { return f.hp > 0 && !held(f) && f.st.silence <= 0; }
+// what a heavy fighter can't do
+const LIGHT = new Set(['Glide', 'Dash', 'Tunnel', 'Dodge', 'Leap', 'Swap', 'Grapple']);
 function startMove(f, move, power, target) {
   const cost = move.cost;
+  if (f.st.heavy > 0 && LIGHT.has(move.tag)) { if (f.isPlayer) { words(f.x, f.y - 34, 'Too heavy!', ELC.earth.light, 14); SFX.fizzle(); } return false; }
   if (f.ki < cost) { if (f.isPlayer) { words(f.x, f.y - 34, 'Not enough ki', '#9fd0ff', 14); SFX.fizzle(); } return false; }
   if (!canCast(f)) return false;
   f.ki -= cost;
-  const [w, , aw] = timing(move), slowCast = move.way === 'earth' ? 0.1 : 0;
-  const wind = f.isPlayer ? w + slowCast : RANKS[f.rank].windup * aw * (move.way === 'earth' ? 1.15 : 1);
+  const [w, , aw] = timing(move), slowCast = move.way === 'earth' ? 0.1 : 0, fury = f.st.fury > 0 ? 0.5 : 1;
+  const wind = (f.isPlayer ? w + slowCast : RANKS[f.rank].windup * aw * (move.way === 'earth' ? 1.15 : 1)) * fury;
   f.act = { move, power, target, phase: 'wind', t: wind, wind, hits: 0, next: 0 };
   if (!f.isPlayer) f.glyph = { move, t: 0, dur: wind };
   f.pose = 'cast'; f.poseT = 0;
@@ -988,30 +1047,48 @@ function stepAct(f, dt) {
   if (!canCast(f) && A.phase === 'wind') { f.act = null; f.glyph = null; return; } // (a stun breaks a spell in the making)
   A.t -= dt;
   if (f.glyph) f.glyph.t += dt;
-  if (A.phase === 'wind' && A.t <= 0) { f.glyph = null; A.phase = 'go'; A.t = timing(A.move)[1]; cast(f, A); }
+  if (A.phase === 'wind' && A.t <= 0) { f.glyph = null; A.phase = 'go'; A.t = timing(A.move)[1] * (f.st.fury > 0 ? 0.5 : 1); cast(f, A); }
   else if (A.phase === 'go') {
-    if (A.tick) A.tick(dt);
+    if (A.tick) { CUR = A.move.key; A.tick(dt); CUR = null; }
     if (A.t <= 0 && !(A.chan > 0)) f.act = null;
   }
 }
 function castMult(f, m) {
   let k = 1;
-  if (m.way === 'fire') k *= 1 + 0.5 * f.heat / 100;
+  if (m.way === 'fire') k *= (1 + 0.5 * f.heat / 100) * (f.st.soak > 0 ? ADV.damp : 1);
   if (m.way === 'air') k *= 0.75 + 0.6 * f.wind / 100;
   if (m.way === 'water' && inZone(f, 'puddle')) k *= 1.25;
   if (f.st.blind > 0) k *= 0.6;
   return k;
 }
+// spells that act on the caster, or all round them, rather than going at the foe
+const SELF = new Set(['Absorb', 'Heal', 'Glide', 'Conceal', 'Reflect', 'Counter', 'Ki', 'Decoy', 'Thorns', 'Dash', 'Release', 'Sweep', 'Fury', 'Armor', 'Statue', 'Lift', 'Stance', 'Dodge', 'Deflect', 'Cleanse', 'Haste', 'Echo', 'Free', 'Wall', 'Barrier', 'Stun']);
 function cast(f, A) {
-  const m = A.move, t = A.target || foeOf(f), P = A.power;
+  const m = A.move, foe = foeOf(f), P = A.power;
+  let t = A.target || foe;
+  if (t && t === foe && !SELF.has(m.tag)) {
+    const dec = decoyOf(foe);
+    if (dec) t = dec;
+    else if (f.st.crosswind > 0 && !gone(t)) {
+      // the wind blows it wide of them
+      f.st.crosswind = 0;
+      const o = rr(0, TAU), dd = rr(120, 160); let px = t.x + Math.cos(o) * dd, py = t.y + Math.sin(o) * dd;
+      if (FIGHT) { const q = Math.hypot(px - FIGHT.cx, py - FIGHT.cy), mr = FIGHT.r - 20; if (q > mr) { px = FIGHT.cx + (px - FIGHT.cx) * mr / q; py = FIGHT.cy + (py - FIGHT.cy) * mr / q; } }
+      t = { isPhantom: true, x: px, y: py, r: 15, hp: 1, kx: 0, ky: 0, st: freshStatus() };
+      swirl(f.x, f.y, 26, 8, { spin: 9, vr: 0, life: 0.5 }); words(f.x, f.y - 46, 'Blown wide!', ELC.air.light, 13);
+    }
+  }
   const a = t && !gone(t) ? angTo(f, t) + (f.st.blind > 0 ? rr(-0.5, 0.5) : 0) + (t.st.veil > 0 && !f.isPlayer ? rr(-0.35, 0.35) : 0) : f.face;
   f.face = a;
   const c = { f, t: t && t.hp > 0 ? t : null, m, A, way: m.way, P, pw: P * castMult(f, m), sz: 0.45 + 0.55 * Math.min(P, 1.05), am: Math.pow(clamp(P, 0.4, 1.05), 1.6), a };
-  if (m.way === 'fire' && HEAT[m.key]) { f.heat = Math.min(100, f.heat + HEAT[m.key]); f.heatT = 0; }
+  if (m.way === 'fire' && f.st.soak > 0) { smoke(f.x, f.y - 6, 3, { size: 10 }); if (f.isPlayer) words(f.x, f.y - 58, 'Damp', '#bfe6ff', 11, 0.8); }
+  if (m.way === 'fire' && HEAT[m.key]) { f.heat = Math.min(100, f.heat + HEAT[m.key] * (f.st.soak > 0 ? 0.5 : 1)); f.heatT = 0; }
   f.lastCast = m;
-  flourish(f, m, P, a);
+  if (m.tag !== 'Echo') f.lastSpell = m;
+  if (!A.echo) flourish(f, m, P, a);
   const fn = SPELL[m.id];
-  if (fn) fn(c);
+  if (DMGLOG) { const k = '#' + m.id; DMGLOG[k] = (DMGLOG[k] || 0) + 1; }
+  CUR = m.key; if (fn) fn(c); stamp(m.key); CUR = null;
 }
 
 // ── the building blocks ──
@@ -1039,6 +1116,7 @@ function bolt(c, o) {
 function inCone(c, len, half) { const { f, t } = c; if (!t || gone(t)) return false; const d = dist(f, t), da = Math.abs(((angTo(f, t) - c.a + 3 * Math.PI) % TAU) - Math.PI); return d - t.r <= len && da <= half + Math.atan2(t.r, Math.max(1, d)); }
 // a blast at a point: whoever stands in it is hit
 function blastAt(owner, x, y, r, dmg, o = {}) {
+  hitDecoy(owner, x, y, r);
   const t = foeOf(owner);
   if (t && !gone(t) && Math.hypot(t.x - x, t.y - y) < r + t.r && !(o.ground && aloft(t))) return hurt(t, owner, dmg, { ang: Math.atan2(t.y - y, t.x - x), ...o });
   return false;
@@ -1117,10 +1195,10 @@ const SPELL = {
       splash(at.x, at.y, amt(big ? 30 : 18, c.am), { up: 320, sp: 160, r: r });
       decal('wet', at.x, at.y, r, { life: 8 });
       if (big) { cam.shake = Math.max(cam.shake, 5); words(at.x, at.y - 50, 'From the puddle!', ELC.water.light, 13); }
-      blastAt(f, at.x, at.y, r, big ? 18 : 12, { power: c.pw, launch: 0.9, soak: 3, big, am: c.am });
+      blastAt(f, at.x, at.y, r, big ? 18 : 12, { power: c.pw, soak: 6, slow: big ? 2.5 : 1.5, knock: 60, big, am: c.am });
     });
   },
-  'water:shards'(c) { bolt(c, { kind: 'ice', n: 3, spread: 0.18, speed: 600, r: 6, dmg: 6, hit: { freeze: 1.4, chill: 1, knock: 40 } }); iceBurst(c.f.x + Math.cos(c.a) * 20, c.f.y + Math.sin(c.a) * 20, amt(5, c.am), { a: c.a, spread: 0.5 }); },
+  'water:shards'(c) { bolt(c, { kind: 'ice', n: 3, spread: 0.18, speed: 600, r: 6, dmg: 6, hit: { chill: 2, knock: 40 } }); iceBurst(c.f.x + Math.cos(c.a) * 20, c.f.y + Math.sin(c.a) * 20, amt(5, c.am), { a: c.a, spread: 0.5 }); },
   'water:whirlpool'(c) {
     const f = c.f, at = c.t && dist(f, c.t) < 360 ? { x: c.t.x, y: c.t.y } : { x: f.x + Math.cos(c.a) * 160, y: f.y + Math.sin(c.a) * 160 };
     ZONES.push({ kind: 'whirlpool', owner: f, way: 'water', x: at.x, y: at.y, r: 82 * c.sz, life: 3.5, max: 3.5, tick: 0, P: c.pw, am: c.am });
@@ -1136,7 +1214,7 @@ const SPELL = {
       decal('frost', t.x, t.y, 40, { life: 6 }); iceBurst(t.x, t.y, amt(10, c.am));
     }
   },
-  'water:tidal'(c) { WAVES.push({ kind: 'tidal', owner: c.f, way: 'water', x: c.f.x + Math.cos(c.a) * 24, y: c.f.y + Math.sin(c.a) * 24, a: c.a, speed: 360, travel: 0, max: 500, width: 170 * c.sz, dmg: 13, P: c.pw, am: c.am, hit: false, opts: { soak: 4, knock: 300 } }); splash(c.f.x, c.f.y, amt(16, c.am), { r: 40 }); },
+  'water:tidal'(c) { WAVES.push({ kind: 'tidal', owner: c.f, way: 'water', x: c.f.x + Math.cos(c.a) * 24, y: c.f.y + Math.sin(c.a) * 24, a: c.a, speed: 360, travel: 0, max: 500, width: 170 * c.sz, dmg: 12, P: c.pw, am: c.am, hit: false, wash: true, washed: new Set(), opts: { soak: 4, knock: 160 } }); splash(c.f.x, c.f.y, amt(16, c.am), { r: 40 }); },
   'water:mist'(c) { const f = c.f; f.st.veil = 4.5; f.st.veilK = 0.7; f.st.veilKind = 'mist'; mist(f.x, f.y, amt(16, c.am), { r: 30, size: 26 }); },
   'water:undertow'(c) {
     const { f, t } = c;
@@ -1152,16 +1230,18 @@ const SPELL = {
     ENTS.push({ kind: 'dragon', owner: f, way: 'water', x: f.x + Math.cos(c.a) * 20, y: f.y + Math.sin(c.a) * 20, a: c.a, speed: 270, life: 3, max: 3, bites: 3, cool: 0, segs, P: c.pw, am: c.am, sz: c.sz });
     splash(f.x, f.y, amt(16, c.am), { r: 40 });
   },
-  'water:jet'(c) {
-    const { f, t, a } = c, len = 440 * c.sz, ex = f.x + Math.cos(a) * len, ey = f.y + Math.sin(a) * len;
-    BEAMS.push({ kind: 'jet', way: 'water', owner: f, x1: f.x + Math.cos(a) * 18, y1: f.y + Math.sin(a) * 18, x2: ex, y2: ey, life: 0.32, max: 0.32, w: 5 * c.sz });
-    if (t && !gone(t) && !(t.st.high > 0)) {
-      const dx = t.x - f.x, dy = t.y - f.y, along = dx * Math.cos(a) + dy * Math.sin(a), across = Math.abs(-dx * Math.sin(a) + dy * Math.cos(a));
-      if (along > 0 && along < len + t.r && across < 16 * c.sz + t.r) { hurt(t, f, 14, { power: c.pw, knock: 190, ang: a, soak: 3, shot: true, beam: true, am: c.am }); splash(t.x, t.y, amt(14, c.am), { sp: 180 }); }
-    }
-    drops(ex, ey, amt(8, c.am), { a, spread: 0.6, sp: 150 });
+  'water:pushhands'(c) { const f = c.f; f.st.counter = 1.1; f.counterPow = c.pw; f.pose = 'guard'; f.poseT = 0; ripple(f.x, f.y, 30); swirl(f.x, f.y, 26, amt(10, c.am), { col: 'rgba(170,220,255,0.95)', spin: 6, vr: 0, life: 0.9 }); },
+  'water:ebb'(c) {
+    const { f, t } = c;
+    if (!t || t.isPhantom || gone(t) || dist(f, t) > 460 || t.st.high > 0 || t.st.statue > 0) { splash(f.x, f.y, 6); words(f.x, f.y - 40, 'Nothing to flow past', C.muted, 12); return; }
+    if (t.isDecoy) { BEAMS.push({ kind: 'current', way: 'water', owner: f, x1: f.x, y1: f.y, x2: t.x, y2: t.y, life: 0.4, max: 0.4, w: 8 }); hurt(t, f, 0); return; }
+    const x0 = f.x, y0 = f.y;
+    splash(f.x, f.y, amt(12, c.am), { r: 30 }); splash(t.x, t.y, amt(12, c.am), { r: 30 });
+    BEAMS.push({ kind: 'current', way: 'water', owner: f, x1: f.x, y1: f.y, x2: t.x, y2: t.y, life: 0.4, max: 0.4, w: 8 });
+    ghostOf(f, ELC.water.main); ghostOf(t, ELC.water.main);
+    f.x = t.x; f.y = t.y; t.x = x0; t.y = y0; f.kx = f.ky = t.kx = t.ky = 0; f.dash = t.dash = null;
+    t.st.soak = Math.max(t.st.soak, 3); words(f.x, f.y - 44, 'Ebb and flow', ELC.water.light, 13);
   },
-  'water:icearmor'(c) { const f = c.f; f.st.armor = 5; f.st.armorK = 0.55; f.st.armorKind = 'ice'; iceBurst(f.x, f.y, amt(12, c.am), { sp: 70 }); decal('frost', f.x, f.y, 30, { life: 5 }); f.pose = 'guard'; f.poseT = 0; },
   'water:draw'(c) {
     const f = c.f, pz = zoneUnder(f, 'puddle');
     f.ki = Math.min(f.maxKi, f.ki + 40 * (0.6 + 0.4 * Math.min(1, c.P)) + (pz ? 30 : 0));
@@ -1169,17 +1249,18 @@ const SPELL = {
     for (let i = 0; i < amt(14, c.am); i++) { const aa = rr(0, TAU), d = rr(30, 70); fx({ k: 'drop', x: f.x + Math.cos(aa) * d, y: f.y + Math.sin(aa) * d, z: 2, vx: -Math.cos(aa) * d * 2, vy: -Math.sin(aa) * d * 2, vz: 120, g: 120, life: 0.5, max: 0.5, size: 2.4, drag: 0 }); }
     ripple(f.x, f.y, 50);
   },
-  'water:needles'(c) {
-    const f = c.f, at = c.t && dist(f, c.t) < 400 ? { x: c.t.x, y: c.t.y } : { x: f.x + Math.cos(c.a) * 170, y: f.y + Math.sin(c.a) * 170 };
-    ZONES.push({ kind: 'needles', owner: f, way: 'water', x: at.x, y: at.y, r: 86 * c.sz, life: 1.6, max: 1.6, tick: 0, P: c.pw, am: c.am });
-    ENTS.push({ kind: 'cloud', owner: null, way: 'water', x: at.x, y: at.y, life: 1.8, max: 1.8, am: c.am, fixed: true, dark: true });
+  'water:double'(c) {
+    const f = c.f, t = c.t, side = (t ? angTo(f, t) : f.face) + (Math.random() < 0.5 ? 1.5708 : -1.5708);
+    ENTS.push({ kind: 'double', owner: f, way: 'water', x: f.x, y: f.y, face: f.face, life: 4.5, max: 4.5, gi: f.gi, trim: f.trim, skin: f.skin, hair: f.hair, belt: f.belt, isDecoy: true, r: 15, hp: 1, kx: 0, ky: 0, st: freshStatus() });
+    dashTo(f, f.x + Math.cos(side) * 85, f.y + Math.sin(side) * 85, 0.2, { invuln: 0.2 });
+    splash(f.x, f.y, amt(10, c.am), { r: 26 });
   },
   'water:flood'(c) {
     const f = c.f, t = c.t, F = FIGHT || { cx: f.x, cy: f.y, r: 255 }, P = c.pw;
     cam.shake = Math.max(cam.shake, 8); SFX.gong();
     ZONES.push({ kind: 'flood', owner: f, way: 'water', x: F.cx, y: F.cy, r: F.r, life: 3.2, max: 3.2, tick: 0, P });
     if (t) t.st.soak = Math.max(t.st.soak, 6);
-    later(0.6, () => { WAVES.push({ kind: 'tidal', owner: f, way: 'water', x: f.x, y: f.y, a: c.a, speed: 520, travel: 0, max: 560, width: 420, dmg: 26, P, am: c.am * 1.4, hit: false, big: true, opts: { soak: 6, knock: 280 } }); });
+    later(0.6, () => { WAVES.push({ kind: 'tidal', owner: f, way: 'water', x: f.x, y: f.y, a: c.a, speed: 520, travel: 0, max: 560, width: 420, dmg: 26, P, am: c.am * 1.4, hit: false, big: true, wash: true, washed: new Set(), opts: { soak: 6, knock: 280 } }); });
     later(1.5, () => {
       ring(F.cx, F.cy, 20, F.r, '#e8fbff', 0.8, 8); SFX.block();
       for (let i = 0; i < 10; i++) { const aa = rr(0, TAU), d = rr(0, F.r); iceBurst(F.cx + Math.cos(aa) * d, F.cy + Math.sin(aa) * d, 4, { sp: 60 }); }
@@ -1198,12 +1279,12 @@ const SPELL = {
       A.chan -= dt; tick -= dt; const a = f.face, ox = f.x + Math.cos(a) * 18, oy = f.y + Math.sin(a) * 18;
       for (let i = 0; i < amt(5, c.am); i++) { const aa = a + rr(-half, half), v = rr(220, 340) * c.sz; fx({ k: 'flame', x: ox, y: oy, vx: Math.cos(aa) * v, vy: Math.sin(aa) * v, life: len / v * 1.1, max: len / v * 1.1, size: rr(7, 12), drag: 0.5, grow: 2.2 }); }
       if (Math.random() < 0.3) smoke(ox + Math.cos(a) * len * 0.8, oy + Math.sin(a) * len * 0.8, 1, { size: 12 });
-      if (tick <= 0) { tick = 0.1; const t = foeOf(f); if (t && inCone({ f, t, a }, len, half)) hurt(t, f, 2.2, { power: c.pw, burn: 2, quiet: true, shot: true, am: c.am }); }
+      if (tick <= 0) { tick = 0.1; const t = aimOf(f); if (t && inCone({ f, t, a }, len, half)) hurt(t, f, 2.2, { power: c.pw, burn: 2, quiet: true, shot: true, am: c.am }); }
       if (A.chan <= 0) { decal('scorch', f.x + Math.cos(a) * len * 0.6, f.y + Math.sin(a) * len * 0.6, 40 * c.sz, { life: 6 }); }
     };
   },
   'fire:rocket'(c) {
-    const { f, t } = c, a = t ? angTo(f, t) : f.face, d = Math.min(230 * c.sz, t ? Math.max(40, dist(f, t) - 40) : 230);
+    const { f, t } = c, moving = Math.hypot(f.vx, f.vy) > 20, a = moving ? Math.atan2(f.vy, f.vx) : t ? angTo(t, f) + rr(-0.4, 0.4) : f.face + Math.PI, d = 230 * c.sz;
     dashTo(f, f.x + Math.cos(a) * d, f.y + Math.sin(a) * d, 0.22, { invuln: 0.18, trail: 'fire', way: 'fire' });
     flames(f.x, f.y, amt(14, c.am), { a: a + Math.PI, spread: 0.5, sp: 160, size: 10 }); smoke(f.x, f.y, amt(3, c.am));
   },
@@ -1232,25 +1313,21 @@ const SPELL = {
     blastAt(f, f.x, f.y, r, 5 + h * 0.24, { power: P, knock: 150 + h * 2, burn: 2, big: h > 50, am: c.am });
   },
   'fire:embers'(c) { bolt(c, { kind: 'ember', n: 6, spread: 0.18, speed: 470, r: 4, dmg: 2.6, life: 1.1, hit: { burn: 2, knock: 20 } }); embers(c.f.x, c.f.y, amt(10, c.am), { a: c.a, spread: 0.5, sp: 200 }); },
-  'fire:explosion'(c) {
-    const f = c.f, at = c.t ? { x: c.t.x, y: c.t.y } : { x: f.x + Math.cos(c.a) * 170, y: f.y + Math.sin(c.a) * 170 }, r = 74 * c.sz;
-    mark(at.x, at.y, r, 0.65, 'fire');
-    later(0.65, () => {
-      cam.shake = Math.max(cam.shake, 7); SFX.hit(true);
-      ring(at.x, at.y, 8, r * 1.2, '#fff1c4', 0.4, 10); ring(at.x, at.y, 8, r, '#ff6a2a', 0.5, 6);
-      for (let i = 0; i < amt(26, c.am); i++) { const aa = rr(0, TAU), v = rr(0.3, 1) * r * 3; fx({ k: 'flame', x: at.x, y: at.y, vx: Math.cos(aa) * v, vy: Math.sin(aa) * v, life: 0.5, max: 0.5, size: rr(10, 16), drag: 4, grow: 1.5 }); }
-      sparks(at.x, at.y, amt(16, c.am), { sp: 380 }); smoke(at.x, at.y, amt(8, c.am), { size: 22, life: 1.6 }); rocks(at.x, at.y, amt(4, c.am), { sp: 140, up: 200, size: 3 });
-      decal('scorch', at.x, at.y, r * 1.1, { life: 10 });
-      blastAt(f, at.x, at.y, r, 17, { power: c.pw, knock: 300, burn: 2, big: true, am: c.am });
-    });
+  'fire:charge'(c) {
+    const { f, t } = c;
+    if (!t || gone(t) || dist(f, t) > 440) { sparks(f.x + Math.cos(c.a) * 40, f.y + Math.sin(c.a) * 40, 6); words(f.x, f.y - 40, 'Out of reach', C.muted, 12); return; }
+    ENTS.push({ kind: 'charge', owner: f, way: 'fire', x: f.x, y: f.y, x0: f.x, y0: f.y, target: t, stuck: false, fly: 0.25, t: 0, life: 1.65, max: 1.65, P: c.pw, am: c.am, sz: c.sz, px: t.x, py: t.y });
+    sparks(f.x, f.y, amt(6, c.am), { a: c.a, spread: 0.4, sp: 160 });
   },
-  'fire:knee'(c) { melee(c, { reach: 55, lunge: 50, dmg: 11, pose: 'kick', hit: { launch: 0.8, burn: 2, knock: 40, big: true }, fx: (x, y) => { flames(x, y, amt(16, c.am), { a: -Math.PI / 2, spread: 0.6, sp: 160, rise: 90, size: 11 }); embers(x, y, amt(10, c.am), { a: -Math.PI / 2 }); } }); },
+  'fire:knee'(c) { melee(c, { reach: 55, lunge: 50, dmg: 11, pose: 'kick', hit: { burn: 2, knock: 140, big: true, breakGuard: true }, fx: (x, y) => { flames(x, y, amt(16, c.am), { a: -Math.PI / 2, spread: 0.6, sp: 160, rise: 90, size: 11 }); embers(x, y, amt(10, c.am), { a: -Math.PI / 2 }); } }); },
   'fire:whip'(c) {
     const { f, t } = c;
-    if (t && dist(f, t) < 320 && !gone(t) && !(t.st.high > 0)) {
-      BEAMS.push({ kind: 'firewhip', way: 'fire', owner: f, x1: f.x, y1: f.y, x2: t.x, y2: t.y, life: 0.35, max: 0.35, w: 6 * c.sz, bend: rr(-0.6, 0.6) });
-      if (hurt(t, f, 6, { power: c.pw, burn: 3, am: c.am })) pullTo(t, f, 58, 7);
-      flames(t.x, t.y, amt(10, c.am), { sp: 80 });
+    if (t && !t.isPhantom && dist(f, t) < 340 && !gone(t) && !(t.st.high > 0)) {
+      BEAMS.push({ kind: 'firewhip', way: 'fire', owner: f, x1: f.x, y1: f.y, x2: t.x, y2: t.y, life: 0.3, max: 0.3, w: 6 * c.sz, bend: rr(-0.5, 0.5) });
+      if (t.isDecoy) hurt(t, f, 0);
+      const a = angTo(f, t), d = Math.max(0, dist(f, t) - 34);
+      dashTo(f, f.x + Math.cos(a) * d, f.y + Math.sin(a) * d, 0.2, { hit: { dmg: 7, power: c.pw, knock: 90, am: c.am, burn: 3, melee: true } });
+      flames(f.x, f.y, amt(8, c.am), { a: a + Math.PI, spread: 0.5, sp: 120 });
     } else BEAMS.push({ kind: 'firewhip', way: 'fire', owner: f, x1: f.x, y1: f.y, x2: f.x + Math.cos(c.a) * 300, y2: f.y + Math.sin(c.a) * 300, life: 0.3, max: 0.3, w: 5, bend: 0.4 });
   },
   'fire:lava'(c) {
@@ -1267,7 +1344,7 @@ const SPELL = {
     if (b > 0) { hurt(t, f, 4 + 4 * b, { power: c.pw, big: b > 2.5, am: c.am }); t.st.burn = 0; words(t.x, t.y - 46, 'Ignite!', '#ffd27a', 15); }
     else hurt(t, f, 4, { power: c.pw, burn: 2, am: c.am });
   },
-  'fire:haze'(c) { const f = c.f; f.st.veil = 3.5; f.st.veilK = 0.6; f.st.veilKind = 'haze'; for (let i = 0; i < amt(10, c.am); i++) flames(f.x + rr(-20, 20), f.y + rr(-10, 10), 1, { sp: 10, rise: 50, size: 6, life: 0.9 }); },
+  'fire:fury'(c) { const f = c.f; f.st.fury = 5; f.heat = Math.min(100, f.heat + 10); f.heatT = 0; ring(f.x, f.y, 10, 54, '#ff6a2a', 0.45, 5); flames(f.x, f.y + 4, amt(16, c.am), { sp: 70, rise: 80, jit: 14, size: 10 }); words(f.x, f.y - 46, 'Fury!', '#ff8a3a', 15); SFX.drum(1); },
   'fire:meteor'(c) {
     const f = c.f, at = c.t ? { x: c.t.x, y: c.t.y } : { x: f.x + Math.cos(c.a) * 200, y: f.y + Math.sin(c.a) * 200 }, r = 88 * c.sz;
     mark(at.x, at.y, r, 1.1, 'fire');
@@ -1294,7 +1371,12 @@ const SPELL = {
     for (const side of [-1, 1]) for (let i = 0; i < amt(14, c.am); i++) { const u = i / 14, aa = -Math.PI / 2 + side * (0.6 + u * 1.2), v = 120 + u * 120; fx({ k: 'flame', x: f.x + side * u * 20, y: f.y, vx: Math.cos(aa) * v, vy: Math.sin(aa) * v - 40, life: 0.7, max: 0.7, size: 10 - u * 4, drag: 2, grow: 0.5 }); }
     embers(f.x, f.y, amt(16, c.am), { sp: 100, rise: 90 }); ring(f.x, f.y, 10, 60, '#ffd27a', 0.6, 4);
   },
-  'fire:stoke'(c) { const f = c.f; f.ki = Math.min(f.maxKi, f.ki + 40 * (0.6 + 0.4 * Math.min(1, c.P))); flames(f.x, f.y + 4, amt(14, c.am), { sp: 50, rise: 70, jit: 16 }); swirl(f.x, f.y, 44, amt(10, c.am), { col: 'rgba(255,170,90,0.9)', spin: 9, vr: -60 }); },
+  'fire:brand'(c) {
+    const { f, t } = c;
+    if (!t || t.isPhantom || gone(t) || dist(f, t) > 460) { flames(f.x + Math.cos(c.a) * 50, f.y + Math.sin(c.a) * 50, 5); return; }
+    if (t.isDecoy) { hurt(t, f, 0); return; }
+    t.st.brand = 5; t.brandBy = f; ring(t.x, t.y, 34, 6, '#ffb04a', 0.45, 4); flames(t.x, t.y - 18, amt(8, c.am), { sp: 30, rise: 40, size: 7 }); words(t.x, t.y - 48, 'Branded', '#ffb04a', 14);
+  },
   'fire:inferno'(c) {
     const f = c.f, R = 215, P = c.pw;
     cam.shake = Math.max(cam.shake, 9); SFX.gong();
@@ -1322,7 +1404,7 @@ const SPELL = {
     later(0.35, () => {
       ENTS.push({ kind: 'spike', owner: f, way: 'earth', x: at.x, y: at.y, life: 0.6, max: 0.6, sz: c.sz });
       rocks(at.x, at.y, amt(10, c.am), { sp: 140, up: 260 }); dust(at.x, at.y, amt(6, c.am));
-      blastAt(f, at.x, at.y, r, 13, { power: c.pw, launch: 0.8, knock: 30, ground: true, big: true, am: c.am });
+      blastAt(f, at.x, at.y, r, 13, { power: c.pw, knock: 90, ground: true, big: true, am: c.am });
       later(0.4, () => stoneAt(f, 'rock', at.x, at.y, { r: 15, hp: 24, life: 10 }));
     });
   },
@@ -1332,11 +1414,7 @@ const SPELL = {
     ENTS.push({ kind: 'quake', owner: f, way: 'earth', x: f.x, y: f.y, r: 10, max: 178 * c.sz, speed: 400, life: 0.6, hit: false, P: c.pw, am: c.am });
     decal('crack', f.x, f.y, 70 * c.sz, { life: 9 });
   },
-  'earth:clay'(c) {
-    const { f, A } = c; A.chan = 1.5; f.st.mend = 1.5; const total = 26 * c.pw * WAYMOD.earth.heal;
-    A.tick = dt => { A.chan -= dt; f.hp = Math.min(f.maxHp, f.hp + total / 1.5 * dt); if (Math.random() < 0.5) dust(f.x + rr(-12, 12), f.y + rr(-12, 12), 1, { size: 7, sp: 10 }); };
-    SFX.heal(); rocks(f.x, f.y, amt(6, c.am), { sp: 30, up: 80, size: 3 });
-  },
+  'earth:statue'(c) { const f = c.f; f.st.statue = 1.6; f.dash = null; f.kx = f.ky = 0; f.statueHeal = 8 * Math.min(1.05, c.P); dust(f.x, f.y, amt(6, c.am), { sp: 50 }); burst(f.x, f.y, '#9fe0b8', amt(10, c.am), 80, 0.6, 6); words(f.x, f.y - 46, 'Jade', '#9fe0b8', 14); f.pose = 'guard'; f.poseT = 0; },
   'earth:shatter'(c) {
     const f = c.f, t = c.t, mine = myStones(f); let n = 0;
     if (!mine.length) { words(f.x, f.y - 40, 'No stones to break', C.muted, 12); dust(f.x, f.y, 3); return; }
@@ -1380,7 +1458,7 @@ const SPELL = {
     const f = c.f, at = c.t && dist(f, c.t) < 400 ? { x: c.t.x, y: c.t.y } : { x: f.x + Math.cos(c.a) * 170, y: f.y + Math.sin(c.a) * 170 }, R = 90 * c.sz;
     mark(at.x, at.y, R, 1.1, 'earth');
     for (let i = 0; i < 6; i++) later(0.15 + i * 0.16, () => {
-      const tt = foeOf(f), aim = tt && Math.random() < 0.6 ? { x: tt.x + rr(-14, 14), y: tt.y + rr(-14, 14) } : { x: at.x + rr(-R, R) * 0.8, y: at.y + rr(-R, R) * 0.8 };
+      const tt = aimOf(f), aim = tt && Math.random() < 0.6 ? { x: tt.x + rr(-14, 14), y: tt.y + rr(-14, 14) } : { x: at.x + rr(-R, R) * 0.8, y: at.y + rr(-R, R) * 0.8 };
       ENTS.push({ kind: 'fall', owner: f, way: 'earth', x: aim.x, y: aim.y, life: 0.25, max: 0.25, size: rr(9, 14) * c.sz, seed: (Math.random() * 999) | 0 });
       later(0.25, () => { rocks(aim.x, aim.y, amt(5, c.am), { sp: 120, up: 160 }); dust(aim.x, aim.y, amt(3, c.am)); cam.shake = Math.max(cam.shake, 2.5); blastAt(f, aim.x, aim.y, 30, 3.6, { power: c.pw, knock: 90, am: c.am }); if (i === 2 || i === 5) stoneAt(f, 'rock', aim.x, aim.y, { r: 14, hp: 20, life: 9 }); });
     });
@@ -1397,17 +1475,21 @@ const SPELL = {
   },
   'earth:crystal'(c) { bolt(c, { kind: 'crystal', speed: 680, r: 7, dmg: 15, through: true, hit: { knock: 160 } }); sparks(c.f.x, c.f.y, amt(6, c.am), { a: c.a, spread: 0.4, col: '#e7d8ff' }); },
   'earth:stance'(c) { const f = c.f; f.st.stance = 3.5; f.st.regen = 3.5; f.st.regenRate = 4 * Math.min(1.05, c.P); dust(f.x, f.y, amt(8, c.am), { sp: 50 }); ring(f.x, f.y, 10, 44, '#c9a35c', 0.5, 4); decal('crack', f.x, f.y, 30, { life: 5 }); },
-  'earth:pulse'(c) {
-    const f = c.f, s = nearestStone(f, f, 120);
-    f.ki = Math.min(f.maxKi, f.ki + 40 * (0.6 + 0.4 * Math.min(1, c.P)) + (s ? 20 : 0));
-    ring(f.x, f.y, 60, 10, '#c9a35c', 0.5, 4); ring(f.x, f.y, 90, 20, '#e6cf9c', 0.6, 3);
-    for (let i = 0; i < amt(10, c.am); i++) { const aa = rr(0, TAU), d = rr(40, 80); fx({ k: 'dust', x: f.x + Math.cos(aa) * d, y: f.y + Math.sin(aa) * d, vx: -Math.cos(aa) * d * 2, vy: -Math.sin(aa) * d * 2, life: 0.5, max: 0.5, size: 8, drag: 0 }); }
-    if (s) words(f.x, f.y - 44, 'The stone gives', ELC.earth.light, 12);
+  'earth:weight'(c) {
+    const { f, t } = c;
+    if (!t || gone(t) || dist(f, t) > 420) { dust(f.x + Math.cos(c.a) * 60, f.y + Math.sin(c.a) * 60, 4); return; }
+    if (hurt(t, f, 3, { power: c.pw, heavy: 4, am: c.am }) && !t.isDecoy && !t.isPhantom && t.st.heavy > 0) { words(t.x, t.y - 48, 'Heavy!', ELC.earth.light, 14); rocks(t.x, t.y, amt(6, c.am), { sp: 40, up: 120, size: 3 }); }
   },
-  'earth:fault'(c) {
-    const f = c.f; cam.shake = Math.max(cam.shake, 3);
-    WAVES.push({ kind: 'fault', owner: f, way: 'earth', x: f.x + Math.cos(c.a) * 20, y: f.y + Math.sin(c.a) * 20, x0: f.x, y0: f.y, a: c.a, speed: 430, travel: 0, max: 480, width: 60 * c.sz, dmg: 12, P: c.pw, am: c.am, hit: false, ground: true, opts: { stun: 0.6, knock: 120 }, left: 2 });
-    decal('line', f.x, f.y, 0, { a: c.a, len: 480, life: 9 });
+  'earth:toss'(c) {
+    const { f, t } = c; f.pose = 'strike2'; f.poseT = 0;
+    if (!closeIn(f, t, 60, 40) || t.isDecoy || t.isPhantom) { slash(f.x + Math.cos(c.a) * 30, f.y + Math.sin(c.a) * 30, c.a, '#d8b878', 24); if (t && (t.isDecoy || t.isPhantom)) hurt(t, f, 0); return; }
+    const a = angTo(t, f), steady = t.st.stance > 0 || (t.st.armor > 0 && t.st.armorKind === 'stone') || t.st.free > 0;
+    const land = { x: f.x + Math.cos(a) * 105, y: f.y + Math.sin(a) * 105 }, into = STONES.some(st => stoneHit(st, land.x, land.y, t.r + 8)) || SOLIDS.some(so => Math.hypot(so.x - land.x, so.y - land.y) < so.r + t.r + 6);
+    const from = { x: t.x, y: t.y };
+    if (!hurt(t, f, into && !steady ? 19 : 11, { power: c.pw, stun: 0.6, big: true, melee: true, am: c.am, ang: a })) return;
+    const at = steady ? from : land;
+    if (!steady) { t.kx = t.ky = 0; dashTo(t, land.x, land.y, 0.28); t.st.air = Math.max(t.st.air, 0.28); t.st.airMax = 0.28; }
+    later(steady ? 0 : 0.28, () => { dust(at.x, at.y, amt(8, c.am), { sp: 90 }); rocks(at.x, at.y, amt(5, c.am), { up: 140 }); decal('crack', at.x, at.y, 26, { life: 6 }); cam.shake = Math.max(cam.shake, into && !steady ? 7 : 4); if (into && !steady) words(at.x, at.y - 48, 'Into the stone!', ELC.earth.light, 14); });
   },
   'earth:mountain'(c) {
     const f = c.f, at = c.t ? { x: c.t.x, y: c.t.y } : { x: f.x + Math.cos(c.a) * 200, y: f.y + Math.sin(c.a) * 200 }, R = 122;
@@ -1448,24 +1530,22 @@ const SPELL = {
   },
   'air:airshield'(c) { const f = c.f; f.st.deflect = 3; f.st.armor = Math.max(f.st.armor, 3); f.st.armorK = 0.3; f.st.armorKind = 'wind'; swirl(f.x, f.y, 34, amt(16, c.am), { spin: 10, vr: 0, life: 0.8 }); f.pose = 'guard'; f.poseT = 0; },
   'air:breath'(c) {
-    const f = c.f, heal = 18 * Math.min(1.05, c.P) * (0.75 + 0.6 * f.wind / 100) * WAYMOD.air.heal;
-    f.hp = Math.min(f.maxHp, f.hp + heal); for (const k of ['burn', 'soak', 'slow', 'blind', 'root']) f.st[k] = 0; SFX.heal();
-    words(f.x, f.y - 40, '+' + Math.round(heal), '#9dffc2', 15); swirl(f.x, f.y, 36, amt(16, c.am), { col: 'rgba(190,255,200,0.9)', spin: 7, vr: 30 }); leaves(f.x, f.y, amt(10, c.am), { col: '#bff0b0' });
+    const f = c.f, heal = 12 * Math.min(1.05, c.P) * WAYMOD.air.heal;
+    f.hp = Math.min(f.maxHp, f.hp + heal); for (const k of ['burn', 'soak', 'slow', 'blind', 'root', 'heavy', 'brand', 'silence', 'crosswind']) f.st[k] = 0; SFX.heal();
+    words(f.x, f.y - 40, 'Cleansed', '#bff0b0', 14); swirl(f.x, f.y, 36, amt(16, c.am), { col: 'rgba(190,255,200,0.9)', spin: 7, vr: 30 }); leaves(f.x, f.y, amt(10, c.am), { col: '#bff0b0' });
   },
-  'air:tornado'(c) { const f = c.f; ENTS.push({ kind: 'tornado', owner: f, way: 'air', x: f.x + Math.cos(c.a) * 30, y: f.y + Math.sin(c.a) * 30, speed: 175, life: 3.2 * c.sz, max: 3.2 * c.sz, tick: 0, r: 40 * c.sz, P: c.pw, am: c.am, spin: 0 }); dust(f.x, f.y, amt(6, c.am)); },
+  'air:tornado'(c) { const f = c.f; ENTS.push({ kind: 'tornado', owner: f, way: 'air', x: f.x + Math.cos(c.a) * 30, y: f.y + Math.sin(c.a) * 30, a: c.a, straight: true, speed: 150, life: 3 * (0.8 + 0.2 * c.sz), max: 3, tick: 0, r: 42 * c.sz, P: c.pw, am: c.am, spin: 0 }); dust(f.x, f.y, amt(6, c.am)); },
   'air:flurry'(c) {
     const { f, A } = c; A.chan = 0.6; let n = 0, next = 0;
-    A.tick = dt => { A.chan -= dt; next -= dt; if (next <= 0 && n < 5) { next = 0.11; n++; const t = foeOf(f), a = t ? angTo(f, t) : f.face; f.face = a; f.pose = n % 2 ? 'strike' : 'strike2'; f.poseT = 0;
+    A.tick = dt => { A.chan -= dt; next -= dt; if (next <= 0 && n < 5) { next = 0.11; n++; const t = aimOf(f), a = t ? angTo(f, t) : f.face; f.face = a; f.pose = n % 2 ? 'strike' : 'strike2'; f.poseT = 0;
       const hx = f.x + Math.cos(a) * 30, hy = f.y + Math.sin(a) * 30; slash(hx, hy, a + (n % 2 ? 0.5 : -0.5), '#fbf6d8', 20, 0.2); streaks(hx, hy, a, amt(3, c.am), { sp: 300, len: 18 });
       if (closeIn(f, t, 62, 22)) hurt(t, f, 3, { power: c.pw, knock: 40, ang: a, melee: true, am: c.am, airHit: true }); } };
   },
   'air:vacuum'(c) {
-    const f = c.f, p = { x: f.x + Math.cos(c.a) * 150, y: f.y + Math.sin(c.a) * 150 };
-    for (let i = 0; i < amt(22, c.am); i++) { const aa = rr(0, TAU), d = rr(80, 170); fx({ k: 'streak', x: p.x + Math.cos(aa) * d, y: p.y + Math.sin(aa) * d, vx: -Math.cos(aa) * d * 2.6, vy: -Math.sin(aa) * d * 2.6, life: 0.38, max: 0.38, len: 24, curl: 0.3, drag: 0, col: 'rgba(255,255,255,0.85)' }); }
-    swirl(p.x, p.y, 60, amt(10, c.am), { spin: 12, vr: -120 });
-    const t = c.t;
-    if (t && !gone(t) && !(t.st.high > 0) && Math.hypot(t.x - p.x, t.y - p.y) < 175 * c.sz) { if (hurt(t, f, 6, { power: c.pw, am: c.am })) pullTo(t, p, 0, 8); }
-    later(0.45, () => { ring(p.x, p.y, 6, 80, '#ffffff', 0.35, 5); streaks(p.x, p.y, 0, amt(16, c.am), { spread: 3.2, sp: 300 }); blastAt(f, p.x, p.y, 70, 3, { power: c.pw, knock: 210, am: c.am, airHit: true }); });
+    const { f, t } = c;
+    if (!t || gone(t) || dist(f, t) > 400) { streaks(f.x, f.y, c.a, 6); return; }
+    for (let i = 0; i < amt(18, c.am); i++) { const aa = rr(0, TAU), d = rr(50, 120); fx({ k: 'streak', x: t.x + Math.cos(aa) * d, y: t.y + Math.sin(aa) * d, vx: -Math.cos(aa) * d * 3, vy: -Math.sin(aa) * d * 3, life: 0.32, max: 0.32, len: 20, curl: 0.3, drag: 0, col: 'rgba(255,255,255,0.9)' }); }
+    if (hurt(t, f, 4, { power: c.pw, silence: 1.6, am: c.am }) && !t.isDecoy && !t.isPhantom) words(t.x, t.y - 48, 'Silenced', '#fbf6d8', 14);
   },
   'air:twin'(c) { bolt(c, { kind: 'blade', n: 2, spread: 0.9, speed: 520, r: 7, dmg: 6, life: 1.3, home: 7.5, hit: { knock: 70, airHit: true } }); },
   'air:walk'(c) { const f = c.f; f.st.haste = 5; streaks(f.x, f.y, f.face + Math.PI, amt(12, c.am), { spread: 0.6 }); leaves(f.x, f.y, amt(6, c.am)); },
@@ -1478,11 +1558,16 @@ const SPELL = {
       if (blastAt(f, at.x, at.y, 50 * c.sz, wasUp ? 18 : 9, { power: c.pw, stun: wasUp ? 0.9 : 0, big: wasUp, am: c.am, airHit: true }) && wasUp) { t.st.air = 0; words(t.x, t.y - 46, 'Slammed!', '#fbf6d8', 15); cam.shake = Math.max(cam.shake, 6); decal('crack', t.x, t.y, 30, { life: 6 }); }
     });
   },
-  'air:pressure'(c) { bolt(c, { kind: 'pressure', speed: 480, r: 10, dmg: 9, explode: 56, life: 1.3, hit: { knock: 380, airHit: true } }); },
+  'air:crosswind'(c) {
+    const { f, t } = c;
+    if (!t || gone(t) || t.isDecoy || t.isPhantom) { swirl(f.x + Math.cos(c.a) * 60, f.y + Math.sin(c.a) * 60, 30, 6); return; }
+    if (t.st.free > 0) { words(t.x, t.y - 44, 'Weightless', '#fbf6d8', 12); return; }
+    t.st.crosswind = 5; swirl(t.x, t.y, 30, amt(12, c.am), { spin: 9, vr: 0, life: 0.7 }); words(t.x, t.y - 48, 'Crosswind', '#fbf6d8', 13);
+  },
   'air:crane'(c) {
     const f = c.f; f.st.leap = 0.7; f.leapFrom = { x: f.x, y: f.y }; dust(f.x, f.y, amt(8, c.am), { sp: 90 }); leaves(f.x, f.y, amt(8, c.am)); f.wind = Math.min(100, f.wind + 15);
     later(0.7, () => {
-      const t = foeOf(f); if (t && !gone(t)) { const a = angTo(t, f); f.x = t.x + Math.cos(a) * 20; f.y = t.y + Math.sin(a) * 20; }
+      const t = aimOf(f); if (t && !gone(t)) { const a = angTo(t, f); f.x = t.x + Math.cos(a) * 20; f.y = t.y + Math.sin(a) * 20; }
       f.st.leap = 0; cam.shake = Math.max(cam.shake, 5); ring(f.x, f.y, 8, 70 * c.sz, '#ffffff', 0.4, 6); dust(f.x, f.y, amt(10, c.am), { sp: 140 }); leaves(f.x, f.y, amt(10, c.am), { sp: 200 });
       blastAt(f, f.x, f.y, 64 * c.sz, 15, { power: c.pw, knock: 210, stun: 0.4, big: true, am: c.am, airHit: true });
     });
@@ -1495,24 +1580,25 @@ const SPELL = {
     else hurt(t, f, 4, { power: c.pw, am: c.am });
   },
   'air:gale'(c) { WAVES.push({ kind: 'gale', owner: c.f, way: 'air', x: c.f.x + Math.cos(c.a) * 24, y: c.f.y + Math.sin(c.a) * 24, a: c.a, speed: 380, travel: 0, max: 560, width: 230 * c.sz, dmg: 6, P: c.pw, am: c.am, hit: false, opts: { knock: 120 } }); },
-  'air:gather'(c) { const f = c.f; f.ki = Math.min(f.maxKi, f.ki + 40 * (0.6 + 0.4 * Math.min(1, c.P))); f.wind = Math.min(100, f.wind + 40); swirl(f.x, f.y, 60, amt(18, c.am), { spin: 8, vr: -70 }); leaves(f.x, f.y, amt(6, c.am)); },
-  'air:spin'(c) {
-    const { f, t } = c, a = t ? angTo(f, t) : f.face, d = t ? Math.min(250, dist(f, t) + 60) : 220;
-    dashTo(f, f.x + Math.cos(a) * d, f.y + Math.sin(a) * d, 0.3, { invuln: 0.32, hit: { dmg: 9, power: c.pw, knock: 150, am: c.am } });
-    f.spinT = 0.32; f.wind = Math.min(100, f.wind + 15); swirl(f.x, f.y, 26, amt(10, c.am), { spin: 16, vr: 0, life: 0.35 });
+  'air:echo'(c) {
+    const f = c.f, last = f.lastSpell;
+    if (!last || last.tag === 'Ultimate') { words(f.x, f.y - 40, 'Nothing to echo', C.muted, 12); return; }
+    words(f.x, f.y - 50, 'Echo: ' + last.name, '#fbf6d8', 13); swirl(f.x, f.y, 30, amt(8, c.am), { spin: 6, vr: 0 });
+    later(0.15, () => { if (f.hp <= 0 || !canCast(f)) return; f.act = { move: last, power: c.P * 0.7, target: c.A.target, phase: 'go', t: timing(last)[1], wind: 0, hits: 0, next: 0, echo: true }; cast(f, f.act); });
   },
+  'air:weightless'(c) { const f = c.f; f.st.free = 4; for (const k of ['slow', 'root', 'heavy', 'stun', 'lavaSlow', 'sandSlow']) f.st[k] = 0; leaves(f.x, f.y, amt(12, c.am), { sp: 90 }); swirl(f.x, f.y, 30, amt(12, c.am), { spin: 7, vr: 20 }); words(f.x, f.y - 46, 'Weightless', '#fbf6d8', 14); },
   'air:typhoon'(c) {
-    const f = c.f, t = c.t, w = f.wind, P = c.pw * (1 + w / 200);
+    const f = c.f, t = c.t, w = f.wind, P = c.pw * (1 + w / 400);
     f.wind = 0; cam.shake = Math.max(cam.shake, 8); SFX.gong();
     const at = t ? { x: t.x, y: t.y } : { x: f.x + Math.cos(c.a) * 180, y: f.y + Math.sin(c.a) * 180 };
     ENTS.push({ kind: 'typhoon', owner: f, way: 'air', x: at.x, y: at.y, life: 2.3, max: 2.3, tick: 0, P, am: c.am, r: 120, caught: false });
   },
 };
 // drag a fighter toward a point, stopping short by `keep`
-function pullTo(t, to, keep, k) { const a = Math.atan2(to.y - t.y, to.x - t.x), d = Math.max(0, Math.hypot(to.x - t.x, to.y - t.y) - keep); if (t.st.stance > 0 || t.st.armorKind === 'stone' && t.st.armor > 0) return; t.kx += Math.cos(a) * d * k; t.ky += Math.sin(a) * d * k; }
+function pullTo(t, to, keep, k) { const a = Math.atan2(to.y - t.y, to.x - t.x), d = Math.max(0, Math.hypot(to.x - t.x, to.y - t.y) - keep); if (t.isDecoy || t.isPhantom || unmoved(t)) return; t.kx += Math.cos(a) * d * k; t.ky += Math.sin(a) * d * k; }
 
 // ── things in flight, on the floor, and on the move ──
-function stepTimers(dt) { const due = []; for (const q of TIMERS) { q.t -= dt; if (q.t <= 0) due.push(q); } TIMERS = TIMERS.filter(q => q.t > 0); for (const q of due) if (!FIGHT || FIGHT.on || FIGHT.over) q.fn(); }
+function stepTimers(dt) { const due = []; for (const q of TIMERS) { q.t -= dt; if (q.t <= 0) due.push(q); } TIMERS = TIMERS.filter(q => q.t > 0); for (const q of due) if (!FIGHT || FIGHT.on || FIGHT.over) { CUR = q.spell; q.fn(); stamp(q.spell); CUR = null; } }
 function shotHits(s, t) {
   if (!t || t.hp <= 0 || gone(t)) return false;
   if (s.missed === t) return false;
@@ -1523,6 +1609,7 @@ function shotHits(s, t) {
 }
 function stepShots(dt) {
   for (const s of SHOTS) {
+    CUR = s.spell;
     s.t += dt; s.life -= dt;
     if (s.kind === 'glob') { const k = Math.min(1, s.t / s.dur); s.x = lerp(s.x0, s.tx, k); s.y = lerp(s.y0, s.ty, k); s.z = Math.sin(k * Math.PI) * 50; if (k >= 1) { s.life = 0; s.land(s); } continue; }
     s.trail.unshift({ x: s.x, y: s.y }); if (s.trail.length > 10) s.trail.pop();
@@ -1545,14 +1632,13 @@ function stepShots(dt) {
       s.life = 0; shotLand(s, t);
       continue;
     }
-    // a fire wall swallows the other side's shots
-    for (const z of ZONES) if (z.kind === 'firewall' && z.owner !== s.owner && segDist(s.x, s.y, z) < 12) { s.life = 0; flames(s.x, s.y, 4, { sp: 60 }); }
-    if (s.life <= 0) continue;
+    if (hitDecoy(s.owner, s.x, s.y, s.r)) { s.life = 0; if (s.explode) shotLand(s, null); continue; }
     if (!s.through) for (const st of STONES) if (stoneHit(st, s.x, s.y, s.r)) { s.life = 0; st.hp -= s.dmg * (s.way === 'air' ? 2 : 1); shotFizz(s); if (st.hp <= 0) removeStone(st); break; }
     if (s.life <= 0) continue;
     for (const sol of SOLIDS) if (Math.hypot(s.x - sol.x, s.y - sol.y) < sol.r + s.r) { s.life = 0; shotFizz(s); }
     if (s.life <= 0 && s.explode) shotLand(s, null);
   }
+  CUR = null;
   SHOTS = SHOTS.filter(s => s.life > 0);
 }
 function shotFizz(s) { if (s.way === 'water') splash(s.x, s.y, 6, { r: 14 }); else if (s.way === 'fire') { flames(s.x, s.y, 4, { sp: 60 }); smoke(s.x, s.y, 1); } else if (s.way === 'earth') rocks(s.x, s.y, 4, { up: 120, sp: 90, size: 3 }); else streaks(s.x, s.y, rr(0, TAU), 4, { spread: 3 }); }
@@ -1568,24 +1654,34 @@ function shotLand(s, t) {
   if (t) hurt(t, s.owner, s.dmg, o);
 }
 function segDist(x, y, z) { const ux = Math.cos(z.a), uy = Math.sin(z.a), dx = x - z.x, dy = y - z.y, along = clamp(dx * ux + dy * uy, -z.len / 2, z.len / 2); return Math.hypot(dx - ux * along, dy - uy * along); }
+const inBand = (w, x, y, r) => { const dx = x - w.x, dy = y - w.y, along = dx * Math.cos(w.a) + dy * Math.sin(w.a), across = -dx * Math.sin(w.a) + dy * Math.cos(w.a); return Math.abs(along) < 24 + r && Math.abs(across) < w.width / 2 + r; };
 function stepWaves(dt) {
   for (const w of WAVES) {
+    CUR = w.spell;
     const d = w.speed * dt; w.x += Math.cos(w.a) * d; w.y += Math.sin(w.a) * d; w.travel += d;
-    const t = foeOf(w.owner);
+    const t = foeOf(w.owner), dec = decoyOf(t);
+    if (dec && inBand(w, dec.x, dec.y, dec.r)) popDecoy(dec);
     if (t && t.hp > 0 && !gone(t) && !(w.ground && aloft(t)) && !(t.st.high > 0 && w.kind !== 'tidal')) {
-      const dx = t.x - w.x, dy = t.y - w.y, along = dx * Math.cos(w.a) + dy * Math.sin(w.a), across = -dx * Math.sin(w.a) + dy * Math.cos(w.a), over = Math.abs(along) < 24 + t.r && Math.abs(across) < w.width / 2 + t.r;
-      if (over && !w.hit) { w.hit = true; hurt(t, w.owner, w.dmg, { ...w.opts, power: w.P, ang: w.a, big: !!w.big, wave: true, am: w.am, airHit: w.way === 'air' }); if (w.kind === 'gale') t.st.galeT = 1.2; }
-      if (over && w.kind === 'gale' && t.st.stance <= 0 && !(t.st.armorKind === 'stone' && t.st.armor > 0)) { t.kx += Math.cos(w.a) * 2600 * dt; t.ky += Math.sin(w.a) * 2600 * dt; }
+      const over = inBand(w, t.x, t.y, t.r);
+      if (over && !w.hit) { w.hit = true; hurt(t, w.owner, w.dmg, { ...w.opts, power: w.P, ang: w.a, big: !!w.big, wave: true, am: w.am, airHit: w.way === 'air' }); if (w.kind === 'gale' && !unmoved(t)) t.st.galeT = 1.2; }
+      if (over && w.kind === 'gale' && !unmoved(t)) { t.kx += Math.cos(w.a) * 2600 * dt; t.ky += Math.sin(w.a) * 2600 * dt; }
+    }
+    if (w.wash && t) {
+      for (const z of ZONES) if (z.owner === t && z.life > 0.3 && (z.kind === 'lava' || z.kind === 'firewall' || (z.kind === 'trail' && z.way === 'fire')) && inBand(w, z.x, z.y, z.kind === 'firewall' ? z.len / 2 : z.r * 0.5)) {
+        z.life = 0.3; smoke(z.x, z.y, 4, { size: 14 }); if (!w.saidOut) { w.saidOut = true; words(z.x, z.y - 30, 'Put out', ELC.water.light, 13); }
+      }
+      for (const s of STONES) if (s.owner === t && !w.washed.has(s) && inBand(w, s.x, s.y, s.kind === 'wall' ? s.len / 2 : s.r)) { w.washed.add(s); s.hp -= 22; splash(s.x, s.y, 8, { r: 20 }); if (s.hp <= 0) removeStone(s); }
     }
     const am = w.am ?? 1;
     if (w.kind === 'tidal') { for (let i = 0; i < amt(3, am); i++) { const off = rr(-0.5, 0.5) * w.width; drops(w.x - Math.sin(w.a) * off, w.y + Math.cos(w.a) * off, 1, { a: w.a, spread: 0.6, sp: 80, up: 140, size: 2.4 }); } if (!w.lastMark || w.travel - w.lastMark > 80) { w.lastMark = w.travel; decal('wet', w.x, w.y, w.width * 0.3, { life: 6 }); } }
     else if (w.kind === 'gale') { for (let i = 0; i < amt(3, am); i++) { const off = rr(-0.5, 0.5) * w.width; streaks(w.x - Math.sin(w.a) * off, w.y + Math.cos(w.a) * off, w.a, 1, { sp: 480, len: 30 }); } if (Math.random() < 0.3) leaves(w.x, w.y, 1, { a: w.a, spread: 0.4, sp: 380 }); }
-    else if (w.kind === 'fault') { if (Math.random() < 0.7) { rocks(w.x, w.y, 1, { sp: 60, up: 150, size: 3.5 }); dust(w.x, w.y, 1, { size: 9 }); } if (w.left > 0 && w.travel > w.max * (w.left === 2 ? 0.35 : 0.7)) { w.left--; stoneAt(w.owner, 'rock', w.x, w.y, { r: 14, hp: 20, life: 9 }); } }
   }
+  CUR = null;
   WAVES = WAVES.filter(w => w.travel < w.max);
 }
 function stepZones(dt) {
   for (const z of ZONES) {
+    CUR = z.spell;
     z.life -= dt; z.tick -= dt;
     if (z.grow != null) z.grow = Math.min(1, z.grow + dt * 4);
     const t = z.owner ? foeOf(z.owner) : null, am = z.am ?? 1;
@@ -1594,60 +1690,73 @@ function stepZones(dt) {
     const grounded = t && !aloft(t);
     switch (z.kind) {
       case 'puddle': if (inside && grounded) { t.st.soak = Math.max(t.st.soak, 2); t.st.slow = Math.max(t.st.slow, 0.3); if (Math.random() < 0.1) ripple(t.x, t.y, 18); } if (Math.random() < 0.04) ripple(z.x + rr(-z.r, z.r) * 0.6, z.y + rr(-z.r, z.r) * 0.4, 14); break;
-      case 'ice': if (inside && grounded) { t.st.slow = Math.max(t.st.slow, 0.5); if (!z.hits.has(t)) { z.hits.add(t); t.st.root = Math.max(t.st.root, 0.8); iceBurst(t.x, t.y, 5, { sp: 60 }); words(t.x, t.y - 40, 'Stuck in ice', '#dff6ff', 12); } } break;
-      case 'whirlpool': if (inside && grounded) { const a = Math.atan2(z.y - t.y, z.x - t.x), d = Math.hypot(z.y - t.y, z.x - t.x); if (t.st.stance <= 0) { t.kx += (Math.cos(a) * 520 - Math.sin(a) * 260) * dt * 3.4; t.ky += (Math.sin(a) * 520 + Math.cos(a) * 260) * dt * 3.4; } t.st.soak = Math.max(t.st.soak, 2); t.st.slow = Math.max(t.st.slow, 0.4); if (z.tick <= 0) { z.tick = 0.5; hurt(t, z.owner, 1.4, { power: z.P, quiet: true }); } }
+      case 'ice': if (inside && grounded && t.st.free <= 0) { t.st.slow = Math.max(t.st.slow, 0.5); if (!z.hits.has(t)) { z.hits.add(t); t.st.root = Math.max(t.st.root, 0.8); iceBurst(t.x, t.y, 5, { sp: 60 }); words(t.x, t.y - 40, 'Stuck in ice', '#dff6ff', 12); } } break;
+      case 'whirlpool': if (inside && grounded) { const a = Math.atan2(z.y - t.y, z.x - t.x); if (!unmoved(t)) { t.kx += (Math.cos(a) * 520 - Math.sin(a) * 260) * dt * 3.4; t.ky += (Math.sin(a) * 520 + Math.cos(a) * 260) * dt * 3.4; } t.st.soak = Math.max(t.st.soak, 2); t.st.slow = Math.max(t.st.slow, 0.4); if (z.tick <= 0) { z.tick = 0.5; hurt(t, z.owner, 1.4, { power: z.P, quiet: true }); } }
         if (Math.random() < 0.5 * am + 0.2) { const a = rr(0, TAU), r = rr(0.3, 1) * z.r; fx({ k: 'foam', x: z.x + Math.cos(a) * r, y: z.y + Math.sin(a) * r * 0.75, vx: -Math.sin(a) * 90, vy: Math.cos(a) * 70, life: 0.5, max: 0.5, size: rr(2, 4), drag: 0.5 }); } break;
-      case 'needles': if (inside && grounded && z.tick <= 0) { z.tick = 0.16; hurt(t, z.owner, 1.3, { power: z.P, soak: 2, quiet: true }); }
-        for (let i = 0; i < amt(4, am); i++) { const a = rr(0, TAU), r = Math.sqrt(Math.random()) * z.r; fx({ k: 'drop', x: z.x + Math.cos(a) * r, y: z.y + Math.sin(a) * r * 0.8, z: 90, vx: 0, vy: 0, vz: -260, g: 300, life: 0.5, max: 0.5, size: 1.8, drag: 0 }); } break;
       case 'lava': if (inside && grounded) { t.st.slow = Math.max(t.st.slow, 0.4); t.st.lavaSlow = 0.3; if (z.tick <= 0) { z.tick = 0.5; hurt(t, z.owner, 2.2, { power: z.P, burn: 2, quiet: true }); } }
         if (Math.random() < 0.25 * am + 0.1) { const a = rr(0, TAU), r = rr(0, 0.8) * z.r; flames(z.x + Math.cos(a) * r, z.y + Math.sin(a) * r * 0.75, 1, { sp: 10, rise: 40, size: 7, life: 0.5 }); } if (Math.random() < 0.08) smoke(z.x + rr(-z.r, z.r) * 0.5, z.y, 1, { size: 10 }); break;
-      case 'firewall': if (inside && grounded) { const last = z.hits.get(t) || 0; if (T - last > 0.6) { z.hits.set(t, T); hurt(t, z.owner, 4, { power: z.P, burn: 3 }); } }
+      case 'firewall': if (inside && grounded) { const last = z.hits.get(t) || 0; if (T - last > 0.6) { z.hits.set(t, T); hurt(t, z.owner, 4, { power: z.P, burn: 3, slow: 1.2 }); } }
         for (let i = 0; i < amt(3, am); i++) { const u = rr(-0.5, 0.5); flames(z.x + Math.cos(z.a) * z.len * u, z.y + Math.sin(z.a) * z.len * u, 1, { sp: 14, rise: 70, size: rr(9, 13), life: 0.55, jit: 3 }); } break;
       case 'trail': if (inside && grounded) { const last = z.hits.get(t) || 0; if (T - last > 0.5) { z.hits.set(t, T); hurt(t, z.owner, z.way === 'fire' ? 3 : 1, { power: z.P, burn: z.way === 'fire' ? 2 : 0, soak: z.way === 'water' ? 3 : 0, quiet: true }); } }
         if (z.way === 'fire' && Math.random() < 0.35) flames(z.x, z.y, 1, { sp: 10, rise: 40, size: 7, life: 0.45 }); break;
-      case 'quicksand': if (inside && grounded) { if (!z.caught) { z.caught = true; t.st.root = Math.max(t.st.root, 1.1); words(t.x, t.y - 40, 'Stuck!', ELC.earth.light, 13); } t.st.slow = Math.max(t.st.slow, 0.4); t.st.sandSlow = 0.3; if (z.tick <= 0) { z.tick = 0.5; hurt(t, z.owner, 1.3, { power: z.P, quiet: true }); } if (Math.random() < 0.3) sand(t.x, t.y, rr(0, TAU), 3, 2, 40); } break;
+      case 'quicksand': if (inside && grounded) { if (!z.caught) { z.caught = true; words(t.x, t.y - 40, 'Sinking!', ELC.earth.light, 13); } t.st.slow = Math.max(t.st.slow, 0.4); t.st.sandSlow = 0.3; if (z.tick <= 0) { z.tick = 0.5; hurt(t, z.owner, 1.3, { power: z.P, quiet: true }); } if (Math.random() < 0.3) sand(t.x, t.y, rr(0, TAU), 3, 2, 40); } break;
       case 'flood': if (t && !gone(t) && !(t.st.high > 0)) t.st.soak = Math.max(t.st.soak, 2); break;
     }
   }
+  CUR = null;
   ZONES = ZONES.filter(z => z.life > 0);
 }
 function stepEnts(dt) {
   for (const e of ENTS) {
+    CUR = e.spell;
     e.life -= dt;
     const t = e.owner ? foeOf(e.owner) : null, am = e.am ?? 1;
     switch (e.kind) {
       case 'cloud': if (!e.fixed && e.owner) { e.x = e.owner.x; e.y = e.owner.y; } if (e.rain && Math.random() < 0.8) fx({ k: 'drop', x: e.x + rr(-16, 16), y: e.y + rr(-8, 8), z: 60, vx: 0, vy: 0, vz: -200, g: 200, life: 0.4, max: 0.4, size: 1.7, drag: 0 }); break;
       case 'dragon': {
-        if (t && t.hp > 0 && !gone(t)) { const want = angTo(e, t); let d = ((want - e.a + 3 * Math.PI) % TAU) - Math.PI; e.a += clamp(d, -5 * dt, 5 * dt); }
+        const tg = aimOf(e.owner);
+        if (tg && tg.hp > 0 && !gone(tg)) { const want = angTo(e, tg); let d = ((want - e.a + 3 * Math.PI) % TAU) - Math.PI; e.a += clamp(d, -5 * dt, 5 * dt); }
         else e.a += Math.sin(T * 3) * dt * 2;
         e.x += Math.cos(e.a) * e.speed * dt; e.y += Math.sin(e.a) * e.speed * dt; e.cool -= dt;
         e.segs.unshift({ x: e.x, y: e.y }); if (e.segs.length > 14) e.segs.length = 14;
         if (Math.random() < 0.5 * am + 0.2) drops(e.x, e.y, 1, { sp: 40, up: 60, z: 8, size: 2.2 });
-        if (t && e.bites > 0 && e.cool <= 0 && !gone(t) && !(t.st.high > 0) && dist(e, t) < 26 + t.r) { e.bites--; e.cool = 0.5; hurt(t, e.owner, 6, { power: e.P, soak: 3, knock: 90, ang: e.a, am }); splash(t.x, t.y, amt(10, am)); e.a += Math.PI * 0.7; }
+        if (tg && tg.isDecoy && dist(e, tg) < 26 + tg.r) { popDecoy(tg); e.a += Math.PI * 0.7; }
+        else if (t && e.bites > 0 && e.cool <= 0 && !gone(t) && !(t.st.high > 0) && dist(e, t) < 26 + t.r) { e.bites--; e.cool = 0.5; hurt(t, e.owner, 6, { power: e.P, soak: 3, knock: 90, ang: e.a, am }); splash(t.x, t.y, amt(10, am)); e.a += Math.PI * 0.7; }
         if (e.bites <= 0 && e.life > 0.3) e.life = 0.3;
         if (e.life <= 0) splash(e.x, e.y, amt(14, am), { r: 30 });
         break;
       }
       case 'geyser': if (Math.random() < 0.9) drops(e.x + rr(-8, 8), e.y, 2, { sp: 60, up: 360, z: 30, size: 2.6 }); break;
       case 'tornado': {
-        if (t && t.hp > 0 && !gone(t)) { const a = angTo(e, t); e.x += Math.cos(a) * e.speed * dt; e.y += Math.sin(a) * e.speed * dt; }
-        e.spin += dt * 9; e.tick -= dt;
+        // it sets off in a straight line and throws up whoever it passes, carrying them a little way
+        const tg = aimOf(e.owner);
+        if (e.straight) { e.x += Math.cos(e.a) * e.speed * dt; e.y += Math.sin(e.a) * e.speed * dt; if (FIGHT && Math.hypot(e.x - FIGHT.cx, e.y - FIGHT.cy) > FIGHT.r + 10) e.life = Math.min(e.life, 0.25); }
+        else if (tg && tg.hp > 0 && !gone(tg)) { const a = angTo(e, tg); e.x += Math.cos(a) * e.speed * dt; e.y += Math.sin(a) * e.speed * dt; }
+        e.spin += dt * 9;
         if (Math.random() < 0.5 * am + 0.2) dust(e.x + rr(-10, 10), e.y + rr(-4, 4), 1, { size: 9, sp: 30 });
         if (Math.random() < 0.3 * am) leaves(e.x, e.y, 1, { sp: 120 });
-        if (t && !gone(t) && !(t.st.high > 0) && dist(e, t) < e.r + t.r) { if (e.tick <= 0) { e.tick = 0.3; hurt(t, e.owner, 1.8, { power: e.P, quiet: e.hitOnce, am, airHit: true }); e.hitOnce = true; } t.st.air = Math.max(t.st.air, 0.45); t.st.airMax = Math.max(t.st.airMax || 0, 0.45); t.x += (e.x - t.x) * Math.min(1, dt * 4); t.y += (e.y - t.y) * Math.min(1, dt * 4); }
-        if (e.life <= 0) { dust(e.x, e.y, 8, { sp: 120 }); if (t && dist(e, t) < e.r + t.r) { const a = rr(0, TAU); t.kx += Math.cos(a) * 600; t.ky += Math.sin(a) * 600; } }
+        if (tg && tg.isDecoy && dist(e, tg) < e.r + tg.r) popDecoy(tg);
+        if (t && !gone(t) && !(t.st.high > 0) && dist(e, t) < e.r + t.r) {
+          if (!e.caught) { e.caught = true; hurt(t, e.owner, 7, { power: e.P, launch: 0.9, knock: 40, ang: e.a, am, airHit: true }); }
+          if (t.st.air > 0 && !unmoved(t)) { t.x += (e.x - t.x) * Math.min(1, dt * 5); t.y += (e.y - t.y) * Math.min(1, dt * 5); }
+        }
+        if (e.life <= 0) { dust(e.x, e.y, 8, { sp: 120 }); if (t && e.caught && t.st.air > 0 && dist(e, t) < e.r + t.r + 10 && !unmoved(t)) { const a = e.a + rr(-0.8, 0.8); t.kx += Math.cos(a) * 500; t.ky += Math.sin(a) * 500; } }
         break;
       }
       case 'typhoon': {
         e.tick -= dt;
         if (Math.random() < 0.9) streaks(e.x + rr(-e.r, e.r), e.y + rr(-e.r, e.r) * 0.7, rr(0, TAU), 1, { sp: 300, len: 30 });
         if (Math.random() < 0.4 * am + 0.2) leaves(e.x, e.y, 1, { sp: 260 });
+        hitDecoy(e.owner, e.x, e.y, e.r);
         if (t && !gone(t) && dist(e, t) < e.r + 40) {
-          e.caught = true; t.st.stun = Math.max(t.st.stun, 0.3); t.st.air = Math.max(t.st.air, 0.4); t.st.airMax = Math.max(t.st.airMax || 0, 0.4);
-          const k = (e.max - e.life) * 6, rr2 = 34; t.x += (e.x + Math.cos(k) * rr2 - t.x) * Math.min(1, dt * 6); t.y += (e.y + Math.sin(k) * rr2 * 0.7 - t.y) * Math.min(1, dt * 6);
-          if (e.tick <= 0) { e.tick = 0.25; hurt(t, e.owner, 28 * 0.25 / e.max, { power: e.P, quiet: true, airHit: true }); }
+          e.caught = true;
+          if (!unmoved(t)) {
+            t.st.stun = Math.max(t.st.stun, 0.3); t.st.air = Math.max(t.st.air, 0.4); t.st.airMax = Math.max(t.st.airMax || 0, 0.4);
+            const k = (e.max - e.life) * 6, rr2 = 34; t.x += (e.x + Math.cos(k) * rr2 - t.x) * Math.min(1, dt * 6); t.y += (e.y + Math.sin(k) * rr2 * 0.7 - t.y) * Math.min(1, dt * 6);
+          }
+          if (e.tick <= 0) { e.tick = 0.25; hurt(t, e.owner, 16 * 0.25 / e.max, { power: e.P, quiet: true, airHit: true }); }
         }
-        if (e.life <= 0 && t && e.caught && !gone(t)) { const a = rr(0, TAU); t.kx += Math.cos(a) * 900; t.ky += Math.sin(a) * 900; hurt(t, e.owner, 4, { power: e.P, big: true }); ring(e.x, e.y, 10, 160, '#ffffff', 0.5, 8); }
+        if (e.life <= 0 && t && e.caught && !gone(t)) { const a = rr(0, TAU); if (!unmoved(t)) { t.kx += Math.cos(a) * 900; t.ky += Math.sin(a) * 900; } hurt(t, e.owner, 4, { power: e.P, big: true }); ring(e.x, e.y, 10, 160, '#ffffff', 0.5, 8); }
         break;
       }
       case 'firework': {
@@ -1668,6 +1777,7 @@ function stepEnts(dt) {
         if (Math.random() < 0.6 * am + 0.2) dust(e.x - Math.cos(e.a) * e.r, e.y - Math.sin(e.a) * e.r, 1, { size: 10, sp: 20 });
         let stop = e.travel > e.max;
         if (t && !e.hit && !gone(t) && !(t.st.high > 0) && t.st.air <= 0 && dist(e, t) < e.r + t.r) { e.hit = true; hurt(t, e.owner, 16, { power: e.P, knock: 330, ang: e.a, big: true, am }); stop = true; }
+        if (hitDecoy(e.owner, e.x, e.y, e.r)) stop = true;
         for (const sol of SOLIDS) if (Math.hypot(e.x - sol.x, e.y - sol.y) < sol.r + e.r) stop = true;
         for (const st of STONES) if (st.owner !== e.owner && stoneHit(st, e.x, e.y, e.r)) { stop = true; removeStone(st); }
         if (FIGHT && Math.hypot(e.x - FIGHT.cx, e.y - FIGHT.cy) > FIGHT.r) stop = true;
@@ -1677,13 +1787,43 @@ function stepEnts(dt) {
       case 'quake': {
         const r0 = e.r; e.r = Math.min(e.max, e.r + e.speed * dt);
         for (let i = 0; i < amt(4, am); i++) { const a = rr(0, TAU); dust(e.x + Math.cos(a) * e.r, e.y + Math.sin(a) * e.r, 1, { size: 9, sp: 30 }); if (Math.random() < 0.3) rocks(e.x + Math.cos(a) * e.r, e.y + Math.sin(a) * e.r, 1, { sp: 40, up: 120, size: 3 }); }
+        const dq = decoyOf(t); if (dq && !e.dhit) { const d = dist(e, dq); if (d >= r0 - dq.r && d <= e.r + dq.r) { e.dhit = true; popDecoy(dq); } }
         if (t && !e.hit && !gone(t) && !aloft(t)) { const d = dist(e, t); if (d >= r0 - t.r && d <= e.r + t.r) { e.hit = true; hurt(t, e.owner, 9, { power: e.P, stun: 0.8, knock: 60, ang: angTo(e, t), am }); } }
         if (e.r >= e.max) e.life = Math.min(e.life, 0.15);
         break;
       }
+      case 'charge': {
+        // it flies to them and sticks; a dodge or a dash shakes it off (it goes off where it falls); otherwise it blows
+        e.t += dt; const tg = e.target;
+        if (!e.stuck && !e.loose) {
+          const k = Math.min(1, e.t / e.fly), tx = tg ? tg.x : e.px, ty = tg ? tg.y : e.py;
+          e.x = lerp(e.x0, tx, k); e.y = lerp(e.y0, ty, k); e.z = Math.sin(k * Math.PI) * 40;
+          if (Math.random() < 0.8) sparks(e.x, e.y - e.z, 1, { sp: 40, col: '#ffe0a0', life: 0.3 });
+          if (k >= 1) {
+            e.z = 0;
+            if (tg && tg.isDecoy) { popDecoy(tg); e.loose = true; e.life = Math.min(e.life, 0.05); }
+            else if (tg && tg.hp > 0 && !gone(tg) && !(tg.st.invuln > 0) && !tg.dash) { e.stuck = true; words(tg.x, tg.y - 46, 'Stuck on!', '#ffb04a', 14); sparks(tg.x, tg.y, 6, { sp: 120 }); }
+            else { e.loose = true; e.life = Math.min(e.life, 0.3); }
+          }
+        } else if (e.stuck) {
+          e.x = tg.x; e.y = tg.y;
+          if (tg.dash || tg.st.under > 0 || tg.st.leap > 0 || tg.hp <= 0) { e.stuck = false; e.loose = true; e.life = Math.min(e.life, 0.35); words(tg.x, tg.y - 46, 'Shaken off', '#e8e2f2', 13); }
+          else if (Math.random() < 0.6 + 0.4 * (1 - e.life / e.max)) sparks(e.x, e.y - 22, 1, { sp: 70, col: '#ffe0a0', life: 0.25 });
+        }
+        if (e.life <= 0) {
+          const r = 62 * (e.sz || 1);
+          cam.shake = Math.max(cam.shake, 5); SFX.hit(true); ring(e.x, e.y, 6, r, '#ffd27a', 0.4, 6);
+          for (let i = 0; i < amt(18, am); i++) { const aa = rr(0, TAU), v = rr(0.3, 1) * r * 3; fx({ k: 'flame', x: e.x, y: e.y, vx: Math.cos(aa) * v, vy: Math.sin(aa) * v, life: 0.4, max: 0.4, size: rr(8, 13), drag: 4, grow: 1.4 }); }
+          smoke(e.x, e.y, amt(4, am), { size: 16 }); decal('scorch', e.x, e.y, r * 0.8, { life: 7 });
+          blastAt(e.owner, e.x, e.y, r, 18, { power: e.P, burn: 3, knock: 180, big: true, am });
+        }
+        break;
+      }
+      case 'double': if (e.life <= 0) popDecoy(e, true); break;
       case 'hands': if (e.target) { e.x = e.target.x; e.y = e.target.y; } if (e.target && e.target.st.root <= 0) e.life = Math.min(e.life, 0.2); break;
     }
   }
+  CUR = null;
   ENTS = ENTS.filter(e => e.life > 0);
 }
 function stepStones(dt) {
@@ -1693,12 +1833,32 @@ function stepStones(dt) {
 
 // ── hits ──
 function hurt(t, src, base, o = {}) {
+  if (t.isDecoy) { popDecoy(t); return true; }
+  if (t.isPhantom) return false;
   if (!inFight(t) || !inFight(src) || t.hp <= 0 || !FIGHT.on) return false;
   if (gone(t)) return false;
-  const sw = moveWay(src), tw = moveWay(t), am = o.am ?? 1;
-  if (t.st.invuln > 0) { words(t.x, t.y - 30, 'Dodged', '#e8e2f2', 13); SFX.dodge(); return false; }
-  if (o.melee && t.st.high > 0 && src.st.high <= 0) { words(t.x, t.y - 30, 'Out of reach', ELC.earth.light, 12); return false; }
-  let dmg = base * (o.power ?? 1) * WAYMOD[sw].dmg * advMul(sw, tw) * (src.isPlayer ? 1 : RANKS[src.rank].dmg);
+  const sw = moveWay(src), tw = moveWay(t), am = o.am ?? 1, S = t.st;
+  if (S.invuln > 0) { words(t.x, t.y - 30, 'Dodged', '#e8e2f2', 13); SFX.dodge(); return false; }
+  if (o.melee && S.high > 0 && src.st.high <= 0) { words(t.x, t.y - 30, 'Out of reach', ELC.earth.light, 12); return false; }
+  // jade: nothing gets through
+  if (S.statue > 0) { if (!o.quiet) { words(t.x, t.y - 34, 'Jade', '#9fe0b8', 12); sparks(t.x, t.y, 4, { col: '#d8ffe6', sp: 90 }); SFX.block(); } return false; }
+  // a breaking blow smashes every guard before it lands
+  if (o.breakGuard) {
+    const had = S.shield > 0 || S.armor > 0 || S.deflect > 0 || S.reflect > 0 || S.counter > 0 || S.stance > 0 || S.thorns > 0;
+    S.shield = S.shieldT = S.armor = S.deflect = S.reflect = S.counter = S.stance = S.thorns = 0;
+    if (had) { words(t.x, t.y - 50, 'Guard broken!', '#ffd27a', 15); burst(t.x, t.y, '#ffe0a0', 12, 160, 0.5, 5); cam.shake = Math.max(cam.shake, 4); }
+  }
+  // push hands: a blow up close is caught and turned aside, and the striker is thrown, soaked
+  if (o.melee && S.counter > 0 && src.hp > 0 && !gone(src)) {
+    S.counter = 0; const a = angTo(t, src);
+    t.pose = 'strike'; t.poseT = 0; swirl(t.x, t.y, 28, 14, { col: 'rgba(170,220,255,0.95)', spin: 9, vr: 40, life: 0.6 }); splash(src.x, src.y, 14, { r: 30 });
+    words(t.x, t.y - 50, 'Turned aside!', ELC.water.light, 15);
+    hurt(src, t, 6, { power: t.counterPow || 1, stun: 0.6, soak: 3, knock: 260, ang: a, big: true });
+    return false;
+  }
+  let dmg = base * (o.power ?? 1) * WAYMOD[sw].dmg * advMul(sw, tw) * (src.isPlayer ? YOU[sw] || 1 : RANKS[src.rank].dmg * (HALL[sw] || 1));
+  if (S.brand > 0 && t.brandBy === src) dmg *= 1.3;
+  if (src.st.fury > 0) dmg *= 1.2;
   if (o.airHit && t.st.air > 0) dmg *= 1.3;
   if (sw === 'fire' && t.st.soak > 0) { dmg *= 0.75; t.st.soak = 0; o = { ...o, burn: 0 }; smoke(t.x, t.y, 3, { size: 10 }); words(t.x, t.y - 44, 'Sizzle', '#bfe6ff', 11); }
   if (t.st.frozen > 0 && !o.freeze) { dmg *= 1.4; t.st.frozen = 0; iceBurst(t.x, t.y, 12, { sp: 180 }); words(t.x, t.y - 46, 'Shattered!', '#dff6ff', 14); }
@@ -1713,21 +1873,26 @@ function hurt(t, src, base, o = {}) {
   if (o.melee && t.st.thorns > 0) { src.st.burn = Math.max(src.st.burn, 2); src.hp = Math.max(0, src.hp - 4); flames(src.x, src.y, 6, { sp: 60 }); words(src.x, src.y - 30, 'Burned', '#ffb07a', 12); if (src.hp <= 0) knockedOut(src, t); }
   if (o.melee && t.st.armor > 0 && t.st.armorKind === 'ice') { src.st.slow = Math.max(src.st.slow, 1.5); iceBurst(src.x, src.y, 4, { sp: 60 }); }
   dmg = Math.max(0.5, dmg);
+  if (DMGLOG) { const k = sw + ':' + (CUR || '?'); DMGLOG[k] = (DMGLOG[k] || 0) + Math.min(dmg, t.hp); }
   t.hp = Math.max(0, t.hp - dmg);
   t.st.flash = 0.12; if (!o.quiet) { t.pose = 'hurt'; t.poseT = 0; }
   words(t.x + rr(-8, 8), t.y - 26, String(Math.round(dmg)), t.isPlayer ? '#ff8a7a' : '#ffe08a', o.big ? 20 : o.quiet ? 12 : 15);
   if (!o.quiet) { SFX.hit(!!o.big); hitFx(sw, t.x, t.y, !!o.big, am); if (o.big) { inkSplash(t.x, t.y, 10, 150); cam.shake = Math.max(cam.shake, 6); } }
-  const steady = t.st.stance > 0 || (t.st.armor > 0 && t.st.armorKind === 'stone');
+  // weightless: nothing slows, holds, stuns or throws them
+  const steady = unmoved(t), free = S.free > 0;
   const kn = steady ? 0 : (o.knock || 0) * (sw === 'air' ? WAYMOD.air.knock : 1) * (tw === 'earth' ? WAYMOD.earth.steady : 1);
   if (kn && o.ang != null) { t.kx += Math.cos(o.ang) * kn * 3.2; t.ky += Math.sin(o.ang) * kn * 3.2; }
-  if (o.stun && t.st.air <= 0) t.st.stun = Math.max(t.st.stun, o.stun * (o.power ? Math.min(1, 0.6 + 0.4 * o.power) : 1));
-  if (o.launch && !steady && t.st.high <= 0) { t.st.air = Math.max(t.st.air, o.launch); t.st.airMax = Math.max(t.st.air, o.launch); if (t.act && t.act.phase === 'wind') { t.act = null; t.glyph = null; } }
-  if (o.soak && t.st.high <= 0) t.st.soak = Math.max(t.st.soak, o.soak);
-  if (o.freeze) { if (t.st.soak > 0 || o.freezeAny) { t.st.frozen = Math.max(t.st.frozen, o.freeze * (o.power ? Math.min(1, 0.6 + 0.4 * o.power) : 1)); t.st.soak = 0; if (t.act && t.act.phase === 'wind') { t.act = null; t.glyph = null; } iceBurst(t.x, t.y, 10); words(t.x, t.y - 46, 'Frozen!', '#dff6ff', 15); } else if (o.chill) t.st.slow = Math.max(t.st.slow, o.chill); }
-  if (o.slow) t.st.slow = Math.max(t.st.slow, o.slow);
-  if (o.burn && t.st.soak <= 0) t.st.burn = Math.max(t.st.burn, o.burn);
-  if (o.root) t.st.root = Math.max(t.st.root, o.root);
-  if (o.blind) t.st.blind = Math.max(t.st.blind, o.blind);
+  if (o.stun && S.air <= 0 && !free) S.stun = Math.max(S.stun, o.stun * (o.power ? Math.min(1, 0.6 + 0.4 * o.power) : 1));
+  if (o.launch && !steady && S.high <= 0) { S.air = Math.max(S.air, o.launch); S.airMax = Math.max(S.air, o.launch); if (t.act && t.act.phase === 'wind') { t.act = null; t.glyph = null; } }
+  if (o.soak && S.high <= 0) S.soak = Math.max(S.soak, o.soak);
+  if (o.freeze && !free && (S.soak > 0 || o.freezeAny)) { S.frozen = Math.max(S.frozen, o.freeze * (o.power ? Math.min(1, 0.6 + 0.4 * o.power) : 1)); S.soak = 0; if (t.act && t.act.phase === 'wind') { t.act = null; t.glyph = null; } iceBurst(t.x, t.y, 10); words(t.x, t.y - 46, 'Frozen!', '#dff6ff', 15); }
+  if (o.chill && !free) S.slow = Math.max(S.slow, o.chill * (S.soak > 0 ? 1.6 : 1));
+  if (o.slow && !free) S.slow = Math.max(S.slow, o.slow);
+  if (o.burn && S.soak <= 0 && !(S.armorKind === 'stone' && S.armor > 0)) S.burn = Math.max(S.burn, o.burn);
+  if (o.root && !free) S.root = Math.max(S.root, o.root);
+  if (o.blind) S.blind = Math.max(S.blind, o.blind);
+  if (o.heavy && !free) S.heavy = Math.max(S.heavy, o.heavy);
+  if (o.silence) { S.silence = Math.max(S.silence, o.silence); if (t.act && t.act.phase === 'wind') { t.act = null; t.glyph = null; } }
   if (t.isPlayer) FIGHT.taken += dmg; else FIGHT.dealt += dmg;
   if (t.hp <= 0) knockedOut(t, src);
   return true;
@@ -1737,11 +1902,16 @@ function popShield(t) { t.st.shield = 0; t.st.shieldT = 0; splash(t.x, t.y, 18, 
 // statuses wear off; burns burn; heals heal; ki comes back; heat cools; wind dies down
 function stepStatus(f, dt) {
   const S = f.st;
-  for (const k of ['stun', 'slow', 'soak', 'frozen', 'air', 'root', 'blind', 'armor', 'veil', 'haste', 'invuln', 'reflect', 'thorns', 'deflect', 'stance', 'high', 'mend', 'flash', 'galeT', 'lavaSlow', 'sandSlow']) if (S[k] > 0) S[k] = Math.max(0, S[k] - dt);
+  for (const k of ['stun', 'slow', 'soak', 'frozen', 'air', 'root', 'blind', 'armor', 'veil', 'haste', 'invuln', 'reflect', 'thorns', 'deflect', 'stance', 'high', 'mend', 'flash', 'galeT', 'lavaSlow', 'sandSlow',
+    'counter', 'heavy', 'silence', 'crosswind', 'brand', 'fury', 'free']) if (S[k] > 0) S[k] = Math.max(0, S[k] - dt);
+  // out of the jade, mended a little
+  if (S.statue > 0) { S.statue = Math.max(0, S.statue - dt); if (S.statue <= 0) { const h = (f.statueHeal || 0) * WAYMOD.earth.heal; f.hp = Math.min(f.maxHp, f.hp + h); if (h > 0.5) words(f.x, f.y - 40, '+' + Math.round(h), '#9dffc2', 14); burst(f.x, f.y, '#9fe0b8', 12, 140, 0.5, 5); } }
+  if (S.fury > 0 && inFight(f)) { f.heat = Math.min(100, (f.heat || 0) + 6 * dt); f.heatT = 0; }
   if (S.shieldT > 0) { S.shieldT = Math.max(0, S.shieldT - dt); if (S.shieldT <= 0 && S.shield > 0) { S.shield = 0; splash(f.x, f.y, 8, { r: 30 }); } }
-  if (S.burn > 0) { S.burn = Math.max(0, S.burn - dt); if (S.soak > 0) S.burn = 0; if (inFight(f) && f.hp > 0) { f.hp = Math.max(0, f.hp - 2 * dt); if (f.hp <= 0) knockedOut(f, foeOf(f)); } }
+  if (S.burn > 0) { S.burn = Math.max(0, S.burn - dt); if (S.soak > 0 || (S.armorKind === 'stone' && S.armor > 0)) S.burn = 0; if (inFight(f) && f.hp > 0 && S.statue <= 0) { if (DMGLOG) { const k = (foeOf(f) ? moveWay(foeOf(f)) : '?') + ':burn'; DMGLOG[k] = (DMGLOG[k] || 0) + Math.min(2 * dt, f.hp); } f.hp = Math.max(0, f.hp - 2 * dt); if (f.hp <= 0) knockedOut(f, foeOf(f)); } }
   if (S.regen > 0) { S.regen = Math.max(0, S.regen - dt); f.hp = Math.min(f.maxHp, f.hp + S.regenRate * dt); }
-  f.ki = Math.min(f.maxKi, f.ki + f.kiRegen * dt);
+  const kf = kiFlow(f); f.ki = Math.min(f.maxKi, f.ki + f.kiRegen * kf * dt);
+  if (DMGLOG && inFight(f) && FIGHT.on) { const w = moveWay(f); DMGLOG['kf:' + w] = (DMGLOG['kf:' + w] || 0) + kf * dt; DMGLOG['t:' + w] = (DMGLOG['t:' + w] || 0) + dt; DMGLOG['hp:' + w] = (DMGLOG['hp:' + w] || 0) + f.hp / f.maxHp * dt; }
   if (f.way === 'fire' || f.way === 'master') {
     f.heatT = (f.heatT || 0) + dt;
     if (f.heatT > 1.5) f.heat = Math.max(0, f.heat - 6 * dt);
@@ -1750,56 +1920,86 @@ function stepStatus(f, dt) {
   if (S.air > 0) f.lift = 26 * Math.sin(Math.PI * clamp(S.air / Math.max(0.01, S.airMax || S.air), 0, 1));
   else if (S.leap > 0) f.lift = 160 * Math.sin(Math.PI * clamp(1 - S.leap / 0.7, 0, 1) * 0.5 + Math.PI * 0.5 * clamp(1 - S.leap / 0.7, 0, 1));
   else if (S.high > 0) f.lift = 24;
+  else if (S.free > 0) f.lift = 7 + 2 * Math.sin(T * 4);
   else f.lift = Math.max(0, (f.lift || 0) - dt * 120);
   if (S.air <= 0 && f.wasAir) { dust(f.x, f.y, 4, { sp: 60 }); }
   f.wasAir = S.air > 0;
   f.poseT += dt * 3.2; if (f.poseT >= 1 && f.pose !== 'down' && f.pose !== 'bow') f.pose = S.shield > 0 || S.armor > 0 ? 'guard' : 'idle';
 }
+// each way draws its ki its own way: water from standing in water, fire from running hot, earth from standing its ground,
+// air from staying on the move
+function kiFlow(f) {
+  const w = moveWay(f);
+  if (w === 'water') return inZone(f, 'puddle') || inZone(f, 'flood') ? 1.6 : 1;
+  if (w === 'fire') return f.heat >= 50 ? 1.5 : 1;
+  if (w === 'earth') return (f.stillT || 0) > 0.6 ? 1.5 : 1;
+  if (w === 'air') return (f.stillT || 0) < 0.2 && f.wind > 10 ? 1.25 : 1;
+  return 1;
+}
 // moving through a dash (a glide, a rocket step, a cartwheel): carried along, maybe leaving a trail
 function stepDash(f, dt) {
   const D = f.dash;
   if (!D) return false;
+  CUR = D.spell;
   f.x += D.vx * dt; f.y += D.vy * dt; D.t -= dt;
   if (D.trail && Math.random() < 0.7) { if (D.trail === 'fire') flames(f.x, f.y, 2, { sp: 30, rise: 30, size: 9 }); else drops(f.x, f.y, 2, { sp: 50, up: 70 }); }
   if (D.trail && (!D.lastTrail || Math.hypot(f.x - D.lastTrail.x, f.y - D.lastTrail.y) > 26)) { D.lastTrail = { x: f.x, y: f.y }; ZONES.push({ kind: 'trail', owner: f, way: D.way, x: f.x, y: f.y, r: 16, life: D.way === 'fire' ? 2.5 : 3, max: 3, tick: 0, P: 1, hits: new Map() }); if (D.way === 'fire') decal('scorch', f.x, f.y, 14, { life: 4 }); else decal('wet', f.x, f.y, 14, { life: 4 }); }
-  if (D.hitOnce && !D.done) { const t = foeOf(f); if (t && !gone(t) && dist(f, t) < f.r + t.r + 12) { D.done = true; hurt(t, f, D.hitOnce.dmg, { power: D.hitOnce.power, knock: D.hitOnce.knock, ang: Math.atan2(D.vy, D.vx), am: D.hitOnce.am, airHit: true }); } }
+  if (D.hitOnce && !D.done) { const t = foeOf(f); if (t && !gone(t) && dist(f, t) < f.r + t.r + 12) { D.done = true; hurt(t, f, D.hitOnce.dmg, { ...D.hitOnce, ang: Math.atan2(D.vy, D.vx) }); } }
   if (f.spinT > 0) { f.spinT -= dt; if (Math.random() < 0.8) streaks(f.x, f.y, rr(0, TAU), 1, { sp: 120, len: 16 }); }
   if (D.t <= 0) f.dash = null;
+  CUR = null;
   return true;
 }
 // how fast a fighter can walk right now
 function moveMul(f) {
   const S = f.st;
-  return (S.slow > 0 ? 0.6 : 1) * (S.lavaSlow > 0 || S.sandSlow > 0 ? 0.55 : 1) * (S.haste > 0 ? 1.45 : 1) * (S.armor > 0 && (S.armorKind === 'ice' || S.armorKind === 'stone') ? 0.82 : 1) * (S.soak > 0 && moveWay(f) !== 'water' ? 0.9 : 1);
+  if (S.free > 0) return 1.15 * (S.haste > 0 ? 1.45 : 1);
+  return (S.heavy > 0 ? 0.7 : 1) * (S.slow > 0 ? 0.6 : 1) * (S.lavaSlow > 0 || S.sandSlow > 0 ? 0.55 : 1) * (S.haste > 0 ? 1.45 : 1) * (S.armor > 0 && (S.armorKind === 'ice' || S.armorKind === 'stone') ? 0.82 : 1) * (S.soak > 0 && moveWay(f) !== 'water' ? 0.9 : 1);
 }
 const clearSpells = () => { SHOTS = []; WAVES = []; ZONES = []; ENTS = []; STONES = []; TIMERS = []; BEAMS = []; };
 // air builds wind by moving; standing still lets it die away
 function stepWind(f, dt, moved) {
+  if (moved > 0.6) f.stillT = 0; else f.stillT = (f.stillT || 0) + dt;
   if (moveWay(f) !== 'air') return;
-  if (moved > 0.6) { f.wind = Math.min(100, f.wind + moved * 0.17 * (f.st.haste > 0 ? 2 : 1)); f.stillT = 0; }
-  else { f.stillT = (f.stillT || 0) + dt; if (f.stillT > 0.35) f.wind = Math.max(0, f.wind - 18 * dt); }
+  if (moved > 0.6) f.wind = Math.min(100, f.wind + moved * 0.17 * (f.st.haste > 0 ? 2 : 1));
+  else if (f.stillT > 0.35) f.wind = Math.max(0, f.wind - 18 * dt);
 }
 
 // ── the fighters' minds ──
 // when each spell is a good idea: a range of distance it's for, how keen they are, and any condition
+const guarded = t => t.st.shield > 0 || t.st.armor > 0 || t.st.counter > 0 || t.st.stance > 0 || t.st.deflect > 0 || t.st.reflect > 0 || t.st.thorns > 0;
+const troubles = f => ['burn', 'slow', 'blind', 'root', 'heavy', 'brand', 'silence', 'crosswind'].filter(k => f.st[k] > 0.5).length + (f.st.soak > 0.5 && moveWay(f) !== 'water' ? 1 : 0);
+const hostileUnder = f => ZONES.some(z => z.owner && z.owner !== f && ['lava', 'whirlpool', 'quicksand', 'ice', 'puddle'].includes(z.kind) && Math.hypot(f.x - z.x, f.y - z.y) < z.r);
 const AIH = {
-  'water:lash': { r: [0, 135], w: 3 }, 'water:bullet': { r: [90, 600], w: 3 }, 'water:bubble': { def: 1, w: 0.4 }, 'water:puddle': { r: [40, 330], w: 1.2, ok: (f, t) => !inZone(t, 'puddle') },
-  'water:rain': { heal: 1 }, 'water:glide': { evade: 1, move: 1 }, 'water:geyser': { r: [40, 380], w: 1.8, ok: (f, t) => (inZone(t, 'puddle') ? 2.5 : 1) }, 'water:shards': { r: [80, 520], w: 1.8, ok: (f, t) => (t.st.soak > 0 ? 3 : 0.8) },
-  'water:whirlpool': { r: [80, 360], w: 1.4 }, 'water:freeze': { r: [0, 520], w: 0.5, ok: (f, t) => (t.st.soak > 0 ? 5 : ZONES.some(z => z.kind === 'puddle') ? 0.6 : 0) }, 'water:tidal': { r: [60, 420], w: 1.6 }, 'water:mist': { def: 1, w: 0.3 },
-  'water:undertow': { r: [180, 420], w: 1.4 }, 'water:mirror': { def: 1, shot: 1, w: 0.2 }, 'water:dragon': { r: [100, 500], w: 1.3 }, 'water:jet': { r: [60, 440], w: 1.6 }, 'water:icearmor': { def: 1, w: 0.4, ok: (f) => (f.hp < f.maxHp * 0.6 ? 2 : 1) },
-  'water:draw': { ki: 1 }, 'water:needles': { r: [80, 400], w: 1.3 }, 'water:flood': { ult: 1, r: [0, 500], w: 1 },
+  // water: reach, soak, hold, slip away
+  'water:lash': { r: [0, 140], w: 3 }, 'water:bullet': { r: [90, 600], w: 3 }, 'water:bubble': { def: 1, w: 0.4 }, 'water:puddle': { r: [40, 330], w: 1.2, ok: (f, t) => (inZone(t, 'puddle') ? 0 : 1) },
+  'water:rain': { heal: 1 }, 'water:glide': { evade: 1, move: 1 }, 'water:geyser': { r: [40, 380], w: 1.8, ok: (f, t) => (inZone(t, 'puddle') ? 2.5 : 1) }, 'water:shards': { r: [80, 520], w: 1.8, ok: (f, t) => (t.st.soak > 0 ? 2 : 1) },
+  'water:whirlpool': { r: [80, 360], w: 1.4 }, 'water:freeze': { r: [0, 520], w: 0.5, ok: (f, t) => (t.st.soak > 0 ? 5 : ZONES.some(z => z.kind === 'puddle') ? 0.6 : 0) },
+  'water:tidal': { r: [60, 420], w: 1.3, ok: (f, t) => 1 + Math.min(3, ZONES.filter(z => z.owner === t && (z.kind === 'lava' || z.kind === 'firewall')).length + STONES.filter(s => s.owner === t).length * 0.6) },
+  'water:mist': { def: 1, w: 0.3 }, 'water:undertow': { r: [180, 420], w: 1.4 }, 'water:mirror': { def: 1, shot: 1, w: 0.2 }, 'water:dragon': { r: [100, 500], w: 1.3 },
+  'water:pushhands': { vsClose: 1, r: [0, 110], w: 0.5 }, 'water:ebb': { r: [40, 320], w: 0.3, ok: (f, t) => (hostileUnder(f) ? 6 : inZone(f, 'puddle') && !inZone(t, 'puddle') ? 2 : 0.5) },
+  'water:draw': { ki: 1 }, 'water:double': { evade: 1, w: 0.3 }, 'water:flood': { ult: 1, r: [0, 500], w: 1 },
+  // fire: hit, burn, run hot
   'fire:jab': { r: [0, 95], w: 3 }, 'fire:fireball': { r: [90, 520], w: 3 }, 'fire:breath': { r: [0, 170], w: 2.2 }, 'fire:rocket': { move: 1, evade: 0.3, r: [180, 600], w: 0.8 }, 'fire:flameshield': { def: 1, w: 0.4 },
-  'fire:roundhouse': { r: [0, 110], w: 2 }, 'fire:firewall': { def: 1, shot: 1, w: 0.6, r: [120, 500] }, 'fire:vent': { r: [0, 140], w: 0.4, ok: (f) => (f.heat > 60 ? 6 : f.heat > 35 ? 1.5 : 0) }, 'fire:embers': { r: [80, 420], w: 1.8 },
-  'fire:explosion': { r: [80, 420], w: 1.6 }, 'fire:knee': { r: [0, 100], w: 1.8 }, 'fire:whip': { r: [160, 320], w: 1.4 }, 'fire:lava': { r: [60, 380], w: 1.3 }, 'fire:ignite': { r: [0, 460], w: 0.4, ok: (f, t) => (t.st.burn > 2 ? 5 : t.st.burn > 0.8 ? 1.5 : 0) },
-  'fire:haze': { def: 1, shot: 1, w: 0.3 }, 'fire:meteor': { r: [100, 500], w: 1.2 }, 'fire:firework': { r: [100, 500], w: 1.3 }, 'fire:phoenix': { heal: 1, ok: (f) => (f.heat > 40 ? 2 : 0.4) }, 'fire:stoke': { ki: 1 }, 'fire:inferno': { ult: 1, r: [0, 200], w: 1 },
-  'earth:fist': { r: [0, 95], w: 3 }, 'earth:rock': { r: [80, 520], w: 3 }, 'earth:wall': { def: 1, shot: 1, w: 0.5, r: [120, 600] }, 'earth:spike': { r: [40, 400], w: 2 }, 'earth:skin': { def: 1, w: 0.5 },
-  'earth:quake': { r: [0, 160], w: 2 }, 'earth:clay': { heal: 1 }, 'earth:shatter': { r: [0, 600], w: 0.3, ok: (f, t) => STONES.filter(s => s.owner === f && Math.hypot(s.x - t.x, s.y - t.y) < 120).length * 2.5 },
-  'earth:boulder': { r: [100, 520], w: 1.4 }, 'earth:quicksand': { r: [60, 380], w: 1.3 }, 'earth:sand': { r: [0, 180], w: 1.4 }, 'earth:pillar': { def: 1, shot: 1, w: 0.3 }, 'earth:grip': { r: [100, 330], w: 1.3 }, 'earth:landslide': { r: [80, 400], w: 1.3 },
-  'earth:burrow': { move: 1, evade: 0.6, r: [160, 600], w: 0.8 }, 'earth:crystal': { r: [100, 600], w: 1.6 }, 'earth:stance': { r: [0, 110], w: 0.6 }, 'earth:pulse': { ki: 1 }, 'earth:fault': { r: [100, 480], w: 1.5 }, 'earth:mountain': { ult: 1, r: [60, 500], w: 1 },
+  'fire:roundhouse': { r: [0, 110], w: 2 }, 'fire:firewall': { r: [90, 380], w: 0.8 }, 'fire:vent': { r: [0, 140], w: 0.4, ok: (f) => (f.heat > 60 ? 6 : f.heat > 35 ? 1.5 : 0) }, 'fire:embers': { r: [80, 420], w: 1.8 },
+  'fire:charge': { r: [0, 440], w: 1.1 }, 'fire:knee': { r: [0, 100], w: 1.4, ok: (f, t) => (guarded(t) ? 4 : 1) }, 'fire:whip': { r: [160, 340], w: 1.4 }, 'fire:lava': { r: [60, 380], w: 1.3 },
+  'fire:ignite': { r: [0, 460], w: 0.4, ok: (f, t) => (t.st.burn > 2 ? 5 : t.st.burn > 0.8 ? 1.5 : 0) }, 'fire:fury': { r: [0, 400], w: 0.5, ok: (f) => (f.heat < 50 ? 1.5 : 0.3) },
+  'fire:meteor': { r: [100, 500], w: 1.2 }, 'fire:firework': { r: [100, 500], w: 1.3, ok: (f, t) => (STONES.some(s => s.owner === t) ? 2 : 1) }, 'fire:phoenix': { heal: 1, ok: (f) => (f.heat > 40 ? 2 : 0.4) },
+  'fire:brand': { r: [0, 460], w: 0.6, ok: (f, t) => (t.st.brand > 0 ? 0 : 1) }, 'fire:inferno': { ult: 1, r: [0, 200], w: 1 },
+  // earth: stand, build, crush
+  'earth:fist': { r: [0, 95], w: 3 }, 'earth:rock': { r: [80, 520], w: 3 }, 'earth:wall': { def: 1, shot: 1, w: 0.5, r: [120, 600] }, 'earth:spike': { r: [40, 400], w: 2 }, 'earth:skin': { def: 1, w: 0.5, ok: (f) => (f.st.burn > 0 ? 3 : 1) },
+  'earth:quake': { r: [0, 160], w: 2 }, 'earth:statue': { def: 1, w: 0.2, ok: (f) => (f.hp < f.maxHp * 0.5 ? 2 : 1) },
+  'earth:shatter': { r: [0, 600], w: 0.3, ok: (f, t) => STONES.filter(s => s.owner === f && Math.hypot(s.x - t.x, s.y - t.y) < 120).length * 2.5 },
+  'earth:boulder': { r: [100, 520], w: 1.4 }, 'earth:quicksand': { r: [60, 380], w: 1.3 }, 'earth:sand': { r: [0, 180], w: 1.4 }, 'earth:pillar': { def: 1, shot: 1, w: 0.3 }, 'earth:grip': { r: [100, 330], w: 1.3 },
+  'earth:landslide': { r: [80, 400], w: 1.3 }, 'earth:burrow': { move: 1, evade: 0.6, r: [160, 600], w: 0.8 }, 'earth:crystal': { r: [100, 600], w: 1.6 }, 'earth:stance': { r: [0, 110], w: 0.6 },
+  'earth:weight': { r: [0, 420], w: 0.8, ok: (f, t) => (t.st.heavy > 0 ? 0 : moveWay(t) === 'air' || moveWay(t) === 'water' ? 1.6 : 1) },
+  'earth:toss': { r: [0, 100], w: 1.6, ok: (f, t) => (STONES.some(s => s.owner === f && dist(s, f) < 160) ? 2 : 1) }, 'earth:mountain': { ult: 1, r: [60, 500], w: 1 },
+  // air: move, toss them about, unsettle
   'air:blade': { r: [80, 560], w: 3 }, 'air:gust': { r: [0, 210], w: 2 }, 'air:feather': { evade: 1, w: 0.4 }, 'air:meialua': { r: [0, 100], w: 2.4 }, 'air:updraft': { r: [60, 340], w: 1.8 }, 'air:airshield': { def: 1, shot: 1, w: 0.4 },
-  'air:breath': { heal: 1 }, 'air:tornado': { r: [80, 460], w: 1.5 }, 'air:flurry': { r: [0, 90], w: 2 }, 'air:vacuum': { r: [100, 300], w: 1.2 }, 'air:twin': { r: [100, 520], w: 1.6 }, 'air:walk': { w: 0.4, ok: (f) => (f.st.haste > 0 ? 0 : 1) },
-  'air:downdraft': { r: [40, 420], w: 0.8, ok: (f, t) => (t.st.air > 0 ? 6 : 0.7) }, 'air:pressure': { r: [60, 480], w: 1.5 }, 'air:crane': { r: [100, 500], w: 1.1 }, 'air:whistle': { r: [0, 400], w: 0.2, ok: (f, t) => (t.act && t.act.phase === 'wind' ? 7 : 0.4) },
-  'air:gale': { r: [60, 420], w: 1.3 }, 'air:gather': { ki: 1 }, 'air:spin': { r: [60, 240], w: 1.3 }, 'air:typhoon': { ult: 1, r: [0, 500], w: 1 },
+  'air:breath': { heal: 1, cleanse: 1 }, 'air:tornado': { r: [80, 460], w: 1.5 }, 'air:flurry': { r: [0, 90], w: 2 }, 'air:vacuum': { vsWind: 1, r: [0, 400], w: 0.6 }, 'air:twin': { r: [100, 520], w: 1.6, ok: (f, t) => (STONES.some(s => s.owner === t) ? 2 : 1) },
+  'air:walk': { w: 0.4, ok: (f) => (f.st.haste > 0 ? 0 : 1) }, 'air:downdraft': { r: [40, 420], w: 0.8, ok: (f, t) => (t.st.air > 0 ? 6 : 0.7) }, 'air:crosswind': { r: [0, 500], w: 0.5, ok: (f, t) => (t.st.crosswind > 0 || t.st.free > 0 ? 0 : 1) },
+  'air:crane': { r: [100, 500], w: 1.1 }, 'air:whistle': { vsWind: 1, r: [0, 400], w: 0.2, ok: (f, t) => (t.act && t.act.phase === 'wind' ? 7 : 0.4) }, 'air:gale': { r: [60, 420], w: 1.3 },
+  'air:echo': { r: [0, 500], w: 0.6, ok: (f) => (f.lastSpell && !SELF.has(f.lastSpell.tag) && f.lastSpell.tag !== 'Ultimate' ? 1.5 : 0) }, 'air:weightless': { def: 1, w: 0.3, ok: (f) => (troubles(f) ? 3 : 1) }, 'air:typhoon': { ult: 1, r: [0, 500], w: 1 },
 };
 const allowedFor = f => { const way = moveWay(f), n = f.rank >= 4 ? 20 : RANKS[f.rank].spells; return MOVES[way].filter(m => m.order < n); };
 // where to walk: the distance this fighter likes, circling; air never stands still, earth hardly strolls; out of their pools
@@ -1811,25 +2011,37 @@ function aiWalk(f, foe, dt) {
   const strafe = way === 'air' ? 1.1 : 0.6;
   mx += -Math.sin(a) * strafe * ai.strafe; my += Math.cos(a) * strafe * ai.strafe;
   if (Math.random() < dt * 0.5) ai.strafe *= -1;
-  const bad = ZONES.find(z => z.owner === foe && ['puddle', 'lava', 'whirlpool', 'quicksand', 'mark', 'needles', 'ice'].includes(z.kind) && Math.hypot(f.x - z.x, f.y - z.y) < z.r + 10);
+  if (way === 'water') { const pool = ZONES.find(z => z.owner === f && z.kind === 'puddle' && z.life > 1.5 && Math.hypot(f.x - z.x, f.y - z.y) < 170); if (pool) { const dp = Math.hypot(pool.x - f.x, pool.y - f.y); if (dp > pool.r * 0.5) { mx += (pool.x - f.x) / dp * 1.4; my += (pool.y - f.y) / dp * 1.4; } else { mx *= 0.3; my *= 0.3; } } }
+  const bad = ZONES.find(z => z.owner === foe && ['puddle', 'lava', 'whirlpool', 'quicksand', 'mark', 'ice'].includes(z.kind) && Math.hypot(f.x - z.x, f.y - z.y) < z.r + 10);
   if (bad && (f.rank >= 2 || f.isPlayer)) { const a2 = Math.atan2(f.y - bad.y, f.x - bad.x); mx += Math.cos(a2) * 1.6; my += Math.sin(a2) * 1.6; }
   const n = Math.hypot(mx, my) || 1;
   return { mx: mx / n, my: my / n };
 }
 // what to cast: first, a shield or a dodge if a blow or a shot is coming (if they see it); otherwise, now and then,
 // the spell that suits the distance, their health and ki, and the state of the fight (a soaked foe, stones by them...)
+// what they'd want to answer: a big spell coming, or a blow up close
+const BIG = new Set(['Blast', 'Launch', 'Wave', 'Wash', 'Ultimate', 'Sweep', 'Slam', 'Summon', 'Roll', 'Leap', 'Burst', 'Spike', 'Stun', 'Break', 'Throw', 'Rockfall', 'Storm', 'Bomb', 'Lob', 'Trap', 'Freeze', 'Sink', 'Root', 'Grapple']);
+const CLOSE = new Set(['Strike', 'Break', 'Throw', 'Flurry', 'Sweep']);
 function aiChoose(f, foe, spells, dt, K) {
   const ai = f.ai, d = dist(f, foe);
   for (const k in ai.cd) ai.cd[k] = Math.max(0, ai.cd[k] - dt);
-  const can = m => !ai.cd[m.id] && f.ki >= m.cost;
-  const big = foe.act && foe.act.phase === 'wind' && ['Blast', 'Launch', 'Wave', 'Ultimate', 'Beam', 'Sweep', 'Slam', 'Summon', 'Roll', 'Leap'].includes(foe.act.move.tag);
+  const can = m => !ai.cd[m.id] && f.ki >= m.cost && !(f.st.heavy > 0 && LIGHT.has(m.tag));
+  const wind = foe.act && foe.act.phase === 'wind' ? foe.act.move : null;
+  const big = wind && BIG.has(wind.tag), close = wind && CLOSE.has(wind.tag) && d < 140;
   const shotIn = SHOTS.some(s => s.owner === foe && !s.harmless && dist(s, f) < 140) || WAVES.some(w => w.owner === foe && dist(w, f) < 180);
   const markUnder = ZONES.some(z => z.kind === 'mark' && Math.hypot(f.x - z.x, f.y - z.y) < z.r + 14);
   if (ai.reactT > 0) { ai.reactT -= dt; if (ai.reactT <= 0) ai.reacted = false; }
-  if ((big || shotIn || markUnder) && !ai.reacted) {
+  if ((big || close || shotIn || markUnder) && !ai.reacted) {
     ai.reacted = true; ai.reactT = 0.9;
     if (Math.random() < K.react) {
-      const opts = spells.filter(m => can(m) && AIH[m.id] && (AIH[m.id].def || AIH[m.id].evade) && (!markUnder || AIH[m.id].evade) && (!AIH[m.id].shot || shotIn));
+      const opts = spells.filter(m => {
+        const h = AIH[m.id]; if (!h || !can(m)) return false;
+        if (h.vsClose) return close;
+        if (h.vsWind) return !!wind && !markUnder;
+        if (!(h.def || h.evade)) return false;
+        if (markUnder && !h.evade) return false;
+        return !h.shot || shotIn;
+      });
       if (opts.length) return { move: opts[(Math.random() * opts.length) | 0], quick: true };
     }
   }
@@ -1846,6 +2058,7 @@ function aiChoose(f, foe, spells, dt, K) {
     else if (h.def) v = h.w * 0.5;
     else if (h.r) v = d >= h.r[0] && d <= h.r[1] ? h.w : 0;
     else v = h.w || 0;
+    if (h.cleanse) v = Math.max(v, troubles(f) * 1.2);
     if (h.move && d > 260) v += 1.2;
     if (v > 0 && h.ok) v *= h.ok(f, foe);
     if (v > 0) w.set(m, v);
@@ -1856,7 +2069,7 @@ function aiChoose(f, foe, spells, dt, K) {
   return { move: [...w.keys()][0] };
 }
 function aiFight(f, foe, dt) {
-  if (f.hp <= 0 || !canCast(f) && !(f.st.mend > 0)) { if (f.st.air <= 0 && !f.dash) { f.vx = 0; f.vy = 0; } return; }
+  if (f.hp <= 0 || held(f) && !(f.st.mend > 0)) { if (f.st.air <= 0 && !f.dash) { f.vx = 0; f.vy = 0; } return; }
   f.face = angTo(f, foe);
   const stuck = f.st.root > 0 || f.st.high > 0 || f.st.stance > 0 || f.st.mend > 0 || (f.act && f.act.chan > 0);
   if (!f.act && !stuck) { const dir = aiWalk(f, foe, dt), sp = f.speed * moveMul(f) * 0.85; f.vx = dir.mx * sp; f.vy = dir.my * sp; }
@@ -1871,7 +2084,7 @@ function useAi(f, move, foe, quick) {
   const P = RANKS[f.rank].power;
   if (startMove(f, move, P, foe)) {
     const h = AIH[move.id] || {};
-    f.ai.cd[move.id] = h.ult ? 16 : h.heal ? 10 : h.ki ? 6 : h.def ? 4 : h.evade ? 3 : (move.cost >= 18 ? 6 : move.cost >= 12 ? 3.5 : 1.6);
+    f.ai.cd[move.id] = h.ult ? 16 : h.heal ? 10 : h.ki ? 6 : h.def || h.vsClose || h.vsWind ? 4 : h.evade ? 3 : (move.cost >= 18 ? 6 : move.cost >= 12 ? 3.5 : 1.6);
     if (quick && f.act) { f.act.t *= 0.5; f.act.wind *= 0.5; if (f.glyph) f.glyph.dur *= 0.5; }
   }
 }
@@ -2109,6 +2322,8 @@ function drawTexts() {
 }
 // a lumpy stone outline, the same every time for the same seed
 function rockPath(r, seed = 1) { const rnd = srand(seed + 3); ctx.beginPath(); for (let i = 0; i < 7; i++) { const a = i / 7 * TAU, rr2 = r * (0.75 + 0.35 * rnd()); ctx.lineTo(Math.cos(a) * rr2, Math.sin(a) * rr2); } ctx.closePath(); }
+// a colour washed part of the way to another
+function mixHex(a, b, k) { const p = parseInt(a.slice(1), 16), q = parseInt(b.slice(1), 16), m = (x, y) => Math.round(x + (y - x) * k); return `rgb(${m(p >> 16, q >> 16)},${m((p >> 8) & 255, (q >> 8) & 255)},${m(p & 255, q & 255)})`; }
 function shadeHex(hex, k) { const n = parseInt(hex.slice(1), 16), f = v => Math.max(0, Math.min(255, Math.round(v * k))); return `rgb(${f(n >> 16)},${f((n >> 8) & 255)},${f(n & 255)})`; }
 
 // ── the extra show when a spell is written well: the glyph lit in the air, dissolving into its element ──
@@ -2179,7 +2394,6 @@ function drawZones(t) {
         for (let i = 0; i < 4; i++) { ctx.beginPath(); for (let j = 0; j <= 24; j++) { const u = j / 24, a = t * 4 + i * TAU / 4 + u * 3.4, rr2 = r * (1 - u * 0.85); ctx.lineTo(z.x + Math.cos(a) * rr2, z.y + Math.sin(a) * rr2 * 0.75); } ctx.stroke(); }
         break;
       }
-      case 'needles': { ctx.globalAlpha = 0.25 * k; ctx.fillStyle = '#1d5f9a'; ctx.beginPath(); ctx.ellipse(z.x, z.y, z.r, z.r * 0.75, 0, 0, TAU); ctx.fill(); break; }
       case 'lava': {
         ctx.globalAlpha = k; const g = ctx.createRadialGradient(z.x, z.y, 0, z.x, z.y, z.r); g.addColorStop(0, '#ffd27a'); g.addColorStop(0.45, '#ff7a2a'); g.addColorStop(0.85, '#a8260f'); g.addColorStop(1, 'rgba(60,20,10,0)');
         ctx.fillStyle = g; ctx.beginPath(); ctx.ellipse(z.x, z.y, z.r, z.r * 0.75, 0, 0, TAU); ctx.fill();
@@ -2227,8 +2441,6 @@ function drawWaves(t) {
       for (let i = 0; i < 9; i++) { const u = i / 8 - 0.5, y = u * w.width, x = Math.cos(u * Math.PI) * 14 + Math.sin(t * 14 + i * 1.7) * 6, al = k * (0.5 + 0.4 * ((i * 7) % 3) / 2);
         ctx.lineWidth = 3 + (i % 3); ctx.strokeStyle = '#46405e'; ctx.globalAlpha = al * 0.25; ctx.beginPath(); ctx.moveTo(x - 46, y + 2); ctx.quadraticCurveTo(x - 18, y - 4, x, y + 2); ctx.stroke();
         ctx.lineWidth = 2 + (i % 3); ctx.strokeStyle = '#ffffff'; ctx.globalAlpha = al; ctx.beginPath(); ctx.moveTo(x - 46, y); ctx.quadraticCurveTo(x - 18, y - 6, x, y); ctx.stroke(); }
-    } else if (w.kind === 'fault') {
-      ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = k * 0.5; ctx.drawImage(sprite('#e6cf9c'), -22, -22, 44, 44);
     }
     ctx.restore();
   }
@@ -2343,6 +2555,24 @@ function drawEnts(t, layer) {
         ctx.fillStyle = '#b39670'; ctx.beginPath(); ctx.moveTo(e.x - 2, e.y - hgt); ctx.lineTo(e.x + w, e.y); ctx.lineTo(e.x + w * 0.3, e.y); ctx.closePath(); ctx.fill();
         break;
       }
+      case 'double': {
+        // a copy of them made of water: their colours washed blue, a sheen, drips
+        const o = e.owner, w = '#5cb8ff', bob = Math.sin(t * 3 + e.x) * 1.2;
+        const fake = { x: e.x, y: e.y + bob, face: e.face, hp: 1, pose: 'guard', poseT: 1, walk: 0, lift: 0, st: e.st, spinT: 0, isPlayer: o.isPlayer, way: o.way,
+          gi: mixHex(e.gi, w, 0.35), trim: mixHex(e.trim, w, 0.4), belt: mixHex(e.belt, w, 0.3), skin: mixHex(e.skin, w, 0.3), hair: mixHex(e.hair, w, 0.3) };
+        ctx.globalAlpha = 0.82 * k; drawFighter(fake, t);
+        ctx.globalAlpha = 0.35 * k; ctx.fillStyle = '#bfe6ff'; ctx.beginPath(); ctx.ellipse(e.x - 3, e.y - 4 + bob, 7, 10, -0.4, 0, TAU); ctx.fill();
+        ctx.globalAlpha = 0.8 * k; ctx.fillStyle = 'rgba(150,215,255,0.9)'; for (let i = 0; i < 3; i++) { const ph = (t * 1.6 + i / 3) % 1; ctx.beginPath(); ctx.ellipse(e.x - 8 + i * 8, e.y - 2 + ph * 14, 1.6, 2.4, 0, 0, TAU); ctx.fill(); }
+        break;
+      }
+      case 'charge': {
+        // a burning charge: in flight, or stuck on them and blinking faster as it's about to go
+        const z = e.stuck ? 20 : (e.z || 0) + 8, left = e.life / e.max, blink = e.stuck || e.loose ? (Math.sin((e.max - e.life) * (12 + 40 * (1 - left))) > 0 ? 1 : 0.5) : 1;
+        ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = blink; ctx.drawImage(sprite('#ff6a2a'), e.x - 13, e.y - z - 13, 26, 26);
+        ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1; ctx.fillStyle = '#3a1a10'; ctx.beginPath(); ctx.arc(e.x, e.y - z, 5.5, 0, TAU); ctx.fill();
+        ctx.fillStyle = blink > 0.9 ? '#ffe08a' : '#ff8a3a'; ctx.beginPath(); ctx.arc(e.x, e.y - z, 2.6, 0, TAU); ctx.fill();
+        break;
+      }
       case 'boulder': { ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.beginPath(); ctx.ellipse(e.x + 3, e.y + 4, e.r, e.r * 0.55, 0, 0, TAU); ctx.fill(); ctx.translate(e.x, e.y - e.r * 0.6); ctx.rotate(e.rot); rockPath(e.r, e.seed); ctx.fillStyle = '#8a7356'; ctx.fill(); ctx.strokeStyle = 'rgba(40,28,18,0.7)'; ctx.lineWidth = 1.5; ctx.stroke(); ctx.strokeStyle = 'rgba(40,28,18,0.4)'; ctx.beginPath(); ctx.moveTo(-e.r * 0.5, 0); ctx.lineTo(e.r * 0.5, 0); ctx.stroke(); break; }
     }
     ctx.restore();
@@ -2358,11 +2588,6 @@ function drawShots(t) {
       ctx.globalCompositeOperation = 'lighter';
       s.trail.forEach((p, i) => { const q = 1 - i / s.trail.length, sz = s.r * 1.8 * q; ctx.globalAlpha = 0.45 * q; ctx.drawImage(sprite(i < 3 ? '#ffb04a' : '#ff5a2a'), p.x - sz, p.y - sz, sz * 2, sz * 2); });
       ctx.globalAlpha = 1; const sz = s.r * (s.kind === 'ember' ? 2 : 2.6); ctx.drawImage(sprite('#ffd27a'), s.x - sz, s.y - sz, sz * 2, sz * 2);
-      ctx.restore(); continue;
-    }
-    if (s.kind === 'pressure') {
-      ctx.globalAlpha = 0.5; ctx.fillStyle = 'rgba(255,255,255,0.25)'; ctx.beginPath(); ctx.arc(s.x, s.y, s.r * 1.3, 0, TAU); ctx.fill();
-      ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.5; for (let i = 0; i < 3; i++) { ctx.globalAlpha = 0.7 - i * 0.2; ctx.beginPath(); ctx.arc(s.x, s.y, s.r * (0.6 + i * 0.35) + Math.sin(t * 20 + i) * 1.5, 0, TAU); ctx.stroke(); }
       ctx.restore(); continue;
     }
     // trails of the rest
@@ -2393,10 +2618,6 @@ function drawBeams(t) {
       ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = Math.min(1, k * 2.5);
       ctx.strokeStyle = '#ff5a2a'; ctx.lineWidth = b.w * 2.2; ctx.beginPath(); ctx.moveTo(b.x1, b.y1); ctx.quadraticCurveTo(cx, cy, lerp(b.x1, b.x2, reach), lerp(b.y1, b.y2, reach)); ctx.stroke();
       ctx.strokeStyle = '#ffd27a'; ctx.lineWidth = b.w * 0.8; ctx.stroke();
-    } else if (b.kind === 'jet') {
-      ctx.globalAlpha = Math.min(1, k * 2.5);
-      ctx.strokeStyle = 'rgba(60,150,230,0.7)'; ctx.lineWidth = b.w * 2.6; ctx.beginPath(); ctx.moveTo(b.x1, b.y1); ctx.lineTo(b.x2, b.y2); ctx.stroke();
-      ctx.strokeStyle = '#ffffff'; ctx.lineWidth = b.w * 0.8; ctx.stroke();
     }
     ctx.restore();
   }
@@ -2481,9 +2702,12 @@ function padJudge(strokes) {
     else if (ST.stun > 0) sh.msg = 'Stunned!';
     else if (ST.under > 0 || ST.leap > 0) sh.msg = 'Not yet…';
     else if (ST.mend > 0) sh.msg = 'Still mending…';
+    else if (ST.statue > 0) sh.msg = 'Still jade…';
+    else if (ST.silence > 0) sh.msg = 'Silenced! No breath to write with';
+    else if (ST.heavy > 0 && LIGHT.has(m.tag)) sh.msg = 'Too heavy to move like that';
     else if (player.act) sh.msg = 'Still moving…';
     else if (startMove(player, m, R.power, FIGHT && FIGHT.on ? FIGHT.foe : null)) {
-      sh.ok = true; player.counterPow = R.power;
+      sh.ok = true;
       words(player.x, player.y - 44, m.name, WAYS[m.way].color, 15, 1.1);
       if (save) { save.stats.casts++; if (R.verdict === 'clean') save.stats.clean++; }
       if (PAD.guide && PAD.guide.role === m.role) PAD.guide = null;
@@ -2673,7 +2897,7 @@ function update(dt) {
   if (keys.ArrowLeft || keys.KeyA) mx -= 1; if (keys.ArrowRight || keys.KeyD) mx += 1; if (keys.ArrowUp || keys.KeyW) my -= 1; if (keys.ArrowDown || keys.KeyS) my += 1;
   const mn = Math.hypot(mx, my); if (mn > 1) { mx /= mn; my /= mn; }
   const PS = player.st;
-  const canWalk = player.hp > 0 && PS.stun <= 0 && PS.frozen <= 0 && PS.air <= 0 && PS.root <= 0 && PS.under <= 0 && PS.leap <= 0 && PS.high <= 0 && PS.stance <= 0 && PS.mend <= 0 && !player.dash
+  const canWalk = player.hp > 0 && PS.stun <= 0 && PS.frozen <= 0 && PS.air <= 0 && PS.root <= 0 && PS.under <= 0 && PS.leap <= 0 && PS.high <= 0 && PS.stance <= 0 && PS.mend <= 0 && PS.statue <= 0 && !player.dash
     && !(FIGHT && (FIGHT.intro > 0 || FIGHT.over)) && !(player.act && (player.act.phase === 'wind' || player.act.chan > 0));
   const sp = player.speed * moveMul(player);
   player.vx = canWalk ? mx * sp : 0; player.vy = canWalk ? my * sp : 0;
@@ -2713,7 +2937,7 @@ function update(dt) {
     stepStatus(f, sdt);
     const ox = f.x, oy = f.y, moving = Math.hypot(f.vx, f.vy) > 5;
     const dashing = stepDash(f, sdt);
-    const pinned = f.st.frozen > 0 || f.st.under > 0 || f.st.leap > 0 || f.st.high > 0;
+    const pinned = f.st.frozen > 0 || f.st.under > 0 || f.st.leap > 0 || f.st.high > 0 || f.st.statue > 0;
     if (!pinned) { f.x += ((dashing ? 0 : f.vx) + f.kx) * sdt; f.y += ((dashing ? 0 : f.vy) + f.ky) * sdt; }
     const fr = Math.exp(-7 * sdt); f.kx *= fr; f.ky *= fr;
     if (moving && !dashing) f.walk += sdt * 11; else f.walk *= 0.8;
@@ -2812,7 +3036,7 @@ function drawHud() {
   bar(pad, pad + 14, w, 9, player.hp / player.maxHp, C.hp);
   bar(pad, pad + 27, w, 6, player.ki / player.maxKi, wc);
   if (save.way === 'fire' || save.way === 'air') { bar(pad, pad + 36, w, 4, tw.k, tw.col); if (save.way === 'fire') { ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.fillRect(pad + w * 0.75, pad + 35, 1.5, 6); } }
-  ctx.font = `10px ${BODY}`; ctx.fillStyle = C.muted; ctx.fillText(`ki ${Math.floor(player.ki)}${tw.text ? ' · ' + tw.text : ''}`, pad, pad + 50);
+  ctx.font = `10px ${BODY}`; ctx.fillStyle = C.muted; ctx.fillText(`ki ${Math.floor(player.ki)}${kiFlow(player) > 1 ? ' ↑' : ''}${tw.text ? ' · ' + tw.text : ''}`, pad, pad + 50);
   if (FIGHT && FIGHT.foe) {
     const f = FIGHT.foe, x = L.arena.x + L.arena.w - pad - w, col = f.way === 'master' ? C.seal : WAYS[f.way].color, ft = twistLine(f), fw = moveWay(f);
     ctx.fillStyle = 'rgba(18,15,25,0.72)'; roundRect(x - 6, pad - 6, w + 12, 56, 10); ctx.fill();
@@ -3047,8 +3271,8 @@ function drawOverlay() {
     const f = O.foe;
     ctx.font = `${Math.min(34, W / 11)}px ${DISPLAY}`; ctx.fillStyle = C.hp; ctx.fillText(`${f.name} wins this bout`, cx, H * 0.36);
     ctx.font = `15px ${BODY}`; ctx.fillStyle = C.fg;
-    const TWIST_TIP = { water: 'Soak them first (a puddle, a lash, a bullet), then freeze them with Ice Shards or Freeze. A frozen foe takes a heavy hit.',
-                        fire: 'Watch your heat: past the red line you burn yourself. Let it out at them with Vent.',
+    const TWIST_TIP = { water: 'Soak them first (a puddle, a lash, a bullet), then write Freeze: a soaked foe freezes solid, and a frozen foe takes a heavy hit.',
+                        fire: 'Watch your heat: past the red line you burn yourself. Let it out at them with Vent. And stay dry: soaked, your fire comes out damp.',
                         earth: 'Raise stones with Stone Wall and Earth Spike, then throw them with Rock Throw or burst them with Shatter.',
                         air: 'Keep moving while you write: wind makes every air spell stronger, and standing still lets it die away.' };
     const tips = ['Watch what they write in the air above them: when a big spell is coming, shield, dodge or wall it off.', TWIST_TIP[save.way],
@@ -3130,6 +3354,9 @@ window.INKDOJO = {
   koFoe() { if (FIGHT && FIGHT.on) knockedOut(FIGHT.foe, player); }, koMe() { if (FIGHT && FIGHT.on) knockedOut(player, FIGHT.foe); },
   get tilt() { return TILT; }, tiltBubble,
   // a bot plays you: it walks as a fighter would and writes the spell a fighter would pick, by hand (so not always neatly)
+  // the player played by a fighter's mind too, so two ways can be weighed against each other on equal terms
+  dmgLog(on) { if (on) DMGLOG = {}; const L = DMGLOG; if (!on) DMGLOG = null; return L; },
+  aiPlayer(dt) { const foe = FIGHT && FIGHT.foe; if (!BOT || !foe || !FIGHT.on) return; aiFight(player, foe, dt); const sp = player.speed * moveMul(player) || 1; BOT.mx = player.vx / sp; BOT.my = player.vy / sp; },
   bot(on, o = {}) { BOT = on ? { mx: 0, my: 0, ...o } : null; if (on && player) player.ai.cd = {}; },
   botStep(dt, K, wobble) {
     const foe = FIGHT && FIGHT.foe; if (!BOT || !foe || !FIGHT.on) return null;
@@ -3139,7 +3366,7 @@ window.INKDOJO = {
     const R = padJudge(writeOut(c.move, { wobble: wobble ?? (0.008 + Math.random() * 0.03), seed: Math.random() * 9 }));
     return R && R.verdict !== 'fizzle' ? c.move.key : 'fizzle';
   },
-  INK, ROSTER, MOVES, RANKS, learnedCount, myMoves, padJudge, startFight, setSound, spawnMaster, setupWorld, resetFighter,
+  INK, ROSTER, MOVES, RANKS, WAYMOD, ADV, HALL, YOU, learnedCount, myMoves, padJudge, startFight, setSound, spawnMaster, setupWorld, resetFighter,
   get shots() { return SHOTS; }, get waves() { return WAVES; }, get zones() { return ZONES; }, get ents() { return ENTS; }, get stones() { return STONES; }, get fx() { return FX; },
 };
 })();
