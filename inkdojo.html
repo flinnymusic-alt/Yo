@@ -63,182 +63,199 @@ const WAYS = {
 };
 const WAY_ORDER = ['water', 'fire', 'earth', 'air'];
 
-// each spell: its key, name, a one-word kind, its ki cost, what it does, how to write it, its strokes, which strokes are
-// closed loops, where the ink must pool (0 the start, 1 the end), and the ink it wants (light, steady, heavy or any).
-// In each way's list, the order is the order they're learned: the first eight from the start, then one per fighter beaten.
+// each spell: its key, name, a one-word kind, its ki cost, what it does, how to write it, its stroke (every move is one stroke,
+// read the moment the brush lifts), whether it's a closed loop, where the ink must pool (0 the start, 1 the end), and the ink
+// it wants (light, steady, heavy or any).
+// In each way's list, the order is the order they're learned and how hard they are to write: three basic moves (one plain
+// stroke each) that you know from the start, nine skilled ones (a turn or a loop more), then eight master moves (long strokes
+// that take a second or two to write, and hit hardest).
 const S = (key, name, tag, cost, what, how, strokes, o = {}) => ({ key, role: key, name, tag, cost, what, how, strokes: Array.isArray(strokes[0]) ? strokes : [strokes], closed: o.closed || null, pools: o.pools || null, ink: o.ink || 'any', loose: !!o.loose });
+const TIERS = ['Basic', 'Skilled', 'Master'];
+const heart = (cx, cy, s) => curve(u => { const t = Math.PI + u * TAU; return { x: cx + s * 16 * Math.sin(t) ** 3, y: cy - s * (13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t)) }; }, 160);
 const MOVES = {
   water: [
-    S('lash', 'Water Lash', 'Strike', 6, 'A whip of water lashes out to mid range and soaks them.', 'A long S from the bottom left up to the top right, curling into a small hook at the end.',
-      join(quad(-0.7, 0.62, -0.72, 0, -0.05, 0), quad(-0.05, 0, 0.6, 0, 0.58, -0.45), arc(0.4, -0.45, 0.18, 0, -230)), { ink: 'light' }),
-    S('bullet', 'Water Bullet', 'Shot', 8, 'A fast bullet of water that soaks them.', 'A raindrop: from its point at the top, round the bottom and back up to the point.',
-      curve(u => { const t = u * TAU; return { x: 0.42 * Math.sin(t) * Math.sin(t / 2), y: 0.05 - 0.55 * Math.cos(t) }; }), { closed: [true], ink: 'light' }),
-    S('bubble', 'Bubble Shield', 'Absorb', 12, 'A bubble of water round you takes the next hits for you. When it bursts, it splashes and soaks them.', 'A big circle near the rim.',
-      arc(0, 0, 0.72, -90, 270), { closed: [true], ink: 'light', loose: true }),
+    // basic
+    S('bullet', 'Water Bullet', 'Shot', 8, 'A fast bullet of water that soaks them.', 'A deep cup: down, round the bottom and up.',
+      arc(0, -0.15, 0.5, 180, 0), { ink: 'light' }),
+    S('lash', 'Water Lash', 'Strike', 6, 'A whip of water lashes out to mid range and soaks them.', 'A J: straight down, hooking round to the left at the bottom.',
+      join(poly(0.22, -0.7, 0.22, 0.2), arc(-0.08, 0.2, 0.3, 0, 180)), { ink: 'light' }),
+    S('bubble', 'Bubble Shield', 'Absorb', 12, 'A bubble of water round you takes the next hits for you. When it bursts, it splashes and soaks them.', 'A circle.',
+      arc(0, 0, 0.62, -90, 270), { closed: [true], ink: 'light', loose: true }),
+    // skilled
     S('puddle', 'Puddle', 'Pool', 8, 'Splash a puddle under them: it soaks and slows whoever stands in it. Your water spells are stronger while you stand in one.', 'A wide flat oval low on the pad.',
       ellipse(0, 0.42, 0.62, 0.2), { closed: [true], ink: 'light' }),
-    S('rain', 'Healing Rain', 'Heal', 18, 'A little cloud rains on you and mends you, more if you stand in water. It puts out burns.', 'A cloud: along the flat bottom, then three bumps back over the top.',
-      join(poly(-0.514, 0.2, 0.514, 0.2), arc(0.38, 0, 0.24, 56, -120), arc(0, -0.14, 0.3, -20, -160), arc(-0.38, 0, 0.24, -60, 124)), { closed: [true], ink: 'light' }),
     S('glide', 'Stream Glide', 'Glide', 8, 'Ride a stream across the floor, fast, leaving a trail of water behind you.', 'A long ripple across the middle: two waves.',
       hwave(-0.78, 0.78, 0, 0.21, 2), { ink: 'light' }),
-    S('geyser', 'Geyser', 'Burst', 14, 'A jet of water bursts up under them: it hits, drenches them for a long time and slows them. Twice as strong if they stand in a puddle.', 'Straight up the left of the middle, then arch over to the right and down a little, like a fountain.',
-      join(poly(-0.2, 0.75, -0.2, -0.3), arc(0.08, -0.3, 0.28, 180, 360), poly(0.36, -0.3, 0.36, -0.05)), { ink: 'light' }),
     S('shards', 'Ice Shards', 'Chill', 12, 'Three shards of ice that chill them and slow them down, for longer if they are soaked.', 'Three spikes from one point low in the middle: up to the left and back, straight up and back, up to the right.',
       poly(0, 0.55, -0.5, -0.35, 0, 0.55, 0, -0.65, 0, 0.55, 0.5, -0.35), { ink: 'light' }),
-    S('whirlpool', 'Whirlpool', 'Trap', 18, 'A whirlpool opens under them: it drags them to its middle and soaks them.', 'From the right-hand rim, spiral in two turns and pool in the centre.',
-      spiral(0, 0, 0.85, 0.1, 0, 2), { pools: [[1]], ink: 'steady' }),
-    S('freeze', 'Freeze', 'Freeze', 16, 'The only way to freeze: a soaked foe freezes solid wherever they stand, and every puddle turns to ice. A dry foe is only chilled.', 'A snowflake’s arms: one stroke straight down the middle, then one straight across.',
-      [poly(0, -0.65, 0, 0.65), poly(-0.65, 0, 0.65, 0)]),
-    S('tidal', 'Tidal Wave', 'Wash', 20, 'A wide wave rolls across the ring: it soaks them, puts out their fire and lava, and wears away their stones.', 'A big wave: rise from the bottom left to a crest at the top right, then curl over.',
-      join(quad(-0.8, 0.5, -0.3, -0.55, 0.3, -0.45), arc(0.3, -0.2, 0.25, -90, 140)), { ink: 'light' }),
-    S('mist', 'Mist Veil', 'Conceal', 12, 'A mist wraps round you: most of their shots miss, and they lose track of you.', 'A sideways figure of eight across the middle, without lifting the brush.',
-      curve(u => { const t = u * TAU; return { x: 0.68 * Math.sin(t), y: 0.28 * Math.sin(2 * t) }; }), { closed: [true], ink: 'light' }),
+    S('geyser', 'Geyser', 'Burst', 14, 'A jet of water bursts up under them: it hits, drenches them for a long time and slows them. Twice as strong if they stand in a puddle.', 'Straight up the middle, then round a circle at the top, like a jet of water bursting.',
+      join(poly(0, 0.75, 0, -0.05), arc(0, -0.35, 0.3, 90, 450)), { ink: 'light' }),
     S('undertow', 'Undertow', 'Yank', 12, 'A current drags them to you, soaked and slowed.', 'From the top right, hook round and in to the centre. Pool the ink at the end.',
       spiral(0, 0, 0.72, 0.1, -45, 0.85), { pools: [[1]], ink: 'steady' }),
     S('mirror', 'Reflecting Pool', 'Reflect', 10, 'A mirror of water at your feet sends the next shot back at whoever threw it.', 'A bowl: straight across, then round underneath back to the start.',
       join(poly(-0.6, -0.12, 0.6, -0.12), arc(0, -0.12, 0.6, 0, 180)), { closed: [true], ink: 'light' }),
-    S('dragon', 'Water Dragon', 'Summon', 22, 'A serpent of water coils out, chases them and bites three times.', 'A tall snaking line from the bottom to the top: two and a half bends.',
-      vwave(0.75, -0.75, 0, 0.22, 2.5), { ink: 'light' }),
+    S('draw', 'Draw from the Pond', 'Ki', 0, 'Draw ki from the water round you. Far more if you stand in a puddle.', 'A raindrop: from its point at the top, round the bottom and back up to the point.',
+      curve(u => { const t = u * TAU; return { x: 0.42 * Math.sin(t) * Math.sin(t / 2), y: 0.05 - 0.55 * Math.cos(t) }; }), { closed: [true], ink: 'light' }),
     S('pushhands', 'Push Hands', 'Counter', 10, 'Stand ready for a moment: if they strike you up close, you catch the blow and throw them, soaked.', 'A long level line across the middle with one loop in it, like a hand turning a blow aside.',
       join(poly(-0.8, 0.1, 0, 0.1), arc(0, -0.12, 0.22, 90, -270), poly(0, 0.1, 0.8, 0.1)), { ink: 'light' }),
-    S('ebb', 'Ebb and Flow', 'Swap', 12, 'Flow past them: you trade places in an instant, and they are left soaked.', 'Two currents passing: two strokes, a ripple along the top, then another along the bottom.',
-      [hwave(-0.62, 0.62, -0.24, 0.13, 1.5), hwave(-0.62, 0.62, 0.24, 0.13, 1.5)], { ink: 'light' }),
-    S('draw', 'Draw from the Pond', 'Ki', 0, 'Draw ki from the water round you. Far more if you stand in a puddle.', 'A deep cup in the middle.',
-      arc(0, -0.15, 0.5, 180, 0), { ink: 'light' }),
-    S('double', 'Water Double', 'Decoy', 12, 'A double of you, made of water, stays behind while you slip aside. Their spells go at it, and it bursts into a puddle.', 'Two strokes: two small circles side by side.',
-      [arc(-0.3, 0, 0.22, -90, 270), arc(0.3, 0, 0.22, -90, 270)], { closed: [true, true], ink: 'light' }),
-    S('flood', 'Great Flood', 'Ultimate', 60, 'The ring floods: a huge wave crashes over them, then everything freezes.', 'Pool in the centre, spiral out one and a half turns, then climb to the top.',
-      join(spiral(0, 0, 0.04, 0.5, 0, 1.5), quad(-0.5, 0, -0.58, -0.62, 0.06, -0.92)), { pools: [[0]], ink: 'steady' }),
+    S('double', 'Water Double', 'Decoy', 12, 'A double of you, made of water, stays behind while you slip aside. Their spells go at it, and it bursts into a puddle.', 'Two round cups side by side, like a w.',
+      join(arc(-0.32, -0.1, 0.32, 180, 0), arc(0.32, -0.1, 0.32, 180, 0)), { ink: 'light' }),
+    // master
+    S('mist', 'Mist Veil', 'Conceal', 12, 'A mist wraps round you: most of their shots miss, and they lose track of you.', 'A sideways figure of eight across the middle.',
+      curve(u => { const t = u * TAU; return { x: 0.68 * Math.sin(t), y: 0.28 * Math.sin(2 * t) }; }), { closed: [true], ink: 'light' }),
+    S('rain', 'Healing Rain', 'Heal', 18, 'A little cloud rains on you and mends you, more if you stand in water. It puts out burns.', 'A cloud: along the flat bottom, then three bumps back over the top.',
+      join(poly(-0.514, 0.2, 0.514, 0.2), arc(0.38, 0, 0.24, 56, -120), arc(0, -0.14, 0.3, -20, -160), arc(-0.38, 0, 0.24, -60, 124)), { closed: [true], ink: 'light' }),
+    S('whirlpool', 'Whirlpool', 'Trap', 18, 'A whirlpool opens under them: it drags them to its middle and soaks them.', 'From the right-hand rim, spiral in two turns and pool in the centre.',
+      spiral(0, 0, 0.85, 0.1, 0, 2), { pools: [[1]], ink: 'steady' }),
+    S('freeze', 'Freeze', 'Freeze', 16, 'The only way to freeze: a soaked foe freezes solid wherever they stand, and every puddle turns to ice. A dry foe is only chilled.', 'A snowflake: a six-pointed star round the centre.',
+      sawRing(0, 0, 0.72, 0.3, 6), { closed: [true] }),
+    S('tidal', 'Tidal Wave', 'Wash', 20, 'A wide wave rolls across the ring: it soaks them, puts out their fire and lava, and wears away their stones.', 'A big wave: rise from the bottom left to a crest, curl right over into a loop, then run out along the bottom to the right.',
+      join(quad(-0.8, 0.55, -0.35, -0.65, 0.25, -0.5), arc(0.25, -0.2, 0.3, -90, 200), quad(-0.032, -0.303, 0.0, 0.55, 0.8, 0.55)), { ink: 'light' }),
+    S('ebb', 'Ebb and Flow', 'Swap', 12, 'Flow past them: you trade places in an instant, and they are left soaked.', 'Out and back: a ripple across the top to the right, round, and a ripple back along the bottom to the left.',
+      join(hwave(-0.7, 0.55, -0.25, 0.12, 1.5), arc(0.55, 0, 0.25, -90, 90), hwave(0.55, -0.7, 0.25, 0.12, 1.5)), { ink: 'light' }),
+    S('dragon', 'Water Dragon', 'Summon', 22, 'A serpent of water coils out, chases them and bites three times.', 'A long snake from the bottom to the top: three and a half bends.',
+      vwave(0.8, -0.8, 0, 0.24, 3.5), { ink: 'light' }),
+    S('flood', 'Great Flood', 'Ultimate', 60, 'The ring floods: a huge wave crashes over them, then everything freezes.', 'Pool in the centre, spiral out two and a half turns, climb up the left, and send a ripple across the top.',
+      join(spiral(0, 0.1, 0.04, 0.5, 0, 2.5), poly(-0.5, 0.1, -0.5, -0.6), hwave(-0.5, 0.7, -0.6, 0.1, 1.5)), { pools: [[0]], ink: 'steady' }),
   ],
   fire: [
-    S('jab', 'Flame Jab', 'Strike', 6, 'A fist wrapped in fire. It sets them burning.', 'A small tick in the middle: down a little, then up and to the right. Pool the ink first.',
-      poly(-0.3, -0.05, -0.08, 0.25, 0.42, -0.42), { pools: [[0]], ink: 'light' }),
-    S('fireball', 'Fireball', 'Shot', 10, 'A ball of fire that bursts where it lands.', 'A small triangle high on the pad.',
-      poly(0, -0.72, 0.25, -0.3, -0.25, -0.3, 0, -0.72), { closed: [true], ink: 'light' }),
-    S('breath', 'Flame Breath', 'Cone', 14, 'Breathe a cone of fire at them for a moment.', 'A wide < opening to the right: from the top right to a point on the left and back out. Pool the ink first.',
-      poly(0.62, -0.55, -0.45, 0, 0.62, 0.55), { pools: [[0]] }),
-    S('rocket', 'Rocket Step', 'Dash', 9, 'Jets of fire hurl you away across the floor, leaving a burning trail behind you for them.', 'Two little zigzags at the bottom left, then one long stroke to the top right. Pool the ink first.',
-      join(poly(-0.72, 0.72, -0.6, 0.5, -0.5, 0.66, -0.38, 0.46), poly(-0.38, 0.46, 0.66, -0.62)), { pools: [[0]], ink: 'light' }),
-    S('flameshield', 'Flame Shield', 'Thorns', 10, 'A ring of flame round you: it blunts their blows and burns whoever hits you.', 'A sun: a jagged circle of ten points round the centre.',
-      sawRing(0, 0, 0.62, 0.42, 10), { closed: [true] }),
-    S('roundhouse', 'Roundhouse Flame', 'Sweep', 14, 'A spinning kick throws a ring of fire all round you.', 'A Z: across the top, down to the bottom left, across the bottom.',
-      poly(-0.55, -0.5, 0.55, -0.5, -0.55, 0.5, 0.55, 0.5)),
-    S('firewall', 'Fire Wall', 'Barrier', 16, 'A line of flame between you and them: it burns and slows whoever crosses it.', 'A row of flames: a zigzag of four peaks across the middle.',
-      poly(-0.8, 0.2, -0.6, -0.25, -0.4, 0.2, -0.2, -0.25, 0, 0.2, 0.2, -0.25, 0.4, 0.2, 0.6, -0.25, 0.8, 0.2), { ink: 'light' }),
-    S('vent', 'Vent', 'Release', 6, 'Let all your heat out in one blast round you. The hotter you are, the bigger it is.', 'A big peak: from the bottom left up to the top and down to the bottom right. Pool the ink first.',
-      poly(-0.6, 0.62, 0, -0.68, 0.6, 0.62), { pools: [[0]] }),
+    // basic
+    S('fireball', 'Fireball', 'Shot', 10, 'A ball of fire that bursts where it lands.', 'A peak: up to a point and back down, like the tip of a flame.',
+      poly(-0.5, 0.45, 0, -0.55, 0.5, 0.45), { ink: 'light' }),
+    S('jab', 'Flame Jab', 'Strike', 6, 'A fist wrapped in fire. It sets them burning.', 'One quick flick from the bottom left up to the top right.',
+      poly(-0.45, 0.45, 0.45, -0.45), { ink: 'light' }),
+    S('flameshield', 'Flame Shield', 'Thorns', 10, 'A ring of flame round you: it blunts their blows and burns whoever hits you.', 'A V: down to a point and back up.',
+      poly(-0.5, -0.45, 0, 0.55, 0.5, -0.45)),
+    // skilled
     S('embers', 'Ember Spray', 'Volley', 12, 'A fan of embers. Each one sets them burning.', 'An M across the top of the pad.',
       poly(-0.55, -0.1, -0.3, -0.66, 0, -0.3, 0.3, -0.66, 0.55, -0.1), { ink: 'light' }),
-    S('charge', 'Sticky Charge', 'Bomb', 18, 'A burning charge sticks to them and blows up a moment later, unless they shake it off with a dodge or a dash.', 'An X: one stroke, then the other.',
-      [poly(-0.5, -0.5, 0.5, 0.5), poly(0.5, -0.5, -0.5, 0.5)]),
+    S('rocket', 'Rocket Step', 'Dash', 9, 'Jets of fire hurl you away across the floor, leaving a burning trail behind you for them.', 'Two little zigzags at the bottom left, then one long stroke to the top right. Pool the ink first.',
+      join(poly(-0.72, 0.72, -0.6, 0.5, -0.5, 0.66, -0.38, 0.46), poly(-0.38, 0.46, 0.66, -0.62)), { pools: [[0]], ink: 'light' }),
     S('knee', 'Burning Knee', 'Break', 14, 'A rising knee bursting with fire that smashes through shields, armour and guards, and burns.', 'A tall N: up, slash down to the bottom right, up again. Pool the ink first.',
       poly(-0.35, 0.65, -0.35, -0.65, 0.35, 0.65, 0.35, -0.65), { pools: [[0]] }),
     S('whip', 'Fire Whip', 'Grapple', 12, 'A whip of flame catches them and hauls you in to them for a burning blow.', 'A 7: across the top, then a long slash down to the left.',
       poly(-0.5, -0.55, 0.5, -0.55, -0.15, 0.68), { ink: 'light' }),
-    S('lava', 'Lava Pool', 'Zone', 18, 'The floor under them melts: they slow to a crawl and burn.', 'A W low on the pad.',
-      poly(-0.6, 0.15, -0.3, 0.66, 0, 0.32, 0.3, 0.66, 0.6, 0.15)),
+    S('vent', 'Vent', 'Release', 6, 'Let all your heat out in one blast round you. The hotter you are, the bigger it is.', 'A Z: across the top, slash down to the bottom left, across the bottom.',
+      poly(-0.55, -0.5, 0.55, -0.5, -0.55, 0.5, 0.55, 0.5)),
+    S('phoenix', 'Phoenix Rise', 'Heal', 14, 'Burn your heat into life: the hotter you are, the more it mends. It puts out your own burns.', 'Wings: a little loop, down to a point, back up, and another little loop.',
+      join(arc(-0.6, -0.36, 0.14, -90, 270), poly(-0.6, -0.5, 0, 0.55, 0.6, -0.5), arc(0.6, -0.36, 0.14, -90, 270))),
     S('ignite', 'Ignite', 'Detonate', 10, 'Every burn on them flares up at once. The longer they have been burning, the harder it hits.', 'A lightning bolt from the top to the bottom.',
       poly(0.25, -0.75, -0.2, -0.05, 0.2, 0.05, -0.25, 0.75), { ink: 'light' }),
-    S('fury', 'Fury', 'Fury', 10, 'Let the fire take you: for a few seconds your spells come out twice as fast and hit harder, but your heat climbs fast.', 'A triangle that spirals in: round the outside once, then in to the middle.',
-      poly(0, -0.7, 0.65, 0.5, -0.65, 0.5, 0, -0.38, 0.32, 0.22, -0.3, 0.22, 0, -0.05), { ink: 'light' }),
-    S('meteor', 'Meteor', 'Blast', 26, 'A burning rock falls from the sky onto them and leaves molten ground.', 'An arrow pointing down to the left: the shaft from the top right, then the head.',
-      [poly(0.6, -0.6, -0.45, 0.45), poly(-0.45, 0.02, -0.45, 0.45, -0.02, 0.45)]),
-    S('firework', 'Firework', 'Lob', 16, 'A rocket arcs over walls and stones and bursts over them in a shower of sparks.', 'A diamond round the centre.',
-      poly(0, -0.62, 0.42, 0, 0, 0.62, -0.42, 0, 0, -0.62), { closed: [true], ink: 'light' }),
-    S('phoenix', 'Phoenix Rise', 'Heal', 14, 'Burn your heat into life: the hotter you are, the more it mends. It puts out your own burns.', 'A big V: from the top left down to a point and up to the top right.',
-      poly(-0.62, -0.55, 0, 0.62, 0.62, -0.55)),
-    S('brand', 'Searing Brand', 'Mark', 10, 'Burn your mark onto them: for a while every spell of yours hits them harder.', 'A star of two triangles: one pointing up, then one pointing down.',
-      [poly(0, -0.62, 0.54, 0.31, -0.54, 0.31, 0, -0.62), poly(0, 0.62, -0.54, -0.31, 0.54, -0.31, 0, 0.62)], { closed: [true, true] }),
-    S('inferno', 'Inferno', 'Ultimate', 60, 'A star of fire bursts across the ring, then explodes again.', 'A five-pointed star in one stroke.',
+    S('brand', 'Searing Brand', 'Mark', 10, 'Burn your mark onto them: for a while every spell of yours hits them harder.', 'A triangle round the centre.',
+      poly(0, -0.62, 0.55, 0.42, -0.55, 0.42, 0, -0.62), { closed: [true] }),
+    S('fury', 'Fury', 'Fury', 10, 'Let the fire take you: for a few seconds your spells come out twice as fast and hit harder, but your heat climbs fast.', 'A Σ: across the top to the left, in to the middle, out to the bottom left, and across the bottom.',
+      poly(0.5, -0.55, -0.45, -0.55, 0.15, 0, -0.45, 0.55, 0.5, 0.55)),
+    // master
+    S('roundhouse', 'Roundhouse Flame', 'Sweep', 14, 'A spinning kick throws a ring of fire all round you.', 'A sun: a jagged circle of ten points round the centre.',
+      sawRing(0, 0, 0.66, 0.44, 10), { closed: [true] }),
+    S('breath', 'Flame Breath', 'Cone', 14, 'Breathe a cone of fire at them for a moment.', 'A cone of flame: a zigzag from a point on the left, growing wider and wider to the right. Pool the ink first.',
+      poly(-0.75, 0, -0.5, -0.12, -0.3, 0.18, -0.05, -0.3, 0.2, 0.4, 0.45, -0.5, 0.72, 0.6), { pools: [[0]] }),
+    S('firewall', 'Fire Wall', 'Barrier', 16, 'A line of flame between you and them: it burns and slows whoever crosses it.', 'A row of flames: a zigzag of four peaks across the middle.',
+      poly(-0.8, 0.2, -0.6, -0.25, -0.4, 0.2, -0.2, -0.25, 0, 0.2, 0.2, -0.25, 0.4, 0.2, 0.6, -0.25, 0.8, 0.2), { ink: 'light' }),
+    S('lava', 'Lava Pool', 'Zone', 18, 'The floor under them melts: they slow to a crawl and burn.', 'A W low on the pad, finishing in a loop at the top right, like a bubble rising.',
+      join(poly(-0.65, 0.1, -0.35, 0.62, 0, 0.28, 0.35, 0.62, 0.6, 0.15), arc(0.6, -0.07, 0.22, 90, 450))),
+    S('charge', 'Sticky Charge', 'Bomb', 18, 'A burning charge sticks to them and blows up a moment later, unless they shake it off with a dodge or a dash.', 'A fuse and a bomb: a wavy line from the left into a big circle on the right.',
+      join(hwave(-0.8, 0.05, 0.1, 0.12, 1.5), arc(0.38, 0.1, 0.33, 180, 540))),
+    S('firework', 'Firework', 'Lob', 16, 'A rocket arcs over walls and stones and bursts over them in a shower of sparks.', 'A rocket and its burst: straight up from the bottom, then a five-pointed star at the top.',
+      join(poly(0.2116, 0.78, 0.2116, -0.0587), [54, 198, 342, 126, 270, 54].map(a => ({ x: 0.36 * Math.cos(a * Math.PI / 180), y: -0.35 + 0.36 * Math.sin(a * Math.PI / 180) }))), { ink: 'light' }),
+    S('meteor', 'Meteor', 'Blast', 26, 'A burning rock falls from the sky onto them and leaves molten ground.', 'A comet: one long stroke down from the top right, ending in a circle at the bottom left.',
+      join(poly(0.75, -0.75, -0.25, 0.25), arc(-0.47, 0.47, 0.311, -45, 315))),
+    S('inferno', 'Inferno', 'Ultimate', 60, 'A star of fire bursts across the ring, then explodes again.', 'A five-pointed star.',
       star(0, 0.05, 0.75), { closed: [true] }),
   ],
   earth: [
-    S('fist', 'Stone Fist', 'Strike', 8, 'A fist cased in rock. Heavy, and it knocks them back.', 'A T: across the top, then straight down the middle. Press hard.',
-      [poly(-0.5, -0.5, 0.5, -0.5), poly(0, -0.5, 0, 0.6)], { ink: 'heavy' }),
-    S('rock', 'Rock Throw', 'Shot', 10, 'Tear a rock from the floor and throw it. If one of your stones is beside you, you throw that instead, much harder.', 'One stroke straight up the middle. Pool the ink at the bottom first.',
-      poly(0, 0.7, 0, -0.7), { pools: [[0]], ink: 'heavy' }),
-    S('wall', 'Stone Wall', 'Wall', 12, 'A wall of stone rises between you: it stops shots and blocks the way.', 'Battlements: across the middle, a square tooth up at each end and a dip between.',
-      poly(-0.75, 0.2, -0.75, -0.25, -0.3, -0.25, -0.3, 0.2, 0.3, 0.2, 0.3, -0.25, 0.75, -0.25, 0.75, 0.2), { ink: 'heavy' }),
-    S('spike', 'Earth Spike', 'Spike', 14, 'A spike of rock bursts up under them. It stays there as a stone.', 'Two strokes: the ground along the bottom, then a spike straight up from its middle.',
-      [poly(-0.6, 0.55, 0.6, 0.55), poly(0, 0.55, 0, -0.7)], { ink: 'heavy' }),
+    // basic
+    S('rock', 'Rock Throw', 'Shot', 10, 'Tear a rock from the floor and throw it. If one of your stones is beside you, you throw that instead, much harder.', 'One stroke straight up the middle.',
+      poly(0, 0.65, 0, -0.65), { ink: 'heavy' }),
+    S('fist', 'Stone Fist', 'Strike', 8, 'A fist cased in rock. Heavy, and it knocks them back.', 'An L: down the left, then along the bottom.',
+      poly(-0.4, -0.6, -0.4, 0.5, 0.5, 0.5), { ink: 'heavy' }),
+    S('wall', 'Stone Wall', 'Wall', 12, 'A wall of stone rises between you: it stops shots and blocks the way.', 'One long level line across the middle.',
+      poly(-0.7, 0, 0.7, 0), { ink: 'heavy' }),
+    // skilled
     S('skin', 'Stone Skin', 'Armor', 14, 'Your skin turns to stone: you take half the damage, burns can’t take hold and nothing knocks you back, but you move slower.', 'A big square round the centre. Pool the ink where you start.',
       poly(-0.55, -0.55, 0.55, -0.55, 0.55, 0.55, -0.55, 0.55, -0.55, -0.55), { closed: [true], pools: [[0]], ink: 'heavy' }),
-    S('quake', 'Quake', 'Stun', 16, 'Stamp: a shockwave runs through the ground all round you and knocks them off their feet. It can’t touch anyone in the air.', 'A long level line low on the pad. Pool at both ends, like two planted feet.',
-      poly(-0.75, 0.45, 0.75, 0.45), { pools: [[0, 1]], ink: 'heavy' }),
-    S('statue', 'Jade Statue', 'Statue', 14, 'Turn to jade for a moment: nothing can hurt or move you, but you can’t act either. You come out of it mended a little.', 'A square cup: down, across the bottom, back up.',
-      poly(-0.42, -0.1, -0.42, 0.55, 0.42, 0.55, 0.42, -0.1), { ink: 'heavy' }),
-    S('shatter', 'Shatter', 'Burst', 12, 'Every stone you have raised bursts into flying shards. The more stones near them, the more it hurts.', 'A broken line: a short stroke on the left, a gap, then a short stroke on the right.',
-      [poly(-0.7, 0, -0.22, 0), poly(0.22, 0, 0.7, 0)], { ink: 'heavy' }),
-    S('boulder', 'Boulder Roll', 'Roll', 18, 'A boulder rolls across the ring at them, crushing. It uses one of your stones if it can.', 'Two strokes: a small square on the left, then a line rolling out to the right.',
-      [poly(-0.68, -0.18, -0.32, -0.18, -0.32, 0.18, -0.68, 0.18, -0.68, -0.18), poly(-0.2, 0, 0.72, 0)], { closed: [true, false], ink: 'heavy' }),
-    S('quicksand', 'Quicksand', 'Sink', 16, 'The floor under them turns to sand: they sink, slow to a crawl, and take damage while they are in it.', 'A funnel: across the top, slant in to a narrow bottom, and back up.',
-      poly(-0.62, -0.45, 0.62, -0.45, 0.2, 0.5, -0.2, 0.5, -0.62, -0.45), { closed: [true], ink: 'heavy' }),
     S('sand', 'Sand Blast', 'Blind', 12, 'A spray of sand stings them and blinds them, so their spells come out weak.', 'A dune: from the bottom left, two square steps up, across the top, and two steps down again.',
       poly(-0.75, 0.4, -0.45, 0.4, -0.45, 0.1, -0.15, 0.1, -0.15, -0.2, 0.15, -0.2, 0.15, 0.1, 0.45, 0.1, 0.45, 0.4, 0.75, 0.4), { ink: 'heavy' }),
-    S('pillar', 'Rock Pillar', 'Lift', 14, 'A pillar of rock lifts you up: shots from below can’t reach you, and your rocks hit harder. The pillar stays.', 'Two tall lines side by side.',
-      [poly(-0.22, -0.65, -0.22, 0.65), poly(0.22, -0.65, 0.22, 0.65)], { ink: 'heavy' }),
     S('grip', 'Gravel Grip', 'Root', 12, 'Hands of earth grab their feet: they can’t move for a moment.', 'A bracket: across the top to the left, down, and back across the bottom.',
       poly(0.32, -0.55, -0.3, -0.55, -0.3, 0.55, 0.32, 0.55), { ink: 'heavy' }),
-    S('landslide', 'Landslide', 'Rockfall', 20, 'Rocks pour down over them, and some stay as stones.', 'Stairs going down from the top left to the bottom right.',
-      poly(-0.7, -0.6, -0.3, -0.6, -0.3, -0.2, 0.1, -0.2, 0.1, 0.2, 0.5, 0.2, 0.5, 0.6)),
-    S('burrow', 'Burrow', 'Tunnel', 14, 'Sink into the ground and burst up beside them, throwing them off their feet.', 'An L: down the left side and along the bottom. Pool at the end.',
-      poly(-0.5, -0.6, -0.5, 0.5, 0.6, 0.5), { pools: [[1]], ink: 'heavy' }),
-    S('crystal', 'Crystal Spear', 'Pierce', 16, 'A long spear of crystal that goes straight through walls and stones, even your own, so you can shoot from behind a wall.', 'One long stroke from the top left to the bottom right.',
-      poly(-0.62, -0.62, 0.62, 0.62)),
+    S('pillar', 'Rock Pillar', 'Lift', 14, 'A pillar of rock lifts you up: shots from below can’t reach you, and your rocks hit harder. The pillar stays.', 'A tall narrow arch: up, a short way across the top, and back down.',
+      poly(-0.22, 0.7, -0.22, -0.65, 0.22, -0.65, 0.22, 0.7), { ink: 'heavy' }),
+    S('shatter', 'Shatter', 'Burst', 12, 'Every stone you have raised bursts into flying shards. The more stones near them, the more it hurts.', 'A crack: zigzag from the top left down to the bottom right.',
+      poly(-0.62, -0.62, -0.259, -0.485, -0.237, -0.011, 0.237, 0.011, 0.259, 0.485, 0.62, 0.62), { ink: 'heavy' }),
+    S('burrow', 'Burrow', 'Tunnel', 14, 'Sink into the ground and burst up beside them, throwing them off their feet.', 'A tunnel: down, along the bottom, and back up. Pool at the end.',
+      poly(-0.62, -0.25, -0.62, 0.42, 0.62, 0.42, 0.62, -0.25), { pools: [[1]], ink: 'heavy' }),
     S('stance', 'Mountain Stance', 'Stance', 14, 'Root yourself like a mountain: nothing moves you, you mend a little, and your next blow lands half as hard again.', 'A square arch: up, across the top, and down. Pool at both ends.',
       poly(-0.6, 0.6, -0.6, -0.4, 0.6, -0.4, 0.6, 0.6), { pools: [[0, 1]], ink: 'heavy' }),
     S('weight', 'Weight of Stone', 'Ground', 12, 'Make them as heavy as stone: for a while they can’t dash, leap, glide or dodge, and they walk slower.', 'A heartbeat: level, a sharp dip and a peak, then level again.',
       poly(-0.75, 0.1, -0.25, 0.1, -0.1, 0.45, 0.1, -0.35, 0.25, 0.1, 0.75, 0.1)),
-    S('toss', 'Tiger Toss', 'Throw', 14, 'Grab them up close and hurl them over you onto the floor behind. Throw them into a stone and it hurts far more.', 'A step: across to the middle, straight down, then across again.',
-      poly(-0.75, -0.25, 0, -0.25, 0, 0.25, 0.75, 0.25), { ink: 'heavy' }),
+    S('statue', 'Jade Statue', 'Statue', 14, 'Turn to jade for a moment: nothing can hurt or move you, but you can’t act either. You come out of it mended a little.', 'A diamond, like a gem of jade.',
+      poly(0, -0.65, 0.5, 0, 0, 0.65, -0.5, 0, 0, -0.65), { closed: [true], ink: 'heavy' }),
+    // master
+    S('spike', 'Earth Spike', 'Spike', 14, 'A spike of rock bursts up under them. It stays there as a stone.', 'Along the ground, sharply up to a high point and back down, and on along the ground.',
+      poly(-0.75, 0.5, -0.2, 0.5, 0, -0.7, 0.2, 0.5, 0.75, 0.5), { ink: 'heavy' }),
+    S('quake', 'Quake', 'Stun', 16, 'Stamp: a shockwave runs through the ground all round you and knocks them off their feet. It can’t touch anyone in the air.', 'Square teeth along the bottom of the pad: up, across, down, across, again and again.',
+      poly(-0.8, 0.45, -0.8, 0.1, -0.48, 0.1, -0.48, 0.45, -0.16, 0.45, -0.16, 0.1, 0.16, 0.1, 0.16, 0.45, 0.48, 0.45, 0.48, 0.1, 0.8, 0.1, 0.8, 0.45), { ink: 'heavy' }),
+    S('quicksand', 'Quicksand', 'Sink', 16, 'The floor under them turns to sand: they sink, slow to a crawl, and take damage while they are in it.', 'A funnel: across the top, slant in to a narrow bottom, and back up.',
+      poly(-0.62, -0.45, 0.62, -0.45, 0.2, 0.5, -0.2, 0.5, -0.62, -0.45), { closed: [true], ink: 'heavy' }),
+    S('boulder', 'Boulder Roll', 'Roll', 18, 'A boulder rolls across the ring at them, crushing. It uses one of your stones if it can.', 'A small square on the left, starting at its bottom right corner, then roll on along the floor to the right.',
+      poly(-0.3, 0.25, -0.75, 0.25, -0.75, -0.2, -0.3, -0.2, -0.3, 0.25, 0.75, 0.25), { ink: 'heavy' }),
+    S('crystal', 'Crystal Spear', 'Pierce', 16, 'A long spear of crystal that goes straight through walls and stones, even your own, so you can shoot from behind a wall.', 'A spear: one long stroke from the bottom left up to the top right, ending in a small diamond point.',
+      poly(-0.75, 0.75, 0.15, -0.15, 0.4399, -0.2137, 0.5036, -0.5036, 0.2137, -0.4399, 0.15, -0.15)),
+    S('toss', 'Tiger Toss', 'Throw', 14, 'Grab them up close and hurl them over you onto the floor behind. Throw them into a stone and it hurts far more.', 'A throw over your shoulder: a big arch from the bottom right over the top to the bottom left, landing in a small loop.',
+      join(arc(0, 0.3, 0.6, 0, -180), arc(-0.6, 0.48, 0.18, -90, 270)), { ink: 'heavy' }),
+    S('landslide', 'Landslide', 'Rockfall', 20, 'Rocks pour down over them, and some stay as stones.', 'Stairs going down from the top left to the bottom right: four steps.',
+      poly(-0.75, -0.7, -0.4, -0.7, -0.4, -0.35, -0.05, -0.35, -0.05, 0, 0.3, 0, 0.3, 0.35, 0.65, 0.35, 0.65, 0.7)),
     S('mountain', 'Mountain Falls', 'Ultimate', 60, 'The ground splits and a mountain falls on them, leaving a ring of stones round them.', 'A square spiral: round the rim and in, corner by corner.',
       poly(-0.7, -0.7, 0.7, -0.7, 0.7, 0.7, -0.7, 0.7, -0.7, -0.32, 0.32, -0.32, 0.32, 0.32, -0.32, 0.32, -0.32, 0.02), { ink: 'heavy' }),
   ],
   air: [
-    S('blade', 'Wind Blade', 'Shot', 6, 'A crescent of cutting wind. Fast.', 'A crescent moon: a big arc round the left, then a smaller arc back inside it.',
-      join(arc(0.1, 0, 0.55, 60, 300), arc(0.75, 0, 0.606, 231.8, 128.2)), { closed: [true], ink: 'light' }),
-    S('gust', 'Gust', 'Push', 8, 'A blast of wind shoves them far back.', 'A long stroke from left to right that curls up at the end.',
-      join(poly(-0.75, 0.15, 0.2, 0.15), arc(0.2, -0.12, 0.27, 90, -180)), { ink: 'light' }),
-    S('feather', 'Feather Step', 'Dodge', 6, 'Leap away on the wind. Nothing touches you as you go.', 'A hop, then a leap: a small arch, then a big one, low on the pad.',
-      join(arc(-0.45, 0.35, 0.2, 180, 360), arc(0.15, 0.35, 0.4, 180, 360)), { ink: 'light' }),
+    // basic
+    S('blade', 'Wind Blade', 'Shot', 6, 'A crescent of cutting wind. Fast.', 'A C: a big curve round the left.',
+      arc(0.15, 0, 0.55, 60, 300), { ink: 'light' }),
+    S('gust', 'Gust', 'Push', 8, 'A blast of wind shoves them far back.', 'A >: from the top left to a point on the right, and back to the bottom left.',
+      poly(-0.5, -0.5, 0.5, 0, -0.5, 0.5), { ink: 'light' }),
+    S('feather', 'Feather Step', 'Dodge', 6, 'Leap away on the wind. Nothing touches you as you go.', 'One quick stroke from the top left down to the bottom right.',
+      poly(-0.45, -0.45, 0.45, 0.45), { ink: 'light' }),
+    // skilled
     S('meialua', 'Meia-lua Gale', 'Strike', 10, 'A half-moon kick throws a wide crescent of wind in front of you.', 'A wide arc over the top of the pad, left to right. Pool at the start: the planted foot.',
       arc(0, 0.15, 0.8, 200, 340), { pools: [[0]], ink: 'light' }),
-    S('updraft', 'Updraft', 'Launch', 12, 'A column of wind lifts them into the air, helpless. Air hits harder on a foe in the air.', 'A standing S, like the line in a yin-yang.',
-      join(arc(0, -0.33, 0.33, -90, 90), arc(0, 0.33, 0.33, -90, -270)), { ink: 'light' }),
     S('airshield', 'Air Shield', 'Deflect', 10, 'Wind whirls round you and turns their shots aside.', 'An Ω: a short foot, a big loop round over the top, and a short foot out.',
       join(poly(-0.62, 0.5, -0.3, 0.45), arc(0, 0.05, 0.5, 126.9, 413.1), poly(0.3, 0.45, 0.62, 0.5)), { ink: 'light' }),
-    S('breath', 'Breath of Life', 'Cleanse', 14, 'Clean wind blows away burns, water, sand, slows and holds, and mends you a little.', 'From the centre, spiral out one turn, then sweep away to the right.',
-      join(spiral(-0.1, 0, 0.04, 0.38, 90, 1.0), quad(-0.1, 0.38, 0.5, 0.4, 0.75, -0.1)), { ink: 'light' }),
-    S('tornado', 'Tornado', 'Storm', 18, 'A whirlwind sets off in a straight line, throwing up anyone it passes.', 'A funnel: three loops from the bottom to the top, getting wider as they rise.',
-      curve(u => { const t = u * 3 * TAU, w = 0.1 + 0.4 * u; return { x: w * Math.cos(t), y: 0.72 - 1.4 * u + 0.1 * Math.sin(t) }; }, 180), { ink: 'light' }),
-    S('flurry', 'Hurricane Flurry', 'Flurry', 14, 'Five quick strikes riding gusts of wind.', 'Four small loops in a row across the middle, without lifting the brush.',
-      curve(u => { const t = u * 4 * TAU; return { x: -0.66 + 1.32 * u - 0.16 * Math.sin(t), y: 0.05 + 0.2 * Math.cos(t) }; }, 200), { ink: 'light' }),
-    S('vacuum', 'Vacuum', 'Silence', 14, 'Suck the air from round them: for a moment they cannot write a single spell.', 'Two strokes back to back: an arc bulging right on the left, then one bulging left on the right.',
-      [arc(-0.55, 0, 0.5, -50, 50), arc(0.55, 0, 0.5, 130, 230)], { ink: 'light' }),
-    S('twin', 'Twin Blades', 'Homing', 12, 'Two blades of wind that curve in on them from both sides, round walls and stones.', 'Two strokes: two arcs crossing in an X, each bowed upward.',
-      [arc(-0.5, 0.5, 1.0, -90, 0), arc(0.5, 0.5, 1.0, -90, -180)], { ink: 'light' }),
     S('walk', 'Wind Walk', 'Haste', 10, 'The wind at your back: much faster for a while, and you gather wind twice as fast.', 'One long curve from the bottom left, bending up to the top right.',
       quad(-0.68, 0.62, -0.5, -0.45, 0.65, -0.58), { ink: 'light' }),
-    S('downdraft', 'Downdraft', 'Slam', 14, 'A hammer of air from above. On a foe in the air, it slams them down hard.', 'Two strokes: a dome across the top, then a line straight down through it, like an umbrella.',
-      [arc(0, -0.1, 0.55, 180, 360), poly(0, -0.65, 0, 0.6)], { ink: 'light' }),
-    S('crosswind', 'Crosswind', 'Misdirect', 10, 'Their next spell is blown off course and goes wide.', 'A small standing 8, without lifting the brush.',
-      curve(u => { const t = u * TAU; return { x: 0.22 * Math.sin(2 * t), y: 0.42 * Math.sin(t) }; }), { closed: [true], ink: 'light' }),
-    S('crane', 'Sky Crane', 'Leap', 18, 'Leap high where nothing can reach you, then dive down on them.', 'A tall arch with a small loop at the top: up from the bottom left, loop over, and down to the bottom right.',
-      join(quad(-0.45, 0.72, -0.3, -0.2, -0.086, -0.505), arc(0.02, -0.58, 0.13, 145, 505), quad(-0.086, -0.505, 0.25, -0.2, 0.45, 0.72)), { ink: 'light' }),
+    S('breath', 'Breath of Life', 'Cleanse', 14, 'Clean wind blows away burns, water, sand, slows and holds, and mends you a little.', 'From the centre, spiral out one turn, then sweep away to the right.',
+      join(spiral(-0.1, 0, 0.04, 0.38, 90, 1.0), quad(-0.1, 0.38, 0.5, 0.4, 0.75, -0.1)), { ink: 'light' }),
     S('whistle', 'Sharp Whistle', 'Interrupt', 10, 'A piercing whistle of wind breaks the spell they are writing.', 'A short ripple low on the left, then a sharp flick up to the top right.',
       join(hwave(-0.65, 0.15, 0.35, 0.13, 1), poly(0.15, 0.35, 0.62, -0.55)), { ink: 'light' }),
-    S('gale', 'Gale Force', 'Wave', 18, 'A wide wall of wind drives them all the way back to the edge of the ring.', 'One big wave across the middle: a crest, then a trough.',
-      hwave(-0.8, 0.8, 0, 0.34, 1), { ink: 'light' }),
-    S('echo', 'Echo', 'Echo', 8, 'The wind repeats your last spell, a little weaker.', 'Two strokes: ( then ), like brackets round the centre.',
-      [arc(0.2, 0, 0.6, 125, 235), arc(-0.2, 0, 0.6, -55, 55)], { ink: 'light' }),
-    S('weightless', 'Featherweight', 'Free', 12, 'Weigh nothing for a while: nothing can slow you, hold you, stun you or throw you about, and you move faster.', 'A cartwheel: a circle in the middle, then a line straight through it from left to right.',
-      [arc(0, 0, 0.42, -90, 270), poly(-0.75, 0, 0.75, 0)], { closed: [true, false], ink: 'light' }),
-    S('typhoon', 'Typhoon', 'Ultimate', 60, 'A great storm lifts them and spins them. All your wind goes into it.', 'A ring of five loops round the centre, without lifting the brush.',
+    S('vacuum', 'Vacuum', 'Silence', 14, 'Suck the air from round them: for a moment they cannot write a single spell.', 'An hourglass: across the top, down to the bottom left, across the bottom, and back up to the start.',
+      poly(-0.5, -0.55, 0.5, -0.55, -0.5, 0.55, 0.5, 0.55, -0.5, -0.55), { closed: [true], ink: 'light' }),
+    S('crosswind', 'Crosswind', 'Misdirect', 10, 'Their next spell is blown off course and goes wide.', 'A small standing 8.',
+      curve(u => { const t = u * TAU; return { x: 0.22 * Math.sin(2 * t), y: 0.42 * Math.sin(t) }; }), { closed: [true], ink: 'light' }),
+    S('echo', 'Echo', 'Echo', 8, 'The wind repeats your last spell, a little weaker.', 'Two loops in a row along the middle, the second smaller, like an echo.',
+      curve(u => { const t = u * 2 * TAU, k = 1 - 0.45 * u; return { x: -0.62 + 1.24 * u - 0.24 * k * Math.sin(t), y: 0.08 + 0.32 * k * Math.cos(t) }; }, 160), { ink: 'light' }),
+    S('weightless', 'Featherweight', 'Free', 12, 'Weigh nothing for a while: nothing can slow you, hold you, stun you or throw you about, and you move faster.', 'A curve rising to the top right, ending in a small loop, like a balloon drifting away.',
+      join(quad(-0.65, 0.65, -0.25, 0.05, 0.229, -0.229), arc(0.36, -0.38, 0.2, 131, 491)), { ink: 'light' }),
+    // master
+    S('updraft', 'Updraft', 'Launch', 12, 'A column of wind lifts them into the air, helpless. Air hits harder on a foe in the air.', 'An arrow pointing up: straight up the middle, then the head: down to the left, back to the tip, down to the right.',
+      poly(0, 0.7, 0, -0.6, -0.35, -0.25, 0, -0.6, 0.35, -0.25), { ink: 'light' }),
+    S('downdraft', 'Downdraft', 'Slam', 14, 'A hammer of air from above. On a foe in the air, it slams them down hard.', 'An arrow pointing down: straight down the middle, then the head: up to the left, back to the tip, up to the right.',
+      poly(0, -0.7, 0, 0.6, -0.35, 0.25, 0, 0.6, 0.35, 0.25), { ink: 'light' }),
+    S('flurry', 'Hurricane Flurry', 'Flurry', 14, 'Five quick strikes riding gusts of wind.', 'Four small loops in a row across the middle.',
+      curve(u => { const t = u * 4 * TAU; return { x: -0.66 + 1.32 * u - 0.16 * Math.sin(t), y: 0.05 + 0.2 * Math.cos(t) }; }, 200), { ink: 'light' }),
+    S('twin', 'Twin Blades', 'Homing', 12, 'Two blades of wind that curve in on them from both sides, round walls and stones.', 'A heart: from the point at the bottom, up round the left, into the dip at the top, round the right and back down to the point.',
+      heart(0, 0.1, 0.04), { closed: [true], ink: 'light' }),
+    S('tornado', 'Tornado', 'Storm', 18, 'A whirlwind sets off in a straight line, throwing up anyone it passes.', 'A funnel: three loops from the bottom to the top, getting wider as they rise.',
+      curve(u => { const t = u * 3 * TAU, w = 0.1 + 0.4 * u; return { x: w * Math.cos(t), y: 0.72 - 1.4 * u + 0.1 * Math.sin(t) }; }, 180), { ink: 'light' }),
+    S('crane', 'Sky Crane', 'Leap', 18, 'Leap high where nothing can reach you, then dive down on them.', 'A tall arch with a small loop at the top: up from the bottom left, loop over, and down to the bottom right.',
+      join(quad(-0.45, 0.72, -0.3, -0.2, -0.086, -0.505), arc(0.02, -0.58, 0.13, 145, 505), quad(-0.086, -0.505, 0.25, -0.2, 0.45, 0.72)), { ink: 'light' }),
+    S('gale', 'Gale Force', 'Wave', 18, 'A wide wall of wind drives them all the way back to the edge of the ring.', 'Back and forth three times across the pad, turning round at each end, like a wall of wind.',
+      join(poly(-0.65, -0.5, 0.5, -0.5), arc(0.5, -0.25, 0.25, -90, 90), poly(0.5, 0, -0.5, 0), arc(-0.5, 0.25, 0.25, 270, 90), poly(-0.5, 0.5, 0.65, 0.5)), { ink: 'light' }),
+    S('typhoon', 'Typhoon', 'Ultimate', 60, 'A great storm lifts them and spins them. All your wind goes into it.', 'A ring of five loops round the centre.',
       curve(u => { const t = u * TAU; return { x: 0.5 * Math.cos(t) + 0.2 * Math.cos(6 * t), y: 0.5 * Math.sin(t) + 0.2 * Math.sin(6 * t) }; }, 240), { closed: [true], ink: 'light' }),
   ],
 };
 for (const w of WAY_ORDER) MOVES[w].forEach((m, i) => {
-  m.way = w; m.id = w + ':' + m.key; m.order = i;
+  m.way = w; m.id = w + ':' + m.key; m.order = i; m.tier = i < 3 ? 0 : i < 12 ? 1 : 2;
   if (!m.closed) m.closed = m.strokes.map(() => false);
   if (!m.pools) m.pools = m.strokes.map(() => []);
 });
@@ -328,7 +345,7 @@ function fitStroke(d, t) {
     if (found >= 0) { hit++; used.add(found); }
   }
   const dc = t.cyc ? d.cornersShut : d.corners;
-  return { shape, place: Math.hypot(d.f.cx - t.f.cx, d.f.cy - t.f.cy), size: Math.abs(Math.log(d.f.r / t.f.r)), need, hit, extra: d.pools.length - used.size, corners: Math.max(0, Math.abs(dc - t.corners) - 1) };
+  return { shape, place: Math.hypot(d.f.cx - t.f.cx, d.f.cy - t.f.cy), size: Math.abs(Math.log(d.f.r / t.f.r)), need, hit, extra: d.pools.length - used.size, corners: Math.max(0, Math.abs(dc - t.corners) - 1 - Math.floor(t.corners / 6)) }; // (sharp-cornered moves get a little more leeway)
 }
 function joined(D) {
   const pts = [], pools = [];
@@ -416,7 +433,7 @@ function writeOut(g, o = {}) {
   });
 }
 
-return { TAU, clamp, WAYS, WAY_ORDER, MOVES, INKP, CLEAN, ROUGH, recognize, writeOut, resample, pathLen, scoreGlyph, prepDrawn };
+return { TAU, clamp, WAYS, WAY_ORDER, MOVES, TIERS, INKP, CLEAN, ROUGH, recognize, writeOut, resample, pathLen, scoreGlyph, prepDrawn };
 })();
 </script>
 <script>
@@ -429,7 +446,7 @@ return { TAU, clamp, WAYS, WAY_ORDER, MOVES, INKP, CLEAN, ROUGH, recognize, writ
 // the dais.
 (() => {
 'use strict';
-const { TAU, clamp, WAYS, WAY_ORDER, MOVES, INKP, recognize, writeOut } = INK;
+const { TAU, clamp, WAYS, WAY_ORDER, MOVES, TIERS, INKP, recognize, writeOut } = INK;
 const cv = document.getElementById('game'), ctx = cv.getContext('2d');
 const DISPLAY = '"Yuji Syuku", "Hiragino Mincho ProN", "Songti SC", Georgia, serif';
 const BODY = '"Zen Kaku Gothic New", "Hiragino Sans", "Segoe UI", system-ui, sans-serif';
@@ -582,7 +599,9 @@ let save = null;
 function loadSave() { try { const s = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null'); if (s && WAYS[s.way]) return s; } catch (_) {} return null; }
 function writeSave() { if (!save) return; try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch (_) {} }
 function newSave(way) { return { way, beaten: [], master: false, stats: { casts: 0, clean: 0, wins: 0, falls: 0, t0: Date.now() } }; }
-const learnedCount = () => Math.min(20, 8 + (save ? save.beaten.length : 0));
+// the moves you know: the three basic ones from the start; Ren, each white belt and each brown belt teach you one more (the
+// skilled moves), and each black belt two (the master moves), so you have all twenty for the Grandmaster
+const learnedCount = () => { if (!save) return 0; const b = save.beaten.length; return Math.min(20, 3 + (save.warm ? 1 : 0) + Math.min(8, b) + 2 * Math.max(0, b - 8)); };
 const myMoves = () => (save ? MOVES[save.way].filter(m => m.order < learnedCount()) : []);
 
 // ── the dojo: four halls round a gravel courtyard with a pond, a cherry tree and the Grandmaster's dais ──
@@ -790,13 +809,13 @@ const STUDENT = { id: 's', name: 'Ren', rank: 0, student: true, post: [880, 1012
 // how good a fighter is depends on how far through the dojo you are: your first sparring partner (k = 0) is feeble, and each
 // fighter after is a little better than the one before (k = how many you've beaten, plus one), up to the twelfth; then the
 // Grandmaster. Everything grows smoothly with k: their health, how hard they hit, how quick their telegraph, how often they
-// think, how often they see a blow coming, how many spells they know and how well they write them; and a beginner's spells
+// think, how often they see a blow coming, how many spells they know (about as many as you do by then) and how well they write them; and a beginner's spells
 // sometimes fizzle or go wide, and they walk a little slower.
 function skillAt(k) {
   if (k >= 13) return { k, hp: 160, dmg: 0.74, windup: 0.44, think: [0.9, 1.4], react: 0.42, spells: 20, power: 1, fizzle: 0, aim: 0, move: 1 };
   const u = clamp(k / 12, 0, 1), think = 2.4 - 1.48 * u ** 0.7;
   return { k, hp: 45 + 81 * u ** 1.1, dmg: 0.42 + 0.32 * u ** 0.9, windup: 0.95 - 0.5 * u ** 0.8, think: [think, think * 1.55], react: 0.4 * u ** 1.2,
-           spells: Math.round(2 + 17 * u), power: 0.6 + 0.36 * u ** 0.8, fizzle: 0.3 * (1 - u) ** 3, aim: 0.35 * (1 - u) ** 3, move: 0.75 + 0.25 * Math.min(1, u * 2) };
+           spells: k < 1 ? 2 : Math.min(20, 5 + Math.min(8, k - 1) + 2 * Math.max(0, k - 9)), power: 0.6 + 0.36 * u ** 0.8, fizzle: 0.3 * (1 - u) ** 3, aim: 0.35 * (1 - u) ** 3, move: 0.75 + 0.25 * Math.min(1, u * 2) };
 }
 const skillOf = f => f.sk || RANKS[f.rank];
 // what each way is: water hits softly but heals best; fire hits hardest and heals least; earth is the toughest and slowest
@@ -1049,7 +1068,7 @@ function startMove(f, move, power, target) {
   if (!canCast(f)) return false;
   f.ki -= cost;
   const [w, , aw] = timing(move), slowCast = move.way === 'earth' ? 0.1 : 0, fury = f.st.fury > 0 ? 0.5 : 1;
-  const wind = (f.isPlayer ? w + slowCast : skillOf(f).windup * aw * (move.way === 'earth' ? 1.15 : 1)) * fury;
+  const wind = (f.isPlayer ? w + slowCast : skillOf(f).windup * aw * (move.way === 'earth' ? 1.15 : 1) * [0.9, 1, 1.15][move.tier || 0]) * fury;
   f.act = { move, power, target, phase: 'wind', t: wind, wind, hits: 0, next: 0 };
   if (!f.isPlayer) f.glyph = { move, t: 0, dur: wind };
   f.pose = 'cast'; f.poseT = 0;
@@ -1074,6 +1093,7 @@ function castMult(f, m) {
   if (m.way === 'air') k *= 0.75 + 0.6 * f.wind / 100;
   if (m.way === 'water' && inZone(f, 'puddle')) k *= 1.25;
   if (f.st.blind > 0) k *= 0.6;
+  if (m.tier === 2) k *= 1.12;
   return k;
 }
 // spells that act on the caster, or all round them, rather than going at the foe
@@ -2643,7 +2663,7 @@ function drawBeams(t) {
 // strokes are kept in pad units (the pad is a circle of radius 1); the ink thickens the longer the brush is down,
 // thins the faster it moves, splits into dry streaks when very fast, and pools where it's held still
 const PAD = { strokes: [], pen: null, judgeAt: 0, shown: null, guide: null, prs: { ok: false, vals: new Set() } };
-const READ_AFTER = 550; // ms after the brush lifts before the glyph is read (time for a second stroke)
+// every move is one stroke, so a glyph is read the moment the brush lifts
 const pf = p => (p == null ? 1 : 0.45 + 1.1 * p);
 function padPressure(e) {
   const v = e && e.pressure;
@@ -2689,7 +2709,7 @@ function penUp() {
   const s = pen.s, last = s.pts[s.pts.length - 1];
   if (pen.dwell >= INKP.POOLT) { s.pools.push({ s: s.len, dwell: pen.dwell, w: pen.poolW }); s.livePools.push({ p: { ...last }, w: pen.poolW }); }
   PAD.pen = null;
-  PAD.judgeAt = performance.now() + READ_AFTER;
+  padJudge();
 }
 function padTick(dt) {
   const pen = PAD.pen, now = performance.now();
@@ -2832,7 +2852,7 @@ function spawnMaster(quiet) {
   if (!quiet) { say('Grandmaster Sumi waits on the dais', 'Every hall is beaten. One fight left.', 4); SFX.gong(); }
 }
 function say(title, sub, life = 2.6, col) { banner = { title, sub, life, max: life, col: col || C.gold }; }
-function beginGame(way) { save = newSave(way); writeSave(); setupWorld(); state = 'play'; calm = 3.5; say(`The Way of ${WAYS[way].name}`, `${WAYS[way].animal} · ${WAYS[way].style}. Open MOVES to see how to write your first eight. Ren, a student on their first day, wants to spar with you.`, 5.5, WAYS[way].color); }
+function beginGame(way) { save = newSave(way); writeSave(); setupWorld(); state = 'play'; calm = 3.5; say(`The Way of ${WAYS[way].name}`, `${WAYS[way].animal} · ${WAYS[way].style}. Open MOVES to see how to write your first three. Ren, a student on their first day, wants to spar with you.`, 5.5, WAYS[way].color); }
 function continueGame() { setupWorld(); state = 'play'; say(`The Way of ${WAYS[save.way].name}`, `${save.beaten.length} of 12 fighters beaten`, 3, WAYS[save.way].color); }
 
 // a fighter sees you coming, walks up, bows, and the fight begins
@@ -2884,12 +2904,12 @@ function endFight() {
   if (O.winner === player) {
     foe.beaten = true; foe.mode = 'return'; foe.hp = foe.maxHp; foe.pose = 'idle';
     if (foe === MASTERF) { save.master = true; save.stats.wins++; save.stats.t1 = Date.now(); writeSave(); overlay = { kind: 'victory', t: 0 }; SFX.learn(); return; }
-    if (foe.student) { save.warm = true; save.stats.wins++; writeSave(); overlay = { kind: 'learn', t: 0, foe, move: null, warm: true }; SFX.learn(); return; }
+    if (foe.student) { const before = learnedCount(); save.warm = true; save.stats.wins++; writeSave(); overlay = lesson(foe, before, learnedCount(), { warm: true }); SFX.learn(); return; }
     const before = learnedCount(), tier0 = tierNow();
     if (!save.beaten.includes(foe.id)) save.beaten.push(foe.id);
     save.stats.wins++; writeSave();
-    const after = learnedCount(), move = after > before ? MOVES[save.way].find(m => m.order === after - 1) : null, tier1 = tierNow();
-    overlay = { kind: 'learn', t: 0, foe, move, demo: move ? writeOut(move, { wobble: 0.006 }) : null, tierUp: tier1 !== tier0 && tier1 < 4 ? tier1 : 0 };
+    const after = learnedCount(), tier1 = tierNow();
+    overlay = lesson(foe, before, after, { tierUp: tier1 !== tier0 && tier1 < 4 ? tier1 : 0 });
     SFX.learn();
   } else {
     save.stats.falls++; writeSave();
@@ -2897,8 +2917,14 @@ function endFight() {
     foe.mode = 'return'; foe.hp = foe.maxHp; foe.pose = 'idle';
   }
 }
+// the lesson after a win: the moves you've just learned, one after another
+function lesson(foe, before, after, o = {}) {
+  const moves = MOVES[save.way].filter(m => m.order >= before && m.order < after), move = moves[0] || null;
+  return { kind: 'learn', t: 0, foe, move, more: moves.slice(1), demo: move ? writeOut(move, { wobble: 0.006 }) : null, ...o };
+}
 function afterLearn() {
   const O = overlay; overlay = null;
+  if (O && O.more && O.more.length) { const m = O.more[0]; overlay = { ...O, t: 0, move: m, more: O.more.slice(1), demo: writeOut(m, { wobble: 0.006 }), next: true }; return; }
   if (O && O.warm) say('The halls are open', 'The white belts will fight you first. Each one is a little better than the last.', 4.5);
   else if (O && O.tierUp) say(`The ${BELTS[O.tierUp]} will fight you now`, `All four ${BELTS[O.tierUp - 1]} are beaten. Each fighter is a little better than the last.`, 4.5);
   resetFighter(player); player.hp = player.maxHp; player.ki = player.maxKi; player.pose = 'idle';
@@ -3184,7 +3210,7 @@ function wrapLines(text, maxW) {
 function wrapText(text, x, y, maxW, lh) { const ls = wrapLines(text, maxW); ls.forEach((l, i) => ctx.fillText(l, x, y + i * lh)); return y + ls.length * lh; }
 
 // ── the title: your way ──
-const SIGNATURE = { water: 'whirlpool', fire: 'flameshield', earth: 'wall', air: 'typhoon' };
+const SIGNATURE = { water: 'whirlpool', fire: 'inferno', earth: 'mountain', air: 'typhoon' };
 let titleT = 0, choosing = false;
 function drawTitle() {
   titleT += 1 / 60;
@@ -3255,7 +3281,7 @@ function drawOverlay() {
     ctx.font = `${Math.min(28, W / 13)}px ${DISPLAY}`; ctx.fillStyle = Wy.color; ctx.fillText(`The Way of ${Wy.name}`, cx, 40);
     ctx.font = `bold 12px ${BODY}`; ctx.fillStyle = C.gold; const tl = wrapLines(`${Wy.twist}: ${Wy.twistWhat}`, Math.min(W - 24, 560));
     ctx.font = `12px ${BODY}`; tl.slice(0, 3).forEach((l, i) => { ctx.fillStyle = i ? C.fg : C.fg; ctx.fillText(l, cx, 60 + i * 15); });
-    ctx.font = `11px ${BODY}`; ctx.fillStyle = C.muted; ctx.fillText('Tap a spell to see it, and to trace it on the paper.', cx, 64 + Math.min(3, tl.length) * 15, W - 24);
+    ctx.font = `11px ${BODY}`; ctx.fillStyle = C.muted; ctx.fillText('● basic · ●● skilled · ●●● master. Tap one to see it and trace it.', cx, 64 + Math.min(3, tl.length) * 15, W - 24);
     const cols = W > 700 ? 5 : 4, cw = Math.min(170, (W - 16) / cols), rows = 5, top = 74 + Math.min(3, tl.length) * 15 + 8, ch = Math.min(150, (H - top - 56) / rows), r = Math.min(cw * 0.3, (ch - 40) / 2.1);
     const x0 = cx - cw * cols / 2;
     MOVES[way].forEach((m, i) => {
@@ -3264,7 +3290,7 @@ function drawOverlay() {
       if (known) glyphGuide(ctx, M, m, '#2e2216', 0.95, false, 2);
       else { ctx.fillStyle = 'rgba(18,15,25,0.55)'; ctx.beginPath(); ctx.arc(M.cx, M.cy, r, 0, TAU); ctx.fill(); ctx.font = `${r * 0.8}px ${DISPLAY}`; ctx.fillStyle = C.muted; ctx.fillText('?', M.cx, M.cy + r * 0.28); }
       ctx.font = `bold 11px ${BODY}`; ctx.fillStyle = known ? Wy.color : C.fizzle; ctx.fillText(known ? m.name : '—', X + cw / 2, Y + 2 * r + 18, cw - 6);
-      ctx.font = `10px ${BODY}`; ctx.fillStyle = known ? C.muted : '#5d566a'; ctx.fillText(`${m.tag}${known ? ' · ' + m.cost + ' ki' : ''}`, X + cw / 2, Y + 2 * r + 31, cw - 6);
+      ctx.font = `10px ${BODY}`; ctx.fillStyle = known ? C.muted : '#5d566a'; ctx.fillText(`${'●'.repeat(m.tier + 1)} ${m.tag}${known ? ' · ' + m.cost + ' ki' : ''}`, X + cw / 2, Y + 2 * r + 31, cw - 6);
       if (known) buttons.push({ x: X, y: Y, w: cw, h: ch, go: () => { O.pick = m; } });
     });
     if (O.pick) {
@@ -3273,7 +3299,7 @@ function drawOverlay() {
       roundRect(bx, by, bw, bh, 16); ctx.fillStyle = C.night2; ctx.fill(); ctx.strokeStyle = Wy.color; ctx.lineWidth = 2; ctx.stroke();
       const M = { cx: bx + 70, cy: by + 80, r: 52 }; paper(ctx, M); glyphGuide(ctx, M, m, '#2e2216', 0.95, false, 2.5);
       ctx.textAlign = 'left'; ctx.font = `22px ${DISPLAY}`; ctx.fillStyle = Wy.color; ctx.fillText(m.name, bx + 136, by + 52, bw - 150);
-      ctx.font = `12px ${BODY}`; ctx.fillStyle = C.muted; ctx.fillText(`${m.tag} · ${m.cost} ki`, bx + 136, by + 72);
+      ctx.font = `12px ${BODY}`; ctx.fillStyle = C.muted; ctx.fillText(`${TIERS[m.tier]} · ${m.tag} · ${m.cost} ki`, bx + 136, by + 72);
       ctx.font = `13px ${BODY}`; ctx.fillStyle = C.fg; const wy = wrapText(m.what, bx + 136, by + 94, bw - 150, 17);
       ctx.fillStyle = C.paper; ctx.font = `13px ${BODY}`; wrapText('How: ' + m.how, bx + 20, Math.max(by + 160, wy + 6), bw - 40, 17);
       ctx.textAlign = 'center';
@@ -3289,8 +3315,7 @@ function drawOverlay() {
   if (O.kind === 'learn') {
     const f = O.foe, m = O.move, Wy = WAYS[save.way];
     ctx.font = `${Math.min(30, W / 12)}px ${DISPLAY}`; ctx.fillStyle = C.gold; ctx.fillText(`${f.name} bows`, cx, H * 0.14);
-    ctx.font = `14px ${BODY}`; ctx.fillStyle = C.fg; ctx.fillText(m ? 'and shows you a move of your way:' : O.warm ? 'Well fought. The halls are open now.' : 'You already know all twenty moves.', cx, H * 0.14 + 28);
-    if (O.warm) { ctx.fillStyle = C.paper; wrapText('The white belts will fight you first: beat all four, then the brown belts, then the black belts, then the Grandmaster. Each fighter is a little better than the last, and each one you beat teaches you a new move.', cx, H * 0.14 + 70, Math.min(W - 40, 420), 21); }
+    ctx.font = `14px ${BODY}`; ctx.fillStyle = C.fg; ctx.fillText(O.next ? 'and another:' : m ? (O.warm ? 'Well fought. You learn a move of your way:' : 'and shows you a move of your way:') : 'You already know all twenty moves.', cx, H * 0.14 + 28);
     if (m) {
       const r = Math.min(W * 0.3, H * 0.18), M = { cx, cy: H * 0.14 + 60 + r, r }, cyc = O.demo.reduce((a, s) => a + s.dur, 0) + 0.2 * (O.demo.length - 1) + 1.4;
       paper(ctx, M);
@@ -3298,11 +3323,11 @@ function drawOverlay() {
       glyphGuide(ctx, M, m, Wy.color, 0.35);
       let y = M.cy + r + 38;
       ctx.font = `${Math.min(28, W / 13)}px ${DISPLAY}`; ctx.fillStyle = Wy.color; ctx.fillText(m.name, cx, y);
-      ctx.font = `13px ${BODY}`; ctx.fillStyle = C.muted; ctx.fillText(`${m.tag} · ${m.cost} ki`, cx, y + 22);
+      ctx.font = `13px ${BODY}`; ctx.fillStyle = C.muted; ctx.fillText(`${TIERS[m.tier]} move · ${m.tag} · ${m.cost} ki`, cx, y + 22);
       ctx.fillStyle = C.fg; ctx.font = `14px ${BODY}`; y = wrapText(m.what, cx, y + 46, Math.min(W - 40, 420), 19);
       ctx.fillStyle = C.paper; y = wrapText('How: ' + m.how, cx, y + 8, Math.min(W - 40, 420), 19);
     }
-    if (O.t > 0.8) { ctx.globalAlpha = 0.6 + 0.4 * Math.sin(T * 4); ctx.font = `14px ${BODY}`; ctx.fillStyle = C.gold; ctx.fillText('Tap to carry on', cx, H - 30); ctx.globalAlpha = 1; buttons.push({ x: 0, y: 0, w: W, h: H, go: afterLearn }); }
+    if (O.t > 0.8) { ctx.globalAlpha = 0.6 + 0.4 * Math.sin(T * 4); ctx.font = `14px ${BODY}`; ctx.fillStyle = C.gold; ctx.fillText(O.more && O.more.length ? 'Tap for the next move' : 'Tap to carry on', cx, H - 30); ctx.globalAlpha = 1; buttons.push({ x: 0, y: 0, w: W, h: H, go: afterLearn }); }
     return;
   }
   if (O.kind === 'fallen') {
