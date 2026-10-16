@@ -6,7 +6,7 @@
 <title>Ink Dojo</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Yuji+Syuku&family=Zen+Kaku+Gothic+New:wght@400;700&display=swap">
 <style>
-/* One look: a night dojo lit by lanterns. The whole page is the game's canvas. */
+/* One look: ink on paper, by night. The whole page is the game's canvas. */
 :root { --night: #120f19; --paper: #efe6d0; color-scheme: dark; }
 html, body { margin: 0; height: 100%; background: var(--night); color: var(--paper); overflow: hidden; overscroll-behavior: none; }
 #game { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
@@ -16,7 +16,7 @@ html, body { margin: 0; height: 100%; background: var(--night); color: var(--pap
 </style>
 </head>
 <body>
-<canvas id="game" aria-label="Ink Dojo: a dojo of fighters, and a pad of paper to write your moves on"></canvas>
+<canvas id="game" aria-label="Ink Dojo: a calligraphy adventure, and a pad of paper to write your moves on"></canvas>
 <div id="safe"></div>
 <button id="tiltBtn" type="button" aria-label="Tilt to walk" hidden></button>
 <script>
@@ -397,8 +397,50 @@ function recognize(strokes, moves) {
   const verdict = b.q >= CLEAN ? 'clean' : b.q >= ROUGH ? 'rough' : 'fizzle';
   let pbonus = 0;
   if (b.pr != null) { const want = { light: 0.3, steady: 0.55, heavy: 0.85, any: b.pr }[b.g.ink]; pbonus = 0.08 * (1 - 2 * Math.min(0.5, Math.abs(b.pr - want))); b.parts.pressure = clamp(1 - 2 * Math.abs(b.pr - want), 0, 1); }
-  const power = verdict === 'fizzle' ? 0 : clamp(0.4 + 0.6 * (b.q - ROUGH) / (0.95 - ROUGH), 0.4, 1) + pbonus;
-  return { verdict, best: b, power: Math.max(0, power), all };
+  const acc = accuracy(b.q), perfect = verdict === 'clean' && acc >= PERFECT;
+  const power = verdict === 'fizzle' ? 0 : powerOf(acc) + pbonus * (1 + acc);
+  return { verdict, perfect, best: b, acc, power: Math.max(0, power), all };
+}
+// how accurate a glyph is (0 to 1, shown as a percentage), and how strong that makes it: a curve that keeps getting steeper,
+// so a scrappy glyph is a little weaker than a fair one, but every point near the top counts for more than the last, and a
+// perfect glyph hits about twice as hard as a merely good one
+const QTOP = 0.985, PERFECT = 0.97;
+const accuracy = q => clamp((q - ROUGH) / (QTOP - ROUGH), 0, 1);
+const powerOf = a => 0.4 + 0.25 * a + 1.35 * a ** 4;
+
+// ── the curl: an attack that ends in a little loop is held rather than thrown ──
+// Finds where a stroke's end curls back on itself in a small loop, and returns the stroke without it (or null).
+function curlCut(s) {
+  const P = s.pts, n = P.length;
+  if (n < 14) return null;
+  const cum = [0];
+  for (let i = 1; i < n; i++) cum.push(cum[i - 1] + Math.hypot(P[i].x - P[i - 1].x, P[i].y - P[i - 1].y));
+  const total = cum[n - 1];
+  for (let k = 3; k < n - 8; k++) {
+    if (total - cum[k] > 0.42 * total) continue;
+    for (let j = n - 1; j > k + 6 && total - cum[j] < 0.1 * total + 0.04; j--) {
+      const loop = cum[j] - cum[k];
+      if (loop < 0.16 || loop > 0.7 * cum[k] || Math.hypot(P[j].x - P[k].x, P[j].y - P[k].y) > 0.085) continue;
+      let turn = 0, x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+      for (let i = k + 1; i < j; i++) {
+        const a1 = Math.atan2(P[i].y - P[i - 1].y, P[i].x - P[i - 1].x), a2 = Math.atan2(P[i + 1].y - P[i].y, P[i + 1].x - P[i].x);
+        turn += ((a2 - a1 + 3 * Math.PI) % TAU) - Math.PI;
+        x0 = Math.min(x0, P[i].x); x1 = Math.max(x1, P[i].x); y0 = Math.min(y0, P[i].y); y1 = Math.max(y1, P[i].y);
+      }
+      if (Math.abs(turn) < 4.4 || Math.max(x1 - x0, y1 - y0) > 0.5) continue;
+      return { ...s, pts: P.slice(0, k + 1), pools: (s.pools || []).filter(p => p.s <= cum[k] + 0.02), len: cum[k], dwells: (s.dwells || []).filter(d => d.i <= k), curled: true };
+    }
+  }
+  return null;
+}
+// for demonstrations and tests: a written stroke with a little curl added at its end, carrying on the way it was going
+function withCurl(strokes, r = 0.09) {
+  const s = strokes[strokes.length - 1], P = s.pts, a = P[P.length - 1], b = P[Math.max(0, P.length - 6)], d = Math.atan2(a.y - b.y, a.x - b.x);
+  // a loop that leaves along the stroke, turns right round, and comes back across it
+  const cx = a.x + Math.cos(d + Math.PI / 2) * r, cy = a.y + Math.sin(d + Math.PI / 2) * r, out = [];
+  let t = a.t;
+  for (let i = 1; i <= 40; i++) { const th = d - Math.PI / 2 + TAU * 1.08 * i / 40; t += 0.012; out.push({ ...a, x: cx + Math.cos(th) * r, y: cy + Math.sin(th) * r, t, dry: false }); }
+  return [...strokes.slice(0, -1), { ...s, pts: [...P, ...out], dur: (s.dur || 0) + 0.5 }];
 }
 
 // ── a believable hand, for demonstrations and tests: a template, written at the speed its ink wants ──
@@ -433,20 +475,19 @@ function writeOut(g, o = {}) {
   });
 }
 
-return { TAU, clamp, WAYS, WAY_ORDER, MOVES, TIERS, INKP, CLEAN, ROUGH, recognize, writeOut, resample, pathLen, scoreGlyph, prepDrawn };
+return { TAU, clamp, WAYS, WAY_ORDER, MOVES, TIERS, INKP, CLEAN, ROUGH, PERFECT, recognize, accuracy, powerOf, curlCut, withCurl, writeOut, resample, pathLen, scoreGlyph, prepDrawn };
 })();
 </script>
 <script>
 // ── Ink Dojo ─────────────────────────────────────────────────────────────────
-// A dojo of four halls round a courtyard. Pick a way (Water, Fire, Earth or
-// Air) and walk the dojo; its fighters walk up and challenge you, one at a
-// time, and you fight them only with moves you write on the pad with a brush.
-// Every way has twenty moves. You start with eight; each fighter you beat
-// teaches you another, and when all twelve are beaten the Grandmaster waits on
-// the dais.
+// A calligraphy adventure. Pick a way (Water, Fire, Earth or Air); you fight
+// only with moves you write on the pad with a brush. Your mum sends you from
+// your home at the edge of the valley into town to pick up a package: wolves on
+// the road, townsfolk to talk to, the dojo's four white belts to beat (each
+// teaches you a move), and on the way home, bandits.
 (() => {
 'use strict';
-const { TAU, clamp, WAYS, WAY_ORDER, MOVES, TIERS, INKP, recognize, writeOut } = INK;
+const { TAU, clamp, WAYS, WAY_ORDER, MOVES, TIERS, INKP, recognize, writeOut, curlCut, withCurl } = INK;
 const cv = document.getElementById('game'), ctx = cv.getContext('2d');
 const DISPLAY = '"Yuji Syuku", "Hiragino Mincho ProN", "Songti SC", Georgia, serif';
 const BODY = '"Zen Kaku Gothic New", "Hiragino Sans", "Segoe UI", system-ui, sans-serif';
@@ -521,6 +562,8 @@ const SFX = {
   drum(n = 2) { for (let i = 0; i < n; i++) { tone(70, 0.3, 'sine', 0.4, i * 0.22, 0.5); noise(0.12, 0.12, 400, 120, 0.8, i * 0.22); } },
   learn() { [392, 523, 659, 784, 1046].forEach((f, i) => tone(f, 0.5, 'triangle', 0.07, i * 0.09)); },
   tap() { tone(660, 0.05, 'triangle', 0.05); },
+  hold() { tone(392, 0.25, 'triangle', 0.07); tone(587, 0.4, 'sine', 0.05, 0.08, 0.98); },
+  perfect() { [784, 988, 1175, 1568].forEach((f, i) => tone(f, 0.45, 'triangle', 0.06, i * 0.05)); },
 };
 
 // ── tilt: lean the phone to walk. However you hold it when tilt starts counts as standing still ──
@@ -593,19 +636,23 @@ function tiltTick(dt) {
   const show = Math.min(1, m / TILT.FULL); TILT.lx = m > 0 ? tx / m * show : 0; TILT.ly = m > 0 ? ty / m * show : 0;
 }
 
-// ── saved progress: your way, the fighters you've beaten, and a few numbers ──
-const SAVE_KEY = 'inkdojo-1';
+// ── saved progress: your way, where the story is (q), who you've beaten, who you've heard, and where you are ──
+const SAVE_KEY = 'inkdojo-adv-1';
 let save = null;
 function loadSave() { try { const s = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null'); if (s && WAYS[s.way]) return s; } catch (_) {} return null; }
 function writeSave() { if (!save) return; try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch (_) {} }
-function newSave(way) { return { way, beaten: [], master: false, stats: { casts: 0, clean: 0, wins: 0, falls: 0, t0: Date.now() } }; }
-// the moves you know: the three basic ones from the start; Ren, each white belt and each brown belt teach you one more (the
-// skilled moves), and each black belt two (the master moves), so you have all twenty for the Grandmaster
-const learnedCount = () => { if (!save) return 0; const b = save.beaten.length; return Math.min(20, 3 + (save.warm ? 1 : 0) + Math.min(8, b) + 2 * Math.max(0, b - 8)); };
+function newSave(way) { return { way, q: 0, beaten: [], wolves: [], scribe: false, heard: {}, scene: 'home', at: 'door', stats: { casts: 0, clean: 0, wins: 0, falls: 0, t0: Date.now() } }; }
+// the moves you know: the three basic ones from the start; the calligrapher in town teaches you one more, and each white
+// belt at the dojo one more (the skilled moves), so you have eight for the road home
+const whitesBeaten = () => (save ? save.beaten.filter(id => ROSTER.some(o => o.id === id && o.rank === 1)).length : 0);
+const learnedCount = () => (save ? Math.min(20, 3 + (save.scribe ? 1 : 0) + whitesBeaten()) : 0);
 const myMoves = () => (save ? MOVES[save.way].filter(m => m.order < learnedCount()) : []);
 
+// ── the places: the valley with your home, the town, and the town's dojo. One is on screen at a time (SCENE), with its own
+// floor, its own solids and its own ways out ──
+const WORLD = { w: 1600, h: 1700, edge: 80 };
+let SCENE = 'dojo';
 // ── the dojo: four halls round a gravel courtyard with a pond, a cherry tree and the Grandmaster's dais ──
-const WORLD = { w: 1600, h: 1700 };
 const HALLS = {
   air:   { x: 400, y: 90, w: 800, h: 440, label: 'Hall of Air', sign: { x: 800, y: 120 } },
   water: { x: 90, y: 470, w: 400, h: 760, label: 'Hall of Water', sign: { x: 120, y: 850 } },
@@ -623,20 +670,25 @@ for (const [x, y] of [[400, 90], [1200, 90], [400, 530], [1200, 530], [90, 470],
 SOLIDS.push({ x: 625, y: 690, r: 20, kind: 'tree' });
 for (const [x, y] of [[560, 1100], [1040, 1100], [1040, 600], [560, 600]]) SOLIDS.push({ x, y, r: 13, kind: 'lantern' });
 for (const [x, y, r] of [[700, 980, 16], [940, 1040, 12], [985, 760, 18]]) SOLIDS.push({ x, y, r, kind: 'rock' });
+const DOJO_SOLIDS = SOLIDS.slice();
 function blocked(p, r) {
   // the walls
-  p.x = clamp(p.x, 80 + r, WORLD.w - 80 - r); p.y = clamp(p.y, 80 + r, WORLD.h - 80 - r);
-  for (const s of SOLIDS) { const d = Math.hypot(p.x - s.x, p.y - s.y), m = s.r + r; if (d < m) { const k = (m - d) / (d || 1); p.x += (p.x - s.x) * k; p.y += (p.y - s.y) * k; } }
+  const E = WORLD.edge;
+  p.x = clamp(p.x, E + r, WORLD.w - E - r); p.y = clamp(p.y, E + r, WORLD.h - E - r);
+  for (const s of SOLIDS) {
+    // a building: pushed out of its nearest side
+    if (s.w) { const hx = s.w / 2 + r, hy = s.h / 2 + r, dx = p.x - s.x, dy = p.y - s.y; if (Math.abs(dx) < hx && Math.abs(dy) < hy) { if (hx - Math.abs(dx) < hy - Math.abs(dy)) p.x = s.x + Math.sign(dx || 1) * hx; else p.y = s.y + Math.sign(dy || 1) * hy; } continue; }
+    const d = Math.hypot(p.x - s.x, p.y - s.y), m = s.r + r; if (d < m) { const k = (m - d) / (d || 1); p.x += (p.x - s.x) * k; p.y += (p.y - s.y) * k; }
+  }
+  if (SCENE !== 'dojo') return;
   // the pond: pushed back out along its oval
   const ex = (p.x - POND.x) / (POND.rx + r), ey = (p.y - POND.y) / (POND.ry + r), e = Math.hypot(ex, ey);
   if (e < 1) { const k = 1 / (e || 1e-6); p.x = POND.x + ex * k * (POND.rx + r); p.y = POND.y + ey * k * (POND.ry + r); }
 }
 
 // the floor is painted once, onto its own canvas, and the visible part copied each frame
-const floor = document.createElement('canvas');
-floor.width = WORLD.w; floor.height = WORLD.h;
-(function paintFloor() {
-  const c = floor.getContext('2d');
+let floor = null;
+function paintDojo(c) {
   let seed = 11; const r = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
   c.fillStyle = '#0d0b12'; c.fillRect(0, 0, WORLD.w, WORLD.h);
   // wooden planks everywhere inside the walls
@@ -697,7 +749,9 @@ floor.width = WORLD.w; floor.height = WORLD.h;
   c.fillStyle = '#e8dfc8';
   for (let x = 90; x < WORLD.w - 90; x += 64) { c.fillRect(x, 60, 56, 10); c.fillRect(x, WORLD.h - 70, 56, 10); }
   for (let y = 90; y < WORLD.h - 90; y += 64) { c.fillRect(60, y, 10, 56); c.fillRect(WORLD.w - 70, y, 10, 56); }
-})();
+  // the way out to the town: a mat by the courtyard's south side
+  c.fillStyle = '#5a3a22'; c.fillRect(760, 1098, 80, 40); c.strokeStyle = '#e9bb52'; c.lineWidth = 2; c.strokeRect(763, 1101, 74, 34);
+}
 // a way's mark, in the shape its guard takes: water a circle, fire a triangle, earth a square, air an open sweep
 function wayMark(c, way, x, y, R) {
   c.beginPath();
@@ -769,7 +823,7 @@ function drawProps(t, layer) {
       ctx.globalAlpha = 1;
     }
   }
-  if (layer !== 'low') {
+  if (layer !== 'low' && SCENE === 'dojo') {
     // falling petals
     ctx.fillStyle = '#ffc6d9';
     for (let i = 0; i < 16; i++) { const ph = (t * 0.07 + i * 0.137) % 1, x = 560 + ((i * 97) % 180) + Math.sin(t + i) * 20, y = 600 + ph * 260; ctx.globalAlpha = Math.sin(ph * Math.PI) * 0.9; ctx.beginPath(); ctx.ellipse(x, y, 3, 1.7, t + i, 0, TAU); ctx.fill(); }
@@ -784,6 +838,169 @@ function drawProps(t, layer) {
   }
 }
 
+// ── the valley and the town ──
+// Your home sits at the south end of a green valley; a dirt road winds north past pines and over a stream to the town
+// gate. The town is a square with a well, the post office, the calligrapher's house, a few homes and stalls, and the
+// dojo's gate at its top. Each place has spots (where you arrive) and exits (where you leave for the next place).
+const ROAD = [[500, 2330], [560, 2120], [420, 1860], [600, 1560], [450, 1250], [570, 950], [430, 650], [520, 350], [500, 0]];
+function roadDist(x, y) {
+  let best = Infinity;
+  for (let i = 1; i < ROAD.length; i++) {
+    const [ax, ay] = ROAD[i - 1], [bx, by] = ROAD[i], dx = bx - ax, dy = by - ay, k = clamp(((x - ax) * dx + (y - ay) * dy) / (dx * dx + dy * dy), 0, 1);
+    best = Math.min(best, Math.hypot(x - ax - dx * k, y - ay - dy * k));
+  }
+  return best;
+}
+const STREAM_Y = x => 1480 + 40 * Math.sin(x / 140);
+const HOUSE = { x: 500, y: 2420, w: 220, h: 150 };
+const SCENES = {
+  home: { w: 1000, h: 2600, edge: 30, day: true, name: 'The valley',
+    spots: { door: { x: 500, y: 2300 }, north: { x: 500, y: 140 } },
+    exits: [{ id: 'town', x: 500, y: 36, r: 90, to: 'town', at: 'gate', label: 'To town' }] },
+  town: { w: 1300, h: 1250, edge: 30, day: true, name: 'The town',
+    spots: { gate: { x: 650, y: 1110 }, dojoGate: { x: 650, y: 370 } },
+    exits: [{ id: 'valley', x: 650, y: 1225, r: 95, to: 'home', at: 'north', label: 'Home' }, { id: 'dojo', x: 650, y: 290, r: 42, to: 'dojo', at: 'gate', label: 'Dojo' }] },
+  dojo: { w: 1600, h: 1700, edge: 80, name: 'The dojo',
+    spots: { gate: { x: 800, y: 1048 } },
+    exits: [{ id: 'town', x: 800, y: 1118, r: 30, to: 'town', at: 'dojoGate', label: 'To town' }] },
+};
+// what stands in each place
+function sceneSolids(name) {
+  if (name === 'dojo') return DOJO_SOLIDS;
+  const out = [];
+  let seed = name === 'home' ? 7 : 19; const r = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  if (name === 'home') {
+    out.push({ ...HOUSE, kind: 'house', roof: '#6b3a2a', door: 'n' });
+    for (let i = 0; i < 160 && out.length < 75; i++) {
+      const x = 50 + r() * 900, y = 60 + r() * 2480;
+      if (roadDist(x, y) < 95 || Math.abs(y - STREAM_Y(x)) < 40 || (Math.abs(x - HOUSE.x) < 200 && Math.abs(y - HOUSE.y) < 180) || out.some(o => Math.hypot(o.x - x, o.y - y) < 70)) continue;
+      out.push({ x, y, r: 18 + r() * 6, kind: 'pine' });
+    }
+    for (let i = 0; i < 40 && out.filter(o => o.kind === 'rock').length < 9; i++) {
+      const x = 80 + r() * 840, y = 200 + r() * 2100;
+      if (roadDist(x, y) < 75 || out.some(o => Math.hypot(o.x - x, o.y - y) < 60)) continue;
+      out.push({ x, y, r: 11 + r() * 7, kind: 'rock' });
+    }
+  } else {
+    out.push({ x: 230, y: 600, w: 220, h: 170, kind: 'house', roof: '#7a3b2e', sign: 'Post', door: 'e' },
+             { x: 1070, y: 600, w: 220, h: 170, kind: 'house', roof: '#3b4f7a', sign: 'Calligraphy', door: 'w' },
+             { x: 240, y: 300, w: 200, h: 150, kind: 'house', roof: '#5d4a33' }, { x: 1060, y: 300, w: 200, h: 150, kind: 'house', roof: '#4f5a3a' },
+             { x: 230, y: 960, w: 200, h: 140, kind: 'house', roof: '#6b4d3a' }, { x: 1070, y: 960, w: 200, h: 140, kind: 'house', roof: '#5a3d4f' },
+             { x: 650, y: 170, w: 380, h: 170, kind: 'house', roof: '#2a1a10', sign: 'Dojo', gate: true },
+             { x: 470, y: 880, w: 100, h: 54, kind: 'stall', roof: '#c63f2e' }, { x: 830, y: 880, w: 100, h: 54, kind: 'stall', roof: '#2e7a5a' });
+    out.push({ x: 650, y: 640, r: 30, kind: 'well' });
+    for (const [x, y] of [[90, 120], [1210, 120], [90, 1160], [1210, 1160], [420, 140], [880, 140]]) out.push({ x, y, r: 20, kind: 'tree' });
+    for (const [x, y] of [[520, 520], [780, 520], [520, 760], [780, 760]]) out.push({ x, y, r: 12, kind: 'lantern' });
+  }
+  return out;
+}
+const FLOORS = {};
+function paintScene(name) {
+  const S = SCENES[name], cv2 = document.createElement('canvas');
+  cv2.width = S.w; cv2.height = S.h;
+  const c = cv2.getContext('2d');
+  if (name === 'dojo') paintDojo(c); else if (name === 'home') paintValley(c); else paintTown(c);
+  return cv2;
+}
+function grass(c, w, h, seed0) {
+  let seed = seed0; const r = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const g = c.createLinearGradient(0, 0, w * 0.3, h); g.addColorStop(0, '#4f7a3a'); g.addColorStop(1, '#3f6a32');
+  c.fillStyle = g; c.fillRect(0, 0, w, h);
+  for (let i = 0; i < w * h / 900; i++) { c.fillStyle = r() < 0.5 ? 'rgba(120,170,80,0.25)' : 'rgba(30,60,25,0.22)'; c.beginPath(); c.ellipse(r() * w, r() * h, 6 + r() * 16, 3 + r() * 6, r() * 3, 0, TAU); c.fill(); }
+  for (let i = 0; i < w * h / 6000; i++) { c.fillStyle = ['#f4efe4', '#f1dc6a', '#ff9ab8', '#bfe6ff'][(r() * 4) | 0]; c.beginPath(); c.arc(r() * w, r() * h, 2.2, 0, TAU); c.fill(); }
+}
+function paintValley(c) {
+  const S = SCENES.home;
+  grass(c, S.w, S.h, 5);
+  // the stream, east to west, and the bridge where the road crosses it
+  c.lineCap = 'round'; c.lineJoin = 'round';
+  for (const [w, col] of [[46, '#2f5a6a'], [34, '#3f86a8'], [10, 'rgba(220,245,255,0.35)']]) { c.strokeStyle = col; c.lineWidth = w; c.beginPath(); for (let x = 0; x <= S.w; x += 10) (x ? c.lineTo : c.moveTo).call(c, x, STREAM_Y(x)); c.stroke(); }
+  // the road
+  for (const [w, col] of [[112, '#6e5a3c'], [96, '#9b8461'], [40, 'rgba(180,160,120,0.35)']]) { c.strokeStyle = col; c.lineWidth = w; c.beginPath(); ROAD.forEach(([x, y], i) => (i ? c.lineTo : c.moveTo).call(c, x, y)); c.stroke(); }
+  let seed = 3; const r = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  for (let i = 0; i < 500; i++) { const x = r() * S.w, y = r() * S.h; if (roadDist(x, y) < 44) { c.fillStyle = 'rgba(60,45,30,0.35)'; c.beginPath(); c.arc(x, y, 1.5 + r() * 2, 0, TAU); c.fill(); } }
+  const bx = (() => { let best = 0, bd = Infinity; for (let x = 300; x < 700; x += 2) { const d = roadDist(x, STREAM_Y(x)); if (d < bd) { bd = d; best = x; } } return best; })(), by = STREAM_Y(bx);
+  c.fillStyle = '#7a5a3a'; c.fillRect(bx - 60, by - 34, 120, 68);
+  c.strokeStyle = 'rgba(40,25,12,0.6)'; c.lineWidth = 2; for (let x = bx - 56; x < bx + 60; x += 12) { c.beginPath(); c.moveTo(x, by - 34); c.lineTo(x, by + 34); c.stroke(); }
+  c.fillStyle = '#4a321e'; c.fillRect(bx - 64, by - 38, 128, 6); c.fillRect(bx - 64, by + 32, 128, 6);
+  // the garden round the house: a vegetable patch and a path to the door
+  c.fillStyle = '#5a4026'; c.fillRect(180, 2380, 160, 110);
+  c.strokeStyle = '#6f9a3c'; c.lineWidth = 6; for (let y = 2395; y < 2490; y += 18) { c.beginPath(); c.moveTo(190, y); c.lineTo(330, y); c.stroke(); }
+  c.fillStyle = '#9b8461'; c.fillRect(470, 2280, 60, 70);
+  // a fence round the yard
+  c.strokeStyle = '#8a6a44'; c.lineWidth = 4; c.strokeRect(160, 2250, 680, 320);
+  c.fillStyle = '#4f7a3a'; c.fillRect(455, 2244, 90, 12);
+}
+function paintTown(c) {
+  const S = SCENES.town;
+  grass(c, S.w, S.h, 9);
+  // the streets: from the gate up to the dojo, and across past the post office and the calligrapher
+  c.fillStyle = '#a89878'; c.fillRect(580, 260, 140, 990); c.fillRect(120, 560, 1060, 140);
+  // the square, cobbled, round the well
+  c.fillStyle = '#b8ab8c'; c.beginPath(); c.arc(650, 640, 250, 0, TAU); c.fill();
+  let seed = 13; const r = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  c.strokeStyle = 'rgba(80,70,55,0.25)'; c.lineWidth = 1;
+  for (let i = 0; i < 900; i++) { const a = r() * TAU, d = Math.sqrt(r()) * 245, x = 650 + Math.cos(a) * d, y = 640 + Math.sin(a) * d; c.beginPath(); c.ellipse(x, y, 7, 5, r() * 3, 0, TAU); c.stroke(); }
+  for (let y = 300; y < 1250; y += 22) for (let x = 584; x < 716; x += 26) { if (Math.hypot(x - 650, y - 640) < 250) continue; c.strokeStyle = 'rgba(80,70,55,0.25)'; c.strokeRect(x + (y / 22 % 2) * 13, y, 24, 20); }
+  // the town wall, with the gate at the bottom
+  c.fillStyle = '#5e5446'; c.fillRect(0, 0, S.w, 22); c.fillRect(0, 0, 22, S.h); c.fillRect(S.w - 22, 0, 22, S.h);
+  c.fillRect(0, S.h - 22, 540, 22); c.fillRect(760, S.h - 22, 540, 22);
+  c.fillStyle = '#3a2a1a'; c.fillRect(530, S.h - 40, 22, 40); c.fillRect(748, S.h - 40, 22, 40);
+}
+// standing things that aren't in the dojo: pines, houses, stalls, the well
+function drawScenery(t, layer) {
+  for (const s of SOLIDS) {
+    if (s.kind === 'house' || s.kind === 'stall') {
+      if (layer !== 'low') continue;
+      const x0 = s.x - s.w / 2, y0 = s.y - s.h / 2;
+      ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.fillRect(x0 + 8, y0 + 10, s.w, s.h);
+      ctx.fillStyle = s.roof; ctx.fillRect(x0, y0, s.w, s.h);
+      ctx.fillStyle = 'rgba(255,255,255,0.12)'; ctx.fillRect(x0, y0, s.w, s.h / 2);
+      ctx.strokeStyle = 'rgba(0,0,0,0.35)'; ctx.lineWidth = 2;
+      for (let x = x0 + 12; x < x0 + s.w; x += 14) { ctx.beginPath(); ctx.moveTo(x, y0 + 2); ctx.lineTo(x, y0 + s.h - 2); ctx.stroke(); }
+      ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(x0, s.y - 3, s.w, 6);
+      ctx.strokeStyle = 'rgba(20,12,6,0.8)'; ctx.lineWidth = 3; ctx.strokeRect(x0, y0, s.w, s.h);
+      if (s.door) { ctx.fillStyle = '#2a1a10'; const d = s.door; if (d === 'n') ctx.fillRect(s.x - 18, y0 - 4, 36, 8); else if (d === 'e') ctx.fillRect(x0 + s.w - 4, s.y - 18, 8, 36); else ctx.fillRect(x0 - 4, s.y - 18, 8, 36); }
+      if (s.gate) { ctx.fillStyle = '#c63f2e'; ctx.fillRect(s.x - 70, y0 + s.h - 6, 12, 22); ctx.fillRect(s.x + 58, y0 + s.h - 6, 12, 22); ctx.fillRect(s.x - 84, y0 + s.h - 10, 168, 9); }
+      if (s.sign) { ctx.font = `bold ${s.kind === 'house' && s.gate ? 22 : 15}px ${DISPLAY}`; ctx.textAlign = 'center'; ctx.fillStyle = '#efe6d0'; const ty = s.y + 6; const w = ctx.measureText(s.sign).width + 16; ctx.fillStyle = 'rgba(30,20,12,0.85)'; ctx.fillRect(s.x - w / 2, ty - 17, w, 24); ctx.fillStyle = '#efe6d0'; ctx.fillText(s.sign, s.x, ty); }
+    } else if (s.kind === 'well') {
+      if (layer !== 'low') continue;
+      ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.beginPath(); ctx.arc(s.x + 4, s.y + 6, s.r, 0, TAU); ctx.fill();
+      ctx.fillStyle = '#8f877a'; ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, TAU); ctx.fill();
+      ctx.fillStyle = '#1d3a4a'; ctx.beginPath(); ctx.arc(s.x, s.y, s.r * 0.62, 0, TAU); ctx.fill();
+      ctx.strokeStyle = '#5a3a22'; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(s.x - s.r, s.y); ctx.lineTo(s.x + s.r, s.y); ctx.stroke();
+    } else if (s.kind === 'pine') {
+      if (layer === 'low') { ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.beginPath(); ctx.ellipse(s.x + 8, s.y + 10, s.r * 1.5, s.r, 0, 0, TAU); ctx.fill(); ctx.fillStyle = '#4a2f22'; ctx.beginPath(); ctx.arc(s.x, s.y, s.r * 0.45, 0, TAU); ctx.fill(); continue; }
+      const under = player && [player, ...fighters()].some(f => Math.hypot(f.x - s.x, f.y - s.y + 10) < s.r * 1.6);
+      ctx.globalAlpha = under ? 0.35 : 1;
+      for (const [k, col] of [[1.7, '#1f4a2a'], [1.25, '#2a5e34'], [0.8, '#367240']]) { ctx.fillStyle = col; ctx.beginPath(); ctx.arc(s.x - (1.7 - k) * 4, s.y - 14 - (1.7 - k) * 8, s.r * k, 0, TAU); ctx.fill(); }
+      ctx.globalAlpha = 1;
+    }
+  }
+}
+// the ways out of a place: a ring on the ground and where it leads
+function drawExits(t) {
+  for (const e of SCENES[SCENE].exits) {
+    const pulse = 0.5 + 0.5 * Math.sin(t * 3);
+    ctx.save(); ctx.strokeStyle = hexA(C.gold, 0.35 + 0.3 * pulse); ctx.lineWidth = 3; ctx.setLineDash([10, 8]);
+    ctx.beginPath(); ctx.ellipse(e.x, e.y, Math.min(e.r, 60), Math.min(e.r, 60) * 0.45, 0, 0, TAU); ctx.stroke(); ctx.restore();
+    ctx.font = `bold 13px ${BODY}`; ctx.textAlign = 'center'; ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(10,8,16,0.8)';
+    const ly = e.y + (e.y > WORLD.h / 2 ? -28 : 34);
+    ctx.strokeText(e.label, e.x, ly); ctx.fillStyle = C.gold; ctx.fillText(e.label, e.x, ly);
+  }
+}
+// go to a place, arriving at one of its spots
+function enterScene(name, at) {
+  const S = SCENES[name];
+  SCENE = name; WORLD.w = S.w; WORLD.h = S.h; WORLD.edge = S.edge;
+  SOLIDS.length = 0; SOLIDS.push(...sceneSolids(name));
+  floor = FLOORS[name] || (FLOORS[name] = paintScene(name));
+  const p = S.spots[at] || Object.values(S.spots)[0];
+  if (player) { player.x = p.x; player.y = p.y; player.vx = player.vy = 0; player.kx = player.ky = 0; }
+  FX = []; TEXTS = []; GHOSTS = []; DECALS = []; SHOWS = []; clearSpells();
+  if (save) { save.scene = name; save.at = at; writeSave(); }
+}
+const exitAt = f => SCENES[SCENE].exits.find(e => Math.hypot(f.x - e.x, (f.y - e.y) * (e.r > 60 ? 1.6 : 1)) < e.r);
 // ── the fighters ──
 // each rank: how tough, how hard they hit, how long their telegraph, how often they think, how often they see a blow coming,
 // how many of their way's spells they know, and how well they write them (their spells' strength)
@@ -803,9 +1020,6 @@ const ROSTER = [
   { id: 'e1', name: 'Tomo', way: 'earth', rank: 1, post: [1395, 640] }, { id: 'e2', name: 'Gan', way: 'earth', rank: 2, post: [1265, 850] }, { id: 'e3', name: 'Sensei Iwao', way: 'earth', rank: 3, post: [1395, 1060] },
   { id: 'a1', name: 'Sora', way: 'air', rank: 1, post: [560, 245] }, { id: 'a2', name: 'Fei', way: 'air', rank: 2, post: [800, 330] }, { id: 'a3', name: 'Sensei Kaze', way: 'air', rank: 3, post: [1040, 245] },
 ];
-const MASTER = { id: 'm', name: 'Grandmaster Sumi', way: 'master', rank: 4, post: [DAIS.x, DAIS.y] };
-// your first sparring partner, waiting by the pond: a student on their first day, of the way yours beats
-const STUDENT = { id: 's', name: 'Ren', rank: 0, student: true, post: [880, 1012] };
 // how good a fighter is depends on how far through the dojo you are: your first sparring partner (k = 0) is feeble, and each
 // fighter after is a little better than the one before (k = how many you've beaten, plus one), up to the twelfth; then the
 // Grandmaster. Everything grows smoothly with k: their health, how hard they hit, how quick their telegraph, how often they
@@ -826,7 +1040,10 @@ const WAYMOD = {
   earth:  { dmg: 1.08, heal: 1.0, speed: 0.84, hp: 130, steady: 0.5 },
   air:    { dmg: 1.05, heal: 1.0, speed: 1.24, hp: 90, knock: 1.4 },
   master: { dmg: 1.0, heal: 1.0, speed: 1.1, hp: 100 },
+  beast:  { dmg: 1.0, heal: 1.0, speed: 1.2, hp: 80 },
 };
+// a fighter's colour: their way's, the Grandmaster's red, or a beast's grey
+const fcol = f => (f.way === 'master' ? C.seal : WAYS[f.way] ? WAYS[f.way].color : f.col || '#b9b2a6');
 // how hard each hall's fighters hit: the ways are even with each other, but against you (who writes in an instant, with no
 // warning) some ways' fighters would be far easier to beat than others; this evens out the four halls
 const HALL = { water: 1.1, fire: 0.92, earth: 1.18, air: 1.3 };
@@ -838,7 +1055,7 @@ const freshStatus = () => ({ stun: 0, slow: 0, soak: 0, frozen: 0, burn: 0, air:
   counter: 0, statue: 0, heavy: 0, silence: 0, crosswind: 0, brand: 0, fury: 0, free: 0 });
 function resetFighter(f) { f.st = freshStatus(); f.heat = 0; f.heatT = 9; f.wind = 0; f.dash = null; f.lift = 0; f.act = null; f.glyph = null; f.spinT = 0; f.burrowTo = null; f.lastSpell = null; f.brandBy = null; f.statueHeal = 0; f.stillT = 0; }
 function makeFighter(o) {
-  const k = o.isPlayer ? null : RANKS[o.rank], mod = WAYMOD[o.way], n = (o.id || 'p').charCodeAt(0) + (o.id || 'p').charCodeAt(1 % (o.id || 'p').length);
+  const k = o.isPlayer ? null : RANKS[o.rank || 0], mod = WAYMOD[o.way] || WAYMOD.master, n = (o.id || 'p').charCodeAt(0) + (o.id || 'p').charCodeAt(1 % (o.id || 'p').length);
   const maxHp = o.isPlayer ? mod.hp : Math.round(k.hp * mod.hp / 100);
   return {
     id: o.id || 'you', name: o.name || 'You', way: o.way, rank: o.rank || 0, isPlayer: !!o.isPlayer,
@@ -850,17 +1067,19 @@ function makeFighter(o) {
     pose: 'idle', poseT: 0, walk: 0,
     post: o.post ? { x: o.post[0], y: o.post[1] } : null, mode: 'post', beaten: false,
     glyph: null, ai: { think: rr(0.6, 1.2), cd: {}, strafe: Math.random() < 0.5 ? 1 : -1, way: o.way === 'master' ? 'water' : o.way },
-    gi: o.isPlayer ? '#f6f1e6' : GI[o.way], trim: o.way === 'master' ? '#c63f2e' : WAYS[o.way].color,
+    gi: o.isPlayer ? '#f6f1e6' : GI[o.way] || '#d8d0c4', trim: o.way === 'master' ? '#c63f2e' : WAYS[o.way] ? WAYS[o.way].color : '#8a7a66',
     belt: o.isPlayer ? '#16131b' : k.belt, skin: o.isPlayer ? '#e9bf98' : SKIN[n % SKIN.length], hair: o.isPlayer ? '#1d1a20' : HAIR[(n * 7) % HAIR.length],
+    ...(o.look || {}),
   };
 }
-let player = null, FOES = [], MASTERF = null, STUDENTF = null;
+let player = null, FOES = [];
 function moveWay(f) { return f.way === 'master' ? f.ai.way : f.way; }
 
 // a fighter, seen from above: shadow, feet, gi and belt, arms (in the pose of the moment), head
 function drawFighter(f, t) {
   const down = f.hp <= 0 || f.pose === 'down', lift = f.lift || 0;
   // underground: only a mound of earth moving through the floor
+  if (f.beast) { drawWolf(f, t); return; }
   if (f.st.under > 0) { ctx.save(); ctx.fillStyle = '#6e5a40'; ctx.beginPath(); ctx.ellipse(f.x, f.y + 4, 16, 9, 0, 0, TAU); ctx.fill(); ctx.fillStyle = '#9a8060'; ctx.beginPath(); ctx.ellipse(f.x - 2, f.y + 1, 10, 5, 0, 0, TAU); ctx.fill(); ctx.restore(); return; }
   ctx.save(); ctx.translate(f.x, f.y);
   ctx.fillStyle = 'rgba(0,0,0,0.32)'; ctx.beginPath(); ctx.ellipse(2, 9, Math.max(5, 16 - lift * 0.08), Math.max(2.5, 7 - lift * 0.03), 0, 0, TAU); ctx.fill();
@@ -911,6 +1130,10 @@ function drawFighter(f, t) {
   ctx.fillStyle = f.hair; ctx.beginPath(); ctx.arc(-0.5, 0, 7.8, Math.PI * 0.55, Math.PI * 1.45); ctx.lineTo(1, 0); ctx.fill();
   if (f.way === 'master' && !f.isPlayer) { ctx.fillStyle = '#e8e2d8'; ctx.beginPath(); ctx.arc(-2, 0, 4.5, 0, TAU); ctx.fill(); }
   if (f.isPlayer) { ctx.fillStyle = WAYS[f.way].color; ctx.fillRect(-3, -7.5, 2.5, 15); }
+  // a bandit's mask; a headscarf; something carried on the back
+  if (f.mask) { ctx.fillStyle = f.mask; ctx.fillRect(3, -7, 3.2, 14); }
+  if (f.scarf) { ctx.fillStyle = f.scarf; ctx.beginPath(); ctx.arc(-0.5, 0, 8, Math.PI * 0.5, Math.PI * 1.5); ctx.fill(); }
+  if (f.isPlayer && f.carry) { ctx.fillStyle = '#8a5a2b'; ctx.fillRect(-17, -7, 9, 14); ctx.strokeStyle = '#e9bb52'; ctx.lineWidth = 1.2; ctx.strokeRect(-17, -7, 9, 14); ctx.beginPath(); ctx.moveTo(-12.5, -7); ctx.lineTo(-12.5, 7); ctx.stroke(); }
   ctx.restore();
   ctx.shadowBlur = 0; ctx.globalAlpha = 1;
 }
@@ -972,11 +1195,43 @@ function drawStatus(f, t) {
   if (S.free > 0) { ctx.save(); ctx.strokeStyle = '#ffffff'; ctx.lineCap = 'round'; ctx.lineWidth = 1.6; ctx.globalAlpha = Math.min(1, S.free * 2) * 0.7; for (let i = 0; i < 3; i++) { const a = t * 5 + i * TAU / 3; ctx.beginPath(); ctx.ellipse(f.x, f.y + 8, 18, 6, 0, a, a + 1.4); ctx.stroke(); } ctx.restore(); }
   if (S.mend > 0) { ctx.save(); ctx.fillStyle = 'rgba(150,110,70,0.75)'; for (let i = 0; i < 4; i++) { const a = i * 1.7 + 0.5; ctx.beginPath(); ctx.ellipse(f.x + Math.cos(a) * 8, y + Math.sin(a) * 8, 4, 3, a, 0, TAU); ctx.fill(); } ctx.restore(); }
 }
+// a wolf, from above: a long grey body, legs at a trot, a tail, a narrow head with ears
+function drawWolf(f, t) {
+  const down = f.hp <= 0 || f.pose === 'down', lift = f.lift || 0, run = Math.sin(f.walk * 1.3);
+  ctx.save(); ctx.translate(f.x, f.y);
+  ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.beginPath(); ctx.ellipse(2, 8, 22, 8, 0, 0, TAU); ctx.fill();
+  ctx.translate(0, -lift); ctx.rotate(f.face);
+  if (f.st.flash > 0) { ctx.shadowColor = '#fff'; ctx.shadowBlur = 14; }
+  if (down) ctx.scale(1, 0.75);
+  const fur = f.fur || '#8d8a86', dark = f.furDark || '#5e5b58';
+  // legs
+  ctx.fillStyle = dark;
+  for (const [lx, ly, ph] of [[10, -7, 1], [10, 7, -1], [-10, -7, -1], [-10, 7, 1]]) { ctx.beginPath(); ctx.ellipse(lx + (down ? 0 : run * 4 * ph), ly * 1.15, 4, 2.6, 0, 0, TAU); ctx.fill(); }
+  // tail
+  ctx.strokeStyle = fur; ctx.lineWidth = 6; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(-15, 0); ctx.quadraticCurveTo(-24, Math.sin(t * 8 + f.x) * 5, -30, Math.sin(t * 8 + f.x) * 8); ctx.stroke();
+  // body
+  ctx.fillStyle = fur; ctx.beginPath(); ctx.ellipse(0, 0, 18, 9, 0, 0, TAU); ctx.fill();
+  ctx.fillStyle = dark; ctx.beginPath(); ctx.ellipse(-2, 0, 12, 3.5, 0, 0, TAU); ctx.fill();
+  // head, snout and ears
+  ctx.fillStyle = fur; ctx.beginPath(); ctx.ellipse(19, 0, 8, 7, 0, 0, TAU); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(24, -4); ctx.lineTo(33, 0); ctx.lineTo(24, 4); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#1d1a20'; ctx.beginPath(); ctx.arc(33, 0, 1.8, 0, TAU); ctx.fill();
+  ctx.fillStyle = dark; for (const s of [-1, 1]) { ctx.beginPath(); ctx.moveTo(15, s * 4); ctx.lineTo(13, s * 10); ctx.lineTo(19, s * 6); ctx.closePath(); ctx.fill(); }
+  if (!down) { ctx.fillStyle = '#ffd36a'; for (const s of [-1, 1]) { ctx.beginPath(); ctx.arc(23, s * 3, 1.3, 0, TAU); ctx.fill(); } }
+  ctx.restore(); ctx.shadowBlur = 0;
+}
 function star5(x, y, r, col) { ctx.fillStyle = col; ctx.beginPath(); for (let i = 0; i < 10; i++) { const a = -Math.PI / 2 + i * Math.PI / 5, rr2 = i % 2 ? r * 0.45 : r; ctx[i ? 'lineTo' : 'moveTo'](x + Math.cos(a) * rr2, y + Math.sin(a) * rr2); } ctx.closePath(); ctx.fill(); }
 // the move a fighter is about to make, written in the air above them as it winds up (so you can see it coming)
 function drawAirGlyph(f) {
   const G = f.glyph;
   if (!G) return;
+  // a beast doesn't write: it gathers itself to spring, and you can see it coming
+  if (f.beast) {
+    const k = clamp(G.t / G.dur, 0, 1), x = f.x, y = f.y - 34;
+    ctx.save(); ctx.strokeStyle = '#ff8a6a'; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.arc(x, y, 11, -Math.PI / 2, -Math.PI / 2 + TAU * k); ctx.stroke();
+    ctx.font = `bold 14px ${BODY}`; ctx.textAlign = 'center'; ctx.fillStyle = '#ffd0c0'; ctx.fillText('!', x, y + 5); ctx.restore();
+    return;
+  }
   const k = clamp(G.t / G.dur, 0, 1), col = WAYS[G.move.way].color, R = 22, x = f.x, y = f.y - 46 - (f.lift || 0);
   ctx.save();
   ctx.fillStyle = 'rgba(239,230,208,0.78)'; ctx.beginPath(); ctx.arc(x, y, R + 5, 0, TAU); ctx.fill();
@@ -1096,6 +1351,9 @@ function castMult(f, m) {
   if (m.tier === 2) k *= 1.12;
   return k;
 }
+// attacks that throw something out at the foe: end one with a little curl and it's held, to be let go later with a tap
+const HOLD = new Set(['Shot', 'Strike', 'Volley', 'Chill', 'Homing', 'Pierce', 'Break', 'Flurry', 'Throw', 'Cone', 'Push', 'Burst', 'Blast', 'Lob', 'Spike', 'Roll', 'Rockfall',
+  'Wave', 'Storm', 'Slam', 'Launch', 'Detonate', 'Bomb', 'Freeze', 'Wash', 'Summon', 'Ultimate', 'Trap', 'Zone', 'Sink']);
 // spells that act on the caster, or all round them, rather than going at the foe
 const SELF = new Set(['Absorb', 'Heal', 'Glide', 'Conceal', 'Reflect', 'Counter', 'Ki', 'Decoy', 'Thorns', 'Dash', 'Release', 'Sweep', 'Fury', 'Armor', 'Statue', 'Lift', 'Stance', 'Dodge', 'Deflect', 'Cleanse', 'Haste', 'Echo', 'Free', 'Wall', 'Barrier', 'Stun']);
 function cast(f, A) {
@@ -1122,7 +1380,7 @@ function cast(f, A) {
   if (m.way === 'fire' && HEAT[m.key]) { f.heat = Math.min(100, f.heat + HEAT[m.key] * (f.st.soak > 0 ? 0.5 : 1)); f.heatT = 0; }
   f.lastCast = m;
   if (m.tag !== 'Echo') f.lastSpell = m;
-  if (!A.echo) flourish(f, m, P, a);
+  if (!A.echo && WAYS[m.way]) flourish(f, m, P, a);
   const fn = SPELL[m.id];
   if (DMGLOG) { const k = '#' + m.id; DMGLOG[k] = (DMGLOG[k] || 0) + 1; }
   CUR = m.key; if (fn) fn(c); stamp(m.key); CUR = null;
@@ -2038,7 +2296,7 @@ const AIH = {
   'air:crane': { r: [100, 500], w: 1.1 }, 'air:whistle': { vsWind: 1, r: [0, 400], w: 0.2, ok: (f, t) => (t.act && t.act.phase === 'wind' ? 7 : 0.4) }, 'air:gale': { r: [60, 420], w: 1.3 },
   'air:echo': { r: [0, 500], w: 0.6, ok: (f) => (f.lastSpell && !SELF.has(f.lastSpell.tag) && f.lastSpell.tag !== 'Ultimate' ? 1.5 : 0) }, 'air:weightless': { def: 1, w: 0.3, ok: (f) => (troubles(f) ? 3 : 1) }, 'air:typhoon': { ult: 1, r: [0, 500], w: 1 },
 };
-const allowedFor = f => { const way = moveWay(f), n = skillOf(f).spells; return MOVES[way].filter(m => m.order < n); };
+const allowedFor = f => { if (f.kit) return f.kit; const way = moveWay(f), n = skillOf(f).spells; return MOVES[way].filter(m => m.order < n); };
 // where to walk: the distance this fighter likes, circling; air never stands still, earth hardly strolls; out of their pools
 function aiWalk(f, foe, dt) {
   const ai = f.ai, way = moveWay(f), d = dist(f, foe), a = angTo(f, foe);
@@ -2366,9 +2624,10 @@ function shadeHex(hex, k) { const n = parseInt(hex.slice(1), 16), f = v => Math.
 // ── the extra show when a spell is written well: the glyph lit in the air, dissolving into its element ──
 // fl 0: written roughly, it sputters. fl 1: clean, the glyph flares and an aura bursts. fl 2: near perfect, a golden seal too.
 let SHOWS = [];
-const flourishLevel = P => (P >= 0.95 ? 2 : P >= 0.82 ? 1 : 0);
+// (a player's power runs from 0.4 to about 2, a fighter's from 0.6 to 1: the gold flourish is for a perfect glyph, or a master's)
+const flourishLevel = (P, f) => (P >= 1.8 || (f && !f.isPlayer && P >= 0.95) ? 2 : P >= 0.82 ? 1 : 0);
 function flourish(f, m, P, a) {
-  const way = m.way, fl = flourishLevel(P), E = ELC[way], x = f.x, y = f.y;
+  const way = m.way, fl = flourishLevel(P, f), E = ELC[way], x = f.x, y = f.y;
   if (fl === 0) { smoke(x + Math.cos(a) * 14, y + Math.sin(a) * 14 - 6, P < 0.6 ? 3 : 1, { size: 9, life: 0.6 }); if (P < 0.6) words(x, y - 44, 'sputters', '#a99fbc', 11, 0.7); return; }
   SHOWS.push({ m, x, y: y - 48, life: 0.75, max: 0.75, fl, way });
   if (way === 'fire') { flames(x, y + 6, amt(10 * fl), { sp: 70, rise: 60, size: 8, jit: 14 }); embers(x, y, amt(10 * fl), { sp: 90, rise: 50 }); }
@@ -2378,7 +2637,6 @@ function flourish(f, m, P, a) {
   if (fl === 2) {
     ring(x, y, 14, 64, C.gold, 0.6, 4); burst(x, y, '#ffe9a8', 14, 160, 0.6, 6); slowmo = Math.max(slowmo, 0.12); cam.shake = Math.max(cam.shake, 3);
     decal(way === 'fire' ? 'scorch' : way === 'water' ? 'wet' : way === 'earth' ? 'crack' : 'swirl', x, y + 4, 40, { life: 7 });
-    if (f.isPlayer) words(x, y - 58, 'Perfect', C.gold, 13, 0.9);
   }
 }
 function stepShows(dt) { for (const s of SHOWS) s.life -= dt; SHOWS = SHOWS.filter(s => s.life > 0); }
@@ -2717,14 +2975,20 @@ function padTick(dt) {
   if (!pen && PAD.judgeAt && now >= PAD.judgeAt) padJudge();
   if (PAD.shown && now - PAD.shown.t > 1200) { PAD.shown = null; PAD.strokes = []; }
 }
-// read it: the closest of your moves, how well it was written; cast it at that strength
+// read it: the closest of your moves, how well it was written; cast it at that strength. An attack that ends in a little curl
+// is held instead, and let go later with a tap on its seal by the paper
+let HELD = null;
 function padJudge(strokes) {
   PAD.judgeAt = 0;
   const S = strokes || PAD.strokes;
-  const R = S.length ? recognize(S, myMoves()) : null;
+  let R = S.length ? recognize(S, myMoves()) : null, curl = false;
+  if (S.length === 1) {
+    const cut = curlCut(S[0]), Rc = cut && recognize([cut], myMoves());
+    if (Rc && Rc.verdict !== 'fizzle' && HOLD.has(Rc.best.g.tag) && (!R || R.verdict === 'fizzle' || Rc.best.q > R.best.q)) { R = Rc; curl = true; }
+  }
   if (!R) { PAD.strokes = []; return null; }
   if (strokes) PAD.strokes = strokes;
-  const sh = PAD.shown = { R, t: performance.now(), ok: false, msg: '' };
+  const sh = PAD.shown = { R, t: performance.now(), ok: false, msg: '', curl };
   if (R.verdict === 'fizzle') {
     const all = recognize(S, MOVES[save.way]), locked = all && all.verdict !== 'fizzle' && all.best.g.order >= learnedCount();
     sh.msg = locked ? 'A move of your way, but no one has taught it to you yet' : R.best && R.best.q > 0.15 ? `The ink doesn’t take · closest: ${R.best.g.name}` : 'The ink doesn’t take';
@@ -2741,16 +3005,54 @@ function padJudge(strokes) {
     else if (ST.mend > 0) sh.msg = 'Still mending…';
     else if (ST.statue > 0) sh.msg = 'Still jade…';
     else if (ST.silence > 0) sh.msg = 'Silenced! No breath to write with';
+    else if (curl && !HELD) {
+      // held: the ki is spent now, and the attack waits, at the strength it was written, until you let it go
+      if (player.ki < m.cost) sh.msg = 'Not enough ki';
+      else {
+        player.ki -= m.cost; HELD = { move: m, power: R.power, acc: R.acc, perfect: R.perfect, t: 0 };
+        sh.ok = true; sh.msg = 'held';
+        words(player.x, player.y - 44, `${m.name} · held`, WAYS[m.way].color, 14, 1.1); SFX.hold();
+        if (save) { save.stats.casts++; if (R.verdict === 'clean') save.stats.clean++; }
+      }
+    }
     else if (ST.heavy > 0 && LIGHT.has(m.tag)) sh.msg = 'Too heavy to move like that';
     else if (player.act) sh.msg = 'Still moving…';
     else if (startMove(player, m, R.power, FIGHT && FIGHT.on ? FIGHT.foe : null)) {
-      sh.ok = true;
-      words(player.x, player.y - 44, m.name, WAYS[m.way].color, 15, 1.1);
+      sh.ok = true; if (curl) sh.msg = 'one held already';
+      words(player.x, player.y - 44, R.perfect ? `${m.name}!` : m.name, WAYS[m.way].color, R.perfect ? 19 : 15, 1.1);
+      if (R.perfect) perfectFx(player);
       if (save) { save.stats.casts++; if (R.verdict === 'clean') save.stats.clean++; }
       if (PAD.guide && PAD.guide.role === m.role) PAD.guide = null;
     } else sh.msg = player.ki < m.cost ? 'Not enough ki' : '';
   }
   return R;
+}
+// let the held attack go
+function releaseHeld() {
+  const Hd = HELD;
+  if (!Hd || !player) return false;
+  if (!canCast(player)) { words(player.x, player.y - 44, 'Not now!', C.muted, 13); SFX.fizzle(); return false; }
+  if (player.act) { words(player.x, player.y - 44, 'Still moving…', C.muted, 13); return false; }
+  player.ki += Hd.move.cost;
+  if (!startMove(player, Hd.move, Hd.power, FIGHT && FIGHT.on ? FIGHT.foe : null)) { player.ki -= Hd.move.cost; return false; }
+  HELD = null;
+  words(player.x, player.y - 44, `${Hd.move.name}!`, WAYS[Hd.move.way].color, Hd.perfect ? 19 : 16, 1.1);
+  if (Hd.perfect) perfectFx(player);
+  return true;
+}
+function perfectFx(f) { burst(f.x, f.y - 10, '#fff4c8', 18, 200, 0.6, 5); words(f.x, f.y - 66, 'Perfect!', C.gold, 18, 1.3); cam.shake = Math.max(cam.shake, 3); SFX.perfect(); }
+// the held attack's seal, by the top right of the paper
+function heldBtn() { const M = L.pad, r = Math.max(22, M.r * 0.15); return { cx: M.cx + M.r * 0.84, cy: M.cy - M.r * 0.84, r }; }
+function drawHeld() {
+  if (!HELD) return;
+  HELD.t += 1 / 60;
+  const b = heldBtn(), m = HELD.move, col = WAYS[m.way].color, pulse = 0.5 + 0.5 * Math.sin(HELD.t * 5);
+  ctx.save();
+  ctx.beginPath(); ctx.arc(b.cx, b.cy, b.r + 4 + pulse * 4, 0, TAU); ctx.strokeStyle = hexA(col, 0.25 + 0.35 * (1 - pulse)); ctx.lineWidth = 3; ctx.stroke();
+  ctx.beginPath(); ctx.arc(b.cx, b.cy, b.r, 0, TAU); ctx.fillStyle = C.seal; ctx.fill(); ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.stroke();
+  glyphGuide(ctx, { cx: b.cx, cy: b.cy, r: b.r * 0.72 }, m, '#fbeee0', 0.95, false, 2);
+  ctx.textAlign = 'center'; ctx.font = `bold 10px ${BODY}`; ctx.fillStyle = col; ctx.fillText('tap to throw', b.cx, b.cy + b.r + 13);
+  ctx.restore();
 }
 // drawing the ink, as on the dojo page
 function seg(c, M, a, b, color) {
@@ -2818,6 +3120,7 @@ function drawPad() {
   for (const s of PAD.strokes) inkStroke(ctx, M, s);
   if (PAD.pen && PAD.pen.dwell > 0) blot(ctx, M, PAD.pen.s.pts[PAD.pen.s.pts.length - 1], PAD.pen.poolW, C.sumi);
   ctx.restore();
+  drawHeld();
   if (sh && sh.ok) {
     const sz = Math.max(26, M.r * 0.22), k = clamp((now - sh.t) / 220, 0, 1), grow = 1 + 0.5 * (1 - ease(k));
     ctx.save(); ctx.translate(M.cx + M.r * 0.68, M.cy + M.r * 0.68); ctx.scale(grow, grow); ctx.globalAlpha = Math.min(1, 0.3 + k);
@@ -2828,63 +3131,64 @@ function drawPad() {
 }
 function roundRect(x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
 
-// ── the game: title, the way you choose, the dojo, challenges, fights, lessons, the Grandmaster ──
+// ── the game: title, the way you choose, the valley, the town, the dojo, fights, lessons ──
 let state = 'title', FIGHT = null, T = 0, slowmo = 0, banner = null, overlay = null, pickWay = null, buttons = [], calm = 0;
-const fighters = () => [...(STUDENTF ? [STUDENTF] : []), ...FOES, ...(MASTERF ? [MASTERF] : [])];
-// who may challenge you now: the first-day student, then the white belts until all four are beaten, then the brown, then the black
-function tierNow() { if (!save || !save.warm) return 0; for (const r of [1, 2, 3]) if (ROSTER.some(o => o.rank === r && !save.beaten.includes(o.id))) return r; return 4; }
-const BELTS = { 1: 'white belts', 2: 'brown belts', 3: 'black belts' };
-const canChallenge = f => !f.beaten && f.rank === tierNow();
+// the fighters in this place (the bandits stay hidden until they step out of the trees)
+const fighters = () => FOES.filter(f => f.scene === SCENE && !f.hidden);
 function setupWorld() {
   player = makeFighter({ isPlayer: true, way: save.way, name: 'You' });
-  FOES = ROSTER.map(o => { const f = makeFighter(o); if (save.beaten.includes(o.id)) { f.beaten = true; f.mode = 'beaten'; f.pose = 'bow'; } return f; });
-  if (save.beaten.length) save.warm = true; // (a save from before there was a warm-up)
-  STUDENTF = makeFighter({ ...STUDENT, way: WAYS[save.way].beats }); STUDENTF.student = true; STUDENTF.gi = '#f6f1e6'; STUDENTF.face = angTo(STUDENTF, START);
-  if (save.warm) { STUDENTF.beaten = true; STUDENTF.mode = 'beaten'; STUDENTF.pose = 'bow'; }
-  MASTERF = null;
-  if (save.beaten.length >= ROSTER.length && !save.master) spawnMaster(true);
-  FX = []; TEXTS = []; GHOSTS = []; DECALS = []; SHOWS = []; clearSpells(); FIGHT = null; slowmo = 0;
+  player.carry = save.q === Q.HOME || save.q === Q.LAST;
+  if (save.q === Q.HOME) save.ambush = false;
+  const mk = (o, extra) => { const f = makeFighter({ ...o, ...extra }); Object.assign(f, extra); f.scene = extra.scene; return f; };
+  FOES = [
+    ...ROSTER.map(o => mk(o, { scene: 'dojo' })),
+    ...WOLVES.map(o => mk({ ...o, way: 'beast', rank: 0 }, { scene: 'home', beast: true, kit: WOLF_KIT, col: '#b9b2a6', hidden: save.wolves.includes(o.id) || save.q >= Q.HOME })),
+    ...BANDITS.map((o, i) => mk({ ...o, way: banditWays()[i], rank: 2, post: [500, 1200] }, { scene: 'home', bandit: true, boss: !!o.boss, hidden: true })),
+  ];
+  for (const f of FOES) if (save.beaten.includes(f.id) || save.wolves.includes(f.id)) { f.beaten = true; f.mode = 'beaten'; f.pose = 'bow'; }
+  NPCS = NPC_LIST.map(makeNpc);
+  FX = []; TEXTS = []; GHOSTS = []; DECALS = []; SHOWS = []; clearSpells(); FIGHT = null; slowmo = 0; HELD = null;
   PAD.strokes = []; PAD.shown = null; PAD.pen = null; PAD.guide = null;
+  enterScene(save.scene || 'home', save.at || 'door');
   updateCam(0, true);
 }
-function spawnMaster(quiet) {
-  MASTERF = makeFighter(MASTER); MASTERF.face = Math.PI / 2;
-  if (!quiet) { say('Grandmaster Sumi waits on the dais', 'Every hall is beaten. One fight left.', 4); SFX.gong(); }
-}
 function say(title, sub, life = 2.6, col) { banner = { title, sub, life, max: life, col: col || C.gold }; }
-function beginGame(way) { save = newSave(way); writeSave(); setupWorld(); state = 'play'; calm = 3.5; say(`The Way of ${WAYS[way].name}`, `${WAYS[way].animal} · ${WAYS[way].style}. Open MOVES to see how to write your first three. Ren, a student on their first day, wants to spar with you.`, 5.5, WAYS[way].color); }
-function continueGame() { setupWorld(); state = 'play'; say(`The Way of ${WAYS[save.way].name}`, `${save.beaten.length} of 12 fighters beaten`, 3, WAYS[save.way].color); }
+function beginGame(way) { save = newSave(way); writeSave(); setupWorld(); state = 'play'; calm = 1; say(`The Way of ${WAYS[way].name}`, `${WAYS[way].animal} · ${WAYS[way].style}`, 2.4, WAYS[way].color); }
+function continueGame() { setupWorld(); state = 'play'; say(SCENES[SCENE].name, goal().text, 3, WAYS[save.way].color); }
 
-// a fighter sees you coming, walks up, bows, and the fight begins
+// a fighter (or a wolf) sees you coming, walks up, and the fight begins
 // (nobody interrupts you while you're writing)
 const writing = () => !!(PAD.pen || PAD.judgeAt || (PAD.strokes.length && !PAD.shown) || (player && player.act));
 function lookForChallenger() {
-  if (FIGHT || state !== 'play' || calm > 0 || writing() || fighters().some(f => f.mode === 'approach')) return;
+  if (FIGHT || state !== 'play' || calm > 0 || overlay || writing() || fighters().some(f => f.mode === 'approach')) return;
   let best = null, bd = Infinity;
-  const tier = tierNow();
   for (const f of fighters()) {
     if (f.beaten || f.mode !== 'post') continue;
-    const d = dist(f, player), reach = f === MASTERF ? 250 : f.student ? 600 : 215;
-    // a fighter of a later belt waves you off
-    if (f.rank > tier) { if (d < 150 && T - (f.nagT ?? -99) > 6) { f.nagT = T; words(f.x, f.y - 42, tier ? `The ${BELTS[tier]} first` : 'Spar with Ren first', C.muted, 12, 1.4); } continue; }
+    const d = dist(f, player);
+    // a fighter who won't fight you waves you off
+    if (!mayChallenge(f)) { const w = waveOff(f); if (w && d < 150 && T - (f.nagT ?? -99) > 6) { f.nagT = T; words(f.x, f.y - 42, w, C.muted, 12, 1.4); } continue; }
+    const reach = f.beast ? 270 : f.bandit ? 4000 : 215;
     if (d < reach && d < bd) { best = f; bd = d; }
   }
   if (best) {
     best.mode = 'approach';
-    const hall = best.way === 'master' ? 'the dais' : HALLS[best.way].label;
-    say(`${best.name} challenges you`, best === MASTERF ? 'The last fight' : best.student ? 'First day at the dojo · a warm-up' : `${hall} · ${RANKS[best.rank].beltName}`, 2.2, best.way === 'master' ? C.seal : WAYS[best.way].color);
+    say(best.beast ? `A wolf!` : `${best.name} challenges you`, challengeLine(best), 2.2, fcol(best));
     words(best.x, best.y - 40, '!', '#ffe08a', 24, 0.9);
+    if (best.beast) noise(0.5, 0.12, 300, 120, 2);
   }
 }
 function startFight(f) {
   const cx = (player.x + f.x) / 2, cy = (player.y + f.y) / 2;
   FIGHT = { foe: f, on: false, intro: 1.9, t: 0, cx, cy, r: 255, dealt: 0, taken: 0, over: null };
-  // how good they are: the student is the weakest; after that, each win makes the next fighter a little better
-  f.sk = skillAt(f.student ? 0 : f === MASTERF ? 13 : save.beaten.length + 1);
-  f.maxHp = Math.round(f.sk.hp * WAYMOD[f.way].hp / 100);
-  f.mode = 'fight'; resetFighter(f); f.hp = f.maxHp; f.ki = f.maxKi; f.ai.think = rr(0.8, 1.3) * (f.sk.think[0] / 0.95); f.ai.cd = {}; f.ai.range = 0;
+  // how good they are: the wolves are feeble; each white belt you beat makes the next a little better; the bandits fight
+  // like brown belts
+  f.sk = skillFor(f);
+  f.maxHp = Math.round(f.sk.hp * (WAYMOD[f.way] || WAYMOD.master).hp / 100);
+  f.mode = 'fight'; resetFighter(f); f.hp = f.maxHp; f.ki = f.maxKi; f.ai.think = rr(0.8, 1.3) * (f.sk.think[0] / 0.95); f.ai.cd = {}; f.ai.range = f.beast ? rr(40, 90) : 0;
+  const keepHp = f.bandit && banditsLeft().length < BANDITS.length;
   resetFighter(player); player.pose = 'bow'; player.poseT = 0; f.pose = 'bow'; f.poseT = 0;
-  player.hp = player.maxHp; player.ki = player.maxKi;
+  if (!keepHp) player.hp = player.maxHp;
+  player.ki = player.maxKi;
   clearSpells();
   PAD.strokes = []; PAD.shown = null;
   SFX.drum(2);
@@ -2902,15 +3206,8 @@ function endFight() {
   FIGHT = null; clearSpells();
   resetFighter(player); resetFighter(foe);
   if (O.winner === player) {
-    foe.beaten = true; foe.mode = 'return'; foe.hp = foe.maxHp; foe.pose = 'idle';
-    if (foe === MASTERF) { save.master = true; save.stats.wins++; save.stats.t1 = Date.now(); writeSave(); overlay = { kind: 'victory', t: 0 }; SFX.learn(); return; }
-    if (foe.student) { const before = learnedCount(); save.warm = true; save.stats.wins++; writeSave(); overlay = lesson(foe, before, learnedCount(), { warm: true }); SFX.learn(); return; }
-    const before = learnedCount(), tier0 = tierNow();
-    if (!save.beaten.includes(foe.id)) save.beaten.push(foe.id);
-    save.stats.wins++; writeSave();
-    const after = learnedCount(), tier1 = tierNow();
-    overlay = lesson(foe, before, after, { tierUp: tier1 !== tier0 && tier1 < 4 ? tier1 : 0 });
-    SFX.learn();
+    foe.beaten = true; foe.hp = foe.maxHp; foe.pose = 'idle'; save.stats.wins++;
+    wonAgainst(foe);
   } else {
     save.stats.falls++; writeSave();
     overlay = { kind: 'fallen', t: 0, foe };
@@ -2925,14 +3222,15 @@ function lesson(foe, before, after, o = {}) {
 function afterLearn() {
   const O = overlay; overlay = null;
   if (O && O.more && O.more.length) { const m = O.more[0]; overlay = { ...O, t: 0, move: m, more: O.more.slice(1), demo: writeOut(m, { wobble: 0.006 }), next: true }; return; }
-  if (O && O.warm) say('The halls are open', 'The white belts will fight you first. Each one is a little better than the last.', 4.5);
-  else if (O && O.tierUp) say(`The ${BELTS[O.tierUp]} will fight you now`, `All four ${BELTS[O.tierUp - 1]} are beaten. Each fighter is a little better than the last.`, 4.5);
+  if (O && O.allWhite) say('All four white belts beaten', save.q === Q.PACKAGE ? 'Go back to the post office for the package.' : 'Now find the post office in town.', 4.5);
+  if (O && O.teach) say('Hold an attack', 'End an attack with a little curl to hold it. Tap its red seal by the paper to throw it.', 5);
   resetFighter(player); player.hp = player.maxHp; player.ki = player.maxKi; player.pose = 'idle';
-  if (save.beaten.length >= ROSTER.length && !save.master && !MASTERF) spawnMaster(false);
 }
 function afterFall() {
-  overlay = null;
-  player.x = START.x; player.y = START.y; resetFighter(player); player.hp = player.maxHp; player.ki = player.maxKi; player.pose = 'idle';
+  const foe = overlay && overlay.foe;
+  overlay = null; HELD = null;
+  resetFighter(player); player.hp = player.maxHp; player.ki = player.maxKi; player.pose = 'idle';
+  fellTo(foe);
   updateCam(0, true);
 }
 
@@ -2980,6 +3278,10 @@ function update(dt) {
       const d = dist(f, player), a = angTo(f, player); f.face = a;
       if (FIGHT) { f.mode = 'return'; continue; }
       if (d > 140) { f.vx = Math.cos(a) * f.speed * 0.9; f.vy = Math.sin(a) * f.speed * 0.9; } else { f.vx = f.vy = 0; if (!writing()) startFight(f); }
+    } else if (f.mode === 'flee') {
+      // beaten on the road: off into the trees
+      const a = angTo(player, f); f.vx = Math.cos(a) * f.speed * 1.2; f.vy = Math.sin(a) * f.speed * 1.2; f.face = a;
+      f.fleeT = (f.fleeT || 0) + dt; if (f.fleeT > 2.2) { f.hidden = true; f.vx = f.vy = 0; smoke(f.x, f.y, 4, { size: 12 }); }
     } else if (f.mode === 'return') {
       const d = dist(f, f.post), a = angTo(f, f.post);
       if (d > 6) { f.vx = Math.cos(a) * f.speed * 0.7; f.vy = Math.sin(a) * f.speed * 0.7; f.face = a; }
@@ -2987,9 +3289,11 @@ function update(dt) {
     } else {
       f.vx = f.vy = 0;
       // practising at their post now and then
-      if (f.mode === 'post' && Math.random() < dt * 0.25 && f.poseT >= 1) { f.pose = Math.random() < 0.5 ? 'strike' : 'kick'; f.poseT = 0; }
+      if (f.mode === 'post' && !f.beast && Math.random() < dt * 0.25 && f.poseT >= 1) { f.pose = Math.random() < 0.5 ? 'strike' : 'kick'; f.poseT = 0; }
     }
   }
+  if (!FIGHT) storyTick(dt);
+  if (overlay) return;
   lookForChallenger();
   // moves in progress, statuses, motion
   const live = FIGHT ? [player, FIGHT.foe] : [player];
@@ -3026,24 +3330,26 @@ function render() {
   ctx.beginPath(); ctx.rect(L.arena.x, L.arena.y, L.arena.w, L.arena.h); ctx.clip();
   worldTransform();
   drawFloor();
-  drawPond(T);
+  if (SCENE === 'dojo') drawPond(T);
+  drawExits(T);
   if (FIGHT) { ctx.save(); ctx.strokeStyle = 'rgba(20,14,24,0.55)'; ctx.lineWidth = 9; ctx.setLineDash([28, 10, 6, 10]); ctx.beginPath(); ctx.arc(FIGHT.cx, FIGHT.cy, FIGHT.r, 0, TAU); ctx.stroke(); ctx.restore(); }
   drawDecals();
   drawZones(T);
   drawEnts(T, 'floor');
   drawWaves(T);
-  drawProps(T, 'low');
+  drawProps(T, 'low'); drawScenery(T, 'low');
   drawFx('under');
   drawStones();
-  const all = [player, ...fighters()].sort((a, b) => a.y - b.y);
+  const all = [player, ...fighters(), ...npcsHere()].sort((a, b) => a.y - b.y);
   for (const f of all) drawFighter(f, T);
-  for (const f of all) drawStatus(f, T);
+  for (const f of all) if (!f.isNpc) drawStatus(f, T);
   drawEnts(T, 'up');
   drawShots(T);
   drawBeams(T);
   drawFx('over');
-  drawProps(T, 'high');
-  for (const f of fighters()) if (!FIGHT || f !== FIGHT.foe) nameTag(f);
+  drawProps(T, 'high'); drawScenery(T, 'high');
+  for (const f of [...fighters(), ...npcsHere()]) if (!FIGHT || f !== FIGHT.foe) nameTag(f);
+  drawBubbles();
   if (FIGHT) drawAirGlyph(FIGHT.foe);
   drawShows();
   drawTexts();
@@ -3062,25 +3368,25 @@ function render() {
 function nameTag(f) {
   if (dist(f, player) > 330) return;
   ctx.textAlign = 'center'; ctx.font = `bold 12px ${BODY}`;
-  const y = f.y - 30, txt = f.beaten ? `${f.name} ✓` : f.name, later = !f.beaten && f.rank > tierNow();
+  if (f.isNpc && dist(f, player) < 140) return;
+  const y = f.y - 30, txt = f.beaten ? `${f.name} ✓` : f.name, later = !f.isNpc && !f.beaten && !mayChallenge(f);
   ctx.globalAlpha = later ? 0.45 : 1;
   ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(10,8,16,0.8)'; ctx.strokeText(txt, f.x, y);
-  ctx.fillStyle = f.beaten ? '#bfb8cc' : f.way === 'master' ? '#ff9a8a' : WAYS[f.way].color; ctx.fillText(txt, f.x, y);
+  ctx.fillStyle = f.isNpc ? C.paper : f.beaten ? '#bfb8cc' : fcol(f); ctx.fillText(txt, f.x, y);
   ctx.globalAlpha = 1;
 }
-// an arrow at the edge of the view toward the nearest fighter still to beat
+// an arrow at the edge of the view toward where the story goes next
 function pointToNext() {
-  let best = null, bd = Infinity;
-  for (const f of fighters()) if (canChallenge(f)) { const d = dist(f, player); if (d < bd) { bd = d; best = f; } }
+  const G = goal(), best = G.at;
   if (!best) return;
   const s = toScreen(best.x, best.y), A = L.arena, m = 30;
   if (s.x > A.x + m && s.x < A.x + A.w - m && s.y > A.y + 90 && s.y < A.y + A.h - m) return;
   const cx = A.x + A.w / 2, cy = A.y + A.h * 0.56, a = Math.atan2(s.y - cy, s.x - cx);
   const rx = A.w / 2 - m, ry = A.h * 0.42 - m, k = 1 / Math.max(Math.abs(Math.cos(a)) / rx, Math.abs(Math.sin(a)) / ry);
-  const x = cx + Math.cos(a) * k, y = cy + Math.sin(a) * k, col = best.way === 'master' ? C.seal : WAYS[best.way].color;
+  const x = cx + Math.cos(a) * k, y = cy + Math.sin(a) * k, col = best.label ? C.gold : best.isNpc ? C.paper : fcol(best);
   ctx.save(); ctx.translate(x, y); ctx.rotate(a); ctx.fillStyle = col; ctx.globalAlpha = 0.85 + 0.15 * Math.sin(T * 5);
   ctx.beginPath(); ctx.moveTo(12, 0); ctx.lineTo(-8, -9); ctx.lineTo(-4, 0); ctx.lineTo(-8, 9); ctx.closePath(); ctx.fill(); ctx.restore();
-  ctx.textAlign = 'center'; ctx.font = `bold 11px ${BODY}`; ctx.fillStyle = col; ctx.fillText(best.name, x - Math.cos(a) * 26, y - Math.sin(a) * 26 + 4);
+  ctx.textAlign = 'center'; ctx.font = `bold 11px ${BODY}`; ctx.fillStyle = col; ctx.fillText(best.label || best.name, x - Math.cos(a) * 26, y - Math.sin(a) * 26 + 4);
 }
 function bar(x, y, w, h, k, col, back = 'rgba(255,255,255,0.12)') { roundRect(x, y, w, h, h / 2); ctx.fillStyle = back; ctx.fill(); if (k > 0) { roundRect(x, y, Math.max(h, w * k), h, h / 2); ctx.fillStyle = col; ctx.fill(); } }
 // a fighter's twist, as a short bar and a few words: fire's heat, air's wind, water's puddle, earth's stones
@@ -3101,20 +3407,20 @@ function drawHud() {
   if (save.way === 'fire' || save.way === 'air') { bar(pad, pad + 36, w, 4, tw.k, tw.col); if (save.way === 'fire') { ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.fillRect(pad + w * 0.75, pad + 35, 1.5, 6); } }
   ctx.font = `10px ${BODY}`; ctx.fillStyle = C.muted; ctx.fillText(`ki ${Math.floor(player.ki)}${kiFlow(player) > 1 ? ' ↑' : ''}${tw.text ? ' · ' + tw.text : ''}`, pad, pad + 50);
   if (FIGHT && FIGHT.foe) {
-    const f = FIGHT.foe, x = L.arena.x + L.arena.w - pad - w, col = f.way === 'master' ? C.seal : WAYS[f.way].color, ft = twistLine(f), fw = moveWay(f);
+    const f = FIGHT.foe, x = L.arena.x + L.arena.w - pad - w, col = fcol(f), ft = twistLine(f), fw = moveWay(f);
     ctx.fillStyle = 'rgba(18,15,25,0.72)'; roundRect(x - 6, pad - 6, w + 12, 56, 10); ctx.fill();
     ctx.textAlign = 'right'; ctx.font = `bold 12px ${BODY}`; ctx.fillStyle = col; ctx.fillText(f.name, x + w, pad + 8);
     bar(x, pad + 14, w, 9, f.hp / f.maxHp, C.hp);
     bar(x, pad + 27, w, 6, f.ki / f.maxKi, f.way === 'master' ? wcol(f.ai.way) : col);
     if (fw === 'fire' || fw === 'air') bar(x, pad + 36, w, 4, ft.k, ft.col);
-    ctx.font = `10px ${BODY}`; ctx.fillStyle = C.muted; ctx.fillText(f.way === 'master' ? `every way · now ${WAYS[f.ai.way].name}` : `${RANKS[f.rank].beltName}${beats(save.way, f.way) ? ' · your way beats theirs' : beats(f.way, save.way) ? ' · their way beats yours' : ''}`, x + w, pad + 50);
+    ctx.font = `10px ${BODY}`; ctx.fillStyle = C.muted; ctx.fillText(f.beast ? 'wolf' : f.way === 'master' ? `every way · now ${WAYS[f.ai.way].name}` : `${f.bandit ? (f.boss ? 'bandit boss' : 'bandit') + ' · ' + WAYS[f.way].name : RANKS[f.rank].beltName}${beats(save.way, f.way) ? ' · your way beats theirs' : beats(f.way, save.way) ? ' · their way beats yours' : ''}`, x + w, pad + 50, w);
   } else {
-    const bx = L.arena.x + L.arena.w - pad - 132;
-    ctx.fillStyle = 'rgba(18,15,25,0.72)'; roundRect(bx - 6, pad - 6, 144, 40, 10); ctx.fill();
-    ctx.textAlign = 'right'; ctx.font = `bold 12px ${BODY}`; ctx.fillStyle = C.fg;
-    const tier = tierNow(), inTier = tier >= 1 && tier <= 3 ? ROSTER.filter(o => o.rank === tier && save.beaten.includes(o.id)).length : 0;
-    ctx.fillText(tier === 0 ? 'A warm-up first' : tier < 4 ? `${BELTS[tier][0].toUpperCase() + BELTS[tier].slice(1)} · ${inTier} of 4` : save.master ? 'Grandmaster' : 'The Grandmaster waits', L.arena.x + L.arena.w - pad, pad + 8);
-    ctx.font = `11px ${BODY}`; ctx.fillStyle = C.muted; ctx.fillText(`${learnedCount()} of 20 moves`, L.arena.x + L.arena.w - pad, pad + 24);
+    // what to do next
+    const G = goal(), bw = Math.min(196, L.arena.w - w - 44), bx = L.arena.x + L.arena.w - pad - bw;
+    ctx.font = `bold 12px ${BODY}`; const ls = wrapLines(G.text, bw).slice(0, 3), bh = 26 + ls.length * 15;
+    ctx.fillStyle = 'rgba(18,15,25,0.72)'; roundRect(bx - 6, pad - 6, bw + 12, bh, 10); ctx.fill();
+    ctx.textAlign = 'right'; ctx.fillStyle = C.gold; ls.forEach((l, i) => ctx.fillText(l, L.arena.x + L.arena.w - pad, pad + 8 + i * 15));
+    ctx.font = `11px ${BODY}`; ctx.fillStyle = C.muted; ctx.fillText(`${learnedCount()} moves known${HELD ? ' · one held' : ''}`, L.arena.x + L.arena.w - pad, pad + 8 + ls.length * 15 + 2);
   }
 }
 // round the pad: the line that says what was read, the Moves button, the sound button
@@ -3140,10 +3446,10 @@ function drawPanel() {
   if (sh) {
     const R = sh.R, took = R.verdict !== 'fizzle' && R.best;
     if (took) {
-      ctx.font = `bold 14px ${BODY}`; ctx.fillStyle = sh.ok ? WAYS[R.best.g.way].color : C.rough;
+      ctx.font = `bold 14px ${BODY}`; ctx.fillStyle = R.perfect && sh.ok ? C.gold : sh.ok ? WAYS[R.best.g.way].color : C.rough;
       ctx.fillText(R.best.g.name, mid, y - 2, maxW);
       ctx.font = `12px ${BODY}`; ctx.fillStyle = sh.ok ? C.fg : C.rough;
-      ctx.fillText(`${R.verdict === 'clean' ? 'Clean' : 'Rough'} · ${Math.round(R.power * 100)}%${sh.msg ? ' · ' + sh.msg : ''}`, mid, y + 14, maxW);
+      ctx.fillText(`${R.perfect ? 'Perfect' : R.verdict === 'clean' ? 'Clean' : 'Rough'} · ${Math.round(R.acc * 100)}% · ×${R.power.toFixed(1)}${sh.msg ? ' · ' + sh.msg : ''}`, mid, y + 14, maxW);
     } else lines(sh.msg, `bold 13px ${BODY}`, C.fizzle);
   } else lines(PAD.guide ? `Trace: ${PAD.guide.name}` : FIGHT && FIGHT.on ? 'Write a move' : TILT.on ? 'Tilt to walk · Write moves on the paper' : TILT.need && !TILT.denied ? 'Tap tilt (by the paper) to walk by leaning the phone' : 'Walk: drag the floor · Write moves on the paper', `italic 13px ${BODY}`, 'rgba(214,208,228,0.6)');
 }
@@ -3209,9 +3515,268 @@ function wrapLines(text, maxW) {
 }
 function wrapText(text, x, y, maxW, lh) { const ls = wrapLines(text, maxW); ls.forEach((l, i) => ctx.fillText(l, x, y + i * lh)); return y + ls.length * lh; }
 
+// ── the story: Mum's errand, the townsfolk, the wolves on the road, the dojo's white belts, and the bandits ──
+// Where the story has got to (save.q):
+const Q = { START: 0, ROAD: 1, DOJO: 2, PACKAGE: 3, HOME: 4, LAST: 5, DONE: 6 };
+
+// ── the wolves: they don't write, they bite and pounce ──
+const beastMove = (key, name, tag, cost, what) => ({ key, role: key, name, tag, cost, what, how: '', strokes: [[{ x: 0, y: 0 }, { x: 0.1, y: 0 }]], pools: [[]], closed: [false], ink: 'any', way: 'beast', id: 'beast:' + key, order: 0, tier: 0 });
+const WOLF_KIT = [beastMove('bite', 'Bite', 'Strike', 5, 'A snapping bite.'), beastMove('pounce', 'Pounce', 'Dash', 8, 'A leap at you, teeth first.')];
+SPELL['beast:bite'] = c => { melee(c, { reach: 46, lunge: 46, dmg: 7, hit: { knock: 60 }, fx: (x, y) => { slash(x, y, c.a, '#f4efe4', 18); slash(x, y, c.a + 0.5, '#f4efe4', 14); } }); };
+SPELL['beast:pounce'] = c => {
+  const { f, a } = c, sp = 520;
+  f.dash = { vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, t: 0.32, hitOnce: { dmg: 6, power: c.pw, knock: 120, melee: true } };
+  dust(f.x, f.y, 4, { sp: 60 });
+};
+AIH['beast:bite'] = { r: [0, 90], w: 3 };
+AIH['beast:pounce'] = { r: [110, 330], w: 1.6 };
+const WOLVES = [
+  { id: 'wolf1', name: 'Grey wolf', post: [600, 1990], look: { fur: '#8d8a86', furDark: '#5e5b58' } },
+  { id: 'wolf2', name: 'Lean wolf', post: [380, 1700], look: { fur: '#9a8f80', furDark: '#62584c' } },
+  { id: 'wolf3', name: 'Old wolf', post: [610, 1150], look: { fur: '#6f6c6a', furDark: '#3f3d3b' } },
+];
+// ── the bandits: brown-belt fighters who wait for you on the road home, and come at you one after another ──
+const BANDITS = [
+  { id: 'b1', name: 'Crow', look: { gi: '#3a3530', mask: '#16131b', belt: '#8a5a2b' } },
+  { id: 'b2', name: 'Tusk', look: { gi: '#4a3a2a', mask: '#16131b', belt: '#8a5a2b' } },
+  { id: 'b3', name: 'Kagero', boss: true, look: { gi: '#2a1f24', mask: '#7a1f1a', belt: '#8a5a2b', trim: '#c63f2e' } },
+];
+// none of them follows the way that beats yours: first the way yours beats, then your own way, then the last one (the boss)
+function banditWays() { const mine = save.way, easy = WAYS[mine].beats, hard = WAY_ORDER.find(w => WAYS[w].beats === mine); return [easy, mine, WAY_ORDER.find(w => w !== mine && w !== easy && w !== hard)]; }
+// ── the people ──
+const NPC_LIST = [
+  { id: 'mum', name: 'Mum', scene: 'home', post: [445, 2282], look: { gi: '#b65c4a', trim: '#f0e2c0', belt: '#f0e2c0', hair: '#6a6058', skin: '#e8bd98', scarf: '#e0c070' } },
+  { id: 'post', name: 'Postmaster Ono', scene: 'town', post: [378, 640], look: { gi: '#3b4f7a', trim: '#e9bb52', belt: '#e9bb52', hair: '#7a7064' } },
+  { id: 'scribe', name: 'Old Hana', scene: 'town', post: [930, 640], look: { gi: '#efe6d0', trim: '#19141f', belt: '#19141f', hair: '#d8d2c8', skin: '#e0ac85' } },
+  { id: 'baker', name: 'Kiko the baker', scene: 'town', post: [470, 820], look: { gi: '#f4efe4', trim: '#d9935a', belt: '#d9935a', scarf: '#f4efe4' } },
+  { id: 'farmer', name: 'Farmer Daisuke', scene: 'town', post: [835, 820], look: { gi: '#6f8a4a', trim: '#4a3a2a', belt: '#4a3a2a' } },
+  { id: 'kid', name: 'Little Yuki', scene: 'town', post: [700, 470], wander: 90, look: { gi: '#ff9ab8', trim: '#c63f2e', belt: '#c63f2e' } },
+  { id: 'granny', name: 'Granny Fuji', scene: 'town', post: [345, 1040], look: { gi: '#5a3d4f', trim: '#d8d2c8', belt: '#d8d2c8', hair: '#e8e2d8', scarf: '#8a6a8a' } },
+  { id: 'guard', name: 'Botan, the gate guard', scene: 'town', post: [760, 1090], look: { gi: '#5e5446', trim: '#c9a35c', belt: '#16131b' } },
+  { id: 'sensei', name: 'Master Ishida', scene: 'dojo', post: [DAIS.x, DAIS.y], look: { gi: '#2b2531', trim: '#c63f2e', belt: '#16131b', hair: '#e8e2d8' } },
+];
+let NPCS = [];
+function makeNpc(o) { const n = makeFighter({ ...o, way: 'none', rank: 0 }); n.isNpc = true; n.scene = o.scene; n.wander = o.wander || 0; n.home = { x: n.x, y: n.y }; n.face = Math.PI / 2; return n; }
+const npcsHere = () => NPCS.filter(n => n.scene === SCENE);
+const npc = id => NPCS.find(n => n.id === id);
+
+// what someone says to you: a talk (once, the first time you walk up to them at this point in the story), then a
+// line in a bubble whenever you pass
+function npcTalk(n) {
+  const q = save.q, w = whitesBeaten(), W = WAYS[save.way];
+  switch (n.id) {
+    case 'mum':
+      if (q === Q.START) return { key: 'mum0', pages: [
+        ['Mum', 'Morning, love. A letter came from your grandfather’s lawyer. There’s a package waiting for us at the post office in town.'],
+        ['Mum', 'Will you walk in and fetch it for me? Just follow the road north.'],
+        ['Mum', `Be careful, though. Wolves have been seen on the road. If they come at you, fight the way your grandfather taught you: the Way of ${W.name}.`],
+        ['Mum', 'Write your moves on the paper. And write them neatly: the cleaner the stroke, the harder it hits. A perfect one hits twice as hard as a scrappy one.'],
+      ], after: () => { save.q = Q.ROAD; say('Go into town', 'Follow the road north to the town gate. Open MOVES to see how to write your first three moves.', 5, C.gold); } };
+      if (q === Q.LAST) return { key: 'mum5', pages: [
+        ['Mum', 'You’re back! And you’ve got it. Come on, let’s open it.'],
+        ['', 'Inside, wrapped in old silk, is a golden statue: a crane with its wings spread, heavy as a stone.'],
+        ['Mum', 'Your grandfather’s golden crane. He always said it would come to you one day.'],
+        ['Mum', 'There’s a letter with it. A buyer in the far city of Kyōsei wants the crane, and will pay enough to change our lives.'],
+        ['Mum', 'Those bandits won’t be the last to come after it. If we’re taking it all the way to the city, you’ll need every move you can learn.'],
+      ], after: () => { save.q = Q.DONE; save.stats.t1 = Date.now(); player.carry = false; writeSave(); overlay = { kind: 'end', t: 0 }; SFX.learn(); } };
+      return null;
+    case 'post':
+      if (q <= Q.DOJO && w < 4) return { key: 'post1', pages: [
+        ['Postmaster Ono', 'A package for your family? Yes, from your grandfather. It came in last week.'],
+        ['Postmaster Ono', 'But I can’t just hand it over. Bandits have been robbing people on the valley road, and this one is worth a lot.'],
+        ['Postmaster Ono', 'Show me you can look after it. Beat the four white belts at the dojo, up the street, and I’ll know you can carry it home.'],
+      ], after: () => { save.q = Q.DOJO; say('Beat the white belts', 'The dojo is at the top of the street. Each white belt you beat teaches you a move.', 4.5, C.gold); } };
+      if (q <= Q.PACKAGE) return { key: 'post3', pages: [
+        ['Postmaster Ono', 'All four white belts? Word gets round fast in this town!'],
+        ['Postmaster Ono', 'Here’s your package. It’s heavier than it looks. Keep it close, and go straight home.'],
+      ], after: () => { save.q = Q.HOME; player.carry = true; say('Take it home to Mum', 'Back out of the town gate and down the valley road.', 4.5, C.gold); } };
+      return null;
+    case 'scribe':
+      if (q >= Q.ROAD && !save.scribe) return { key: 'scribe', pages: [
+        ['Old Hana', 'You hold a brush like your grandfather did. He sat in that very chair to practise.'],
+        ['Old Hana', 'He had a trick: end an attack with a little curl, a tiny loop at the very end of the stroke. Then the move doesn’t fly. You hold it.'],
+        ['Old Hana', 'Its red seal waits by your paper, and you let it go with a tap when the moment is right. Write a shield, then throw what you were holding.'],
+        ['Old Hana', 'And here is a move of your way to go with it.'],
+      ], after: () => { const before = learnedCount(); save.scribe = true; overlay = lesson({ name: 'Old Hana' }, before, learnedCount(), { teach: true }); SFX.learn(); } };
+      return null;
+    case 'baker': return { key: 'baker', pages: [['Kiko the baker', 'Fresh buns! Well, they were fresh this morning. Off to the dojo? The white belts eat here every day. Hungry lot.']] };
+    case 'farmer': return { key: 'farmer', pages: [['Farmer Daisuke', 'Lost two sheep to wolves this spring. If you came up the valley road, you’ll have met them.']] };
+    case 'kid': return { key: 'kid', pages: [['Little Yuki', 'Are you going to fight at the dojo? The white belts are easy. Well, easier than the brown belts. The brown belts are scary.']] };
+    case 'granny': return { key: 'granny', pages: [['Granny Fuji', 'Your grandfather? Best brush in the valley. They say he once saw off ten bandits writing with his left hand.']] };
+    case 'guard': return { key: 'guard', pages: [['Botan, the gate guard', 'Bandits on the valley road again. Three of them, I hear. Their boss, Kagero, writes like a brown belt. Mind how you go.']] };
+    case 'sensei':
+      if (w < 4) return { key: 'sensei', pages: [
+        ['Master Ishida', 'So you’re the grandchild. Welcome to my dojo. Your grandfather trained on these mats.'],
+        ['Master Ishida', 'My white belts will spar with you; walk up to one and they’ll bow. Each one you beat will show you a move. The brown and black belts are not for you yet.'],
+      ] };
+      return { key: 'sensei4', pages: [['Master Ishida', 'All four white belts. Well fought. Come back when you’re ready for the brown belts.']] };
+  }
+  return null;
+}
+function npcIdle(n) {
+  const q = save.q, w = whitesBeaten();
+  switch (n.id) {
+    case 'mum': return q >= Q.HOME ? 'Is that it? Bring it here!' : 'The road north takes you to town.';
+    case 'post': return q >= Q.HOME ? 'Straight home, now.' : q === Q.DOJO ? `White belts beaten: ${w} of 4.` : 'Post office!';
+    case 'scribe': return 'End an attack with a little curl to hold it.';
+    case 'baker': return 'Buns! Two for one!';
+    case 'farmer': return 'Mind the wolves.';
+    case 'kid': return 'Show me a move!';
+    case 'granny': return 'Best brush in the valley, he was.';
+    case 'guard': return q >= Q.HOME ? 'Watch the road. Bandits.' : 'Morning.';
+    case 'sensei': return `White belts: ${w} of 4.`;
+  }
+  return '';
+}
+
+// ── who fights you, and how good they are ──
+const banditsLeft = () => FOES.filter(f => f.bandit && !f.beaten);
+function mayChallenge(f) {
+  if (f.beast) return save.q >= Q.ROAD && save.q < Q.HOME;
+  if (f.bandit) return !!save.ambush && f === banditsLeft()[0];
+  return f.rank === 1 && save.q >= Q.ROAD && save.q < Q.DONE;
+}
+function waveOff(f) { return f.beast || f.bandit ? '' : f.rank > 1 ? 'Not you. Not yet.' : save.q < Q.ROAD ? '' : ''; }
+function skillFor(f) {
+  if (f.beast) { const s = skillAt(0); return { ...s, hp: s.hp * 0.8, fizzle: 0, aim: 0.2, spells: 2 }; }
+  if (f.bandit) return skillAt([4.5, 5.2, 6][BANDITS.findIndex(b => b.id === f.id)]);
+  return skillAt(1 + whitesBeaten());
+}
+function challengeLine(f) {
+  if (f.beast) return 'A wolf on the road';
+  if (f.bandit) return f.boss ? 'The bandits’ boss · fights like a brown belt' : 'A bandit · fights like a brown belt';
+  return `${HALLS[f.way].label} · ${RANKS[f.rank].beltName}`;
+}
+// you've won: what happens next
+function wonAgainst(foe) {
+  if (foe.beast) {
+    if (!save.wolves.includes(foe.id)) save.wolves.push(foe.id);
+    foe.mode = 'flee'; writeSave();
+    say(`The ${foe.name.toLowerCase()} runs off`, save.wolves.length >= WOLVES.length ? 'That’s the last of the wolves.' : '', 2.4, C.gold);
+    player.hp = player.maxHp; player.ki = player.maxKi; player.pose = 'idle';
+    return;
+  }
+  if (foe.bandit) {
+    foe.mode = 'flee';
+    const next = banditsLeft()[0];
+    if (next) {
+      // a breather, then the next one steps up
+      player.hp = Math.min(player.maxHp, player.hp + player.maxHp * 0.5); player.ki = player.maxKi; player.pose = 'idle';
+      calm = 1.6; say(`${foe.name} runs for the trees`, `${next.name} steps up${next.boss ? ': the boss' : ''}. You catch your breath.`, 2.6, fcol(next));
+    } else {
+      save.q = Q.LAST; save.ambush = false; writeSave();
+      player.hp = player.maxHp; player.ki = player.maxKi; player.pose = 'idle';
+      say('The bandits flee!', 'The road is clear. Take the package home to Mum.', 4.5, C.gold); SFX.learn();
+    }
+    return;
+  }
+  // a white belt bows and shows you a move
+  const before = learnedCount();
+  if (!save.beaten.includes(foe.id)) save.beaten.push(foe.id);
+  foe.mode = 'return';
+  const done = whitesBeaten() >= 4 && save.q === Q.DOJO;
+  if (done) save.q = Q.PACKAGE;
+  writeSave();
+  overlay = lesson(foe, before, learnedCount(), { allWhite: whitesBeaten() >= 4 });
+  SFX.learn();
+}
+// you've fallen: where you wake
+function fellTo(foe) {
+  if (foe && foe.bandit) { resetBandits(); enterScene('home', 'north'); say('You wake at the top of the road', 'The package is still with you. The bandits will be waiting.', 4, C.muted); }
+  else if (foe && foe.beast) enterScene('home', 'door');
+  else enterScene(SCENE, Object.keys(SCENES[SCENE].spots)[0]);
+}
+function resetBandits() {
+  save.ambush = false;
+  for (const f of FOES.filter(f => f.bandit)) { f.beaten = false; f.hidden = true; f.mode = 'post'; resetFighter(f); }
+}
+// on the road home with the package: the bandits step out of the trees
+function checkAmbush() {
+  if (save.q !== Q.HOME || save.ambush || SCENE !== 'home' || FIGHT || overlay || player.y < 520) return;
+  save.ambush = true;
+  const B = FOES.filter(f => f.bandit), spots = [[-110, 230], [130, 260], [0, 330]];
+  B.forEach((f, i) => {
+    const x = clamp(player.x + spots[i][0], 80, WORLD.w - 80), y = clamp(player.y + spots[i][1], 80, WORLD.h - 80);
+    f.x = x; f.y = y; f.post = { x, y }; f.hidden = false; f.beaten = false; f.mode = 'post'; f.face = angTo(f, player);
+    smoke(x, y, 6, { size: 14 });
+  });
+  overlay = { kind: 'talk', t: 0, i: 0, pages: [
+    ['Kagero', 'Well, well. That’s a heavy little box for a child to be carrying.'],
+    ['Kagero', 'Put it down on the road and walk away, and nobody gets hurt.'],
+    ['', 'You plant your feet and lift your brush.'],
+    ['Kagero', 'Have it your way. Crow! Teach this one a lesson. Then Tusk. Then me.'],
+  ], after: () => { calm = 0.4; } };
+  SFX.drum(2);
+}
+
+// ── what to do next, and where ──
+function goal() {
+  const q = save.q, w = whitesBeaten(), ex = id => SCENES[SCENE].exits.find(e => e.id === id), N = id => npc(id);
+  const toTown = SCENE === 'home' ? ex('town') : SCENE === 'dojo' ? ex('town') : null;
+  if (q === Q.START) return { text: 'Talk to Mum', at: SCENE === 'home' ? N('mum') : null };
+  if (q === Q.ROAD) return { text: 'Walk into town and find the post office', at: SCENE === 'town' ? N('post') : toTown };
+  if (q === Q.DOJO || q === Q.PACKAGE && w < 4) {
+    const next = SCENE === 'dojo' ? fighters().filter(f => f.rank === 1 && !f.beaten).sort((a, b) => dist(a, player) - dist(b, player))[0] : null;
+    return { text: `Beat the white belts at the dojo · ${w} of 4`, at: SCENE === 'town' ? ex('dojo') : SCENE === 'home' ? ex('town') : next };
+  }
+  if (q === Q.PACKAGE) return { text: 'Collect the package from the post office', at: SCENE === 'town' ? N('post') : toTown };
+  if (q === Q.HOME) return { text: save.ambush ? 'Fight off the bandits' : 'Take the package home to Mum', at: SCENE === 'home' ? (save.ambush ? banditsLeft()[0] : N('mum')) : SCENE === 'town' ? ex('valley') : ex('town') };
+  if (q === Q.LAST) return { text: 'Take the package home to Mum', at: SCENE === 'home' ? N('mum') : SCENE === 'town' ? ex('valley') : ex('town') };
+  return { text: 'The end of chapter one', at: null };
+}
+
+// ── every frame, outside a fight: the people, the ways out, the ambush ──
+function storyTick(dt) {
+  for (const n of npcsHere()) {
+    const d = dist(n, player);
+    if (n.wander && d > 120) {
+      n.wt = (n.wt || 0) - dt;
+      if (n.wt <= 0) { n.wt = rr(1.5, 3.5); const a = rr(0, TAU), r = rr(0, n.wander); n.goal = { x: n.home.x + Math.cos(a) * r, y: n.home.y + Math.sin(a) * r }; }
+      if (n.goal && dist(n, n.goal) > 6) { const a = angTo(n, n.goal); n.x += Math.cos(a) * 55 * dt; n.y += Math.sin(a) * 55 * dt; n.face = a; n.walk += dt * 9; blocked(n, n.r); } else n.walk *= 0.8;
+    }
+    if (d < 150) n.face = angTo(n, player);
+    // you can't walk through people
+    const m = n.r + player.r; if (d < m && d > 0) { player.x = n.x + (player.x - n.x) / d * m; player.y = n.y + (player.y - n.y) / d * m; }
+    n.poseT += dt * 3.2;
+    if (FIGHT || overlay || writing() || fighters().some(f => f.mode === 'approach') || d > 78) continue;
+    const talk = npcTalk(n);
+    if (talk && !save.heard[talk.key]) { overlay = { kind: 'talk', t: 0, i: 0, pages: talk.pages, key: talk.key, after: talk.after }; n.pose = 'bow'; n.poseT = 0; return; }
+  }
+  if (FIGHT || overlay) return;
+  checkAmbush();
+  // leaving for the next place
+  const e = !writing() && !fighters().some(f => f.mode === 'approach') ? exitAt(player) : null;
+  if (e) { enterScene(e.to, e.at); updateCam(0, true); calm = Math.max(calm, 1.2); say(SCENES[e.to].name, '', 1.6, C.paper); }
+}
+function talkNext() {
+  const O = overlay;
+  if (!O || O.kind !== 'talk' || O.t < 0.25) return;
+  O.i++; O.t = 0;
+  if (O.i < O.pages.length) return;
+  overlay = null;
+  if (O.key) save.heard[O.key] = true;
+  if (O.after) O.after();
+  writeSave();
+}
+// someone's line over their head, as you pass
+function drawBubbles() {
+  if (FIGHT) return;
+  for (const n of npcsHere()) {
+    const d = dist(n, player);
+    if (d > 140) continue;
+    const text = npcIdle(n); if (!text) continue;
+    ctx.font = `12px ${BODY}`; const w = Math.min(190, ctx.measureText(text).width + 16), lines = wrapLines(text, w - 12), h = 8 + lines.length * 15, x = n.x, y = n.y - 44 - h;
+    ctx.globalAlpha = clamp((140 - d) / 40, 0, 1);
+    roundRect(x - w / 2, y, w, h, 8); ctx.fillStyle = 'rgba(239,230,208,0.95)'; ctx.fill();
+    ctx.beginPath(); ctx.moveTo(x - 6, y + h); ctx.lineTo(x, y + h + 8); ctx.lineTo(x + 6, y + h); ctx.fill();
+    ctx.fillStyle = '#2e2216'; ctx.textAlign = 'center'; lines.forEach((l, i) => ctx.fillText(l, x, y + 16 + i * 15));
+    ctx.globalAlpha = 1;
+  }
+}
 // ── the title: your way ──
 const SIGNATURE = { water: 'whirlpool', fire: 'inferno', earth: 'mountain', air: 'typhoon' };
 let titleT = 0, choosing = false;
+const STAGE_NAME = ['at home', 'on the road to town', 'at the dojo', 'the package waits', 'carrying the package home', 'nearly home'];
 function drawTitle() {
   titleT += 1 / 60;
   buttons = [];
@@ -3222,15 +3787,15 @@ function drawTitle() {
   ctx.textAlign = 'center';
   ctx.font = `${Math.min(64, W / 6)}px ${DISPLAY}`; ctx.fillStyle = C.paper; ctx.fillText('Ink Dojo', cx, top + Math.min(W, H) * 0.2 + 18);
   ctx.font = `14px ${BODY}`; ctx.fillStyle = C.muted;
-  let y = wrapText('Write your moves with a brush. Beat every fighter in the dojo.', cx, top + Math.min(W, H) * 0.2 + 52, Math.min(W - 40, 420), 19) + 10;
+  let y = wrapText('Write your moves with a brush. Fetch the package from town, and bring it home.', cx, top + Math.min(W, H) * 0.2 + 52, Math.min(W - 40, 420), 19) + 10;
   const saved = loadSave();
   if (saved && !choosing) {
     const wcol2 = WAYS[saved.way].color, bw = Math.min(W - 40, 360);
     y += 10;
     const b1 = { x: cx - bw / 2, y, w: bw, h: 64, go: () => { save = saved; continueGame(); } };
     roundRect(b1.x, b1.y, b1.w, b1.h, 14); ctx.fillStyle = C.night2; ctx.fill(); ctx.strokeStyle = wcol2; ctx.lineWidth = 2; ctx.stroke();
-    ctx.font = `22px ${DISPLAY}`; ctx.fillStyle = wcol2; ctx.fillText(saved.master ? 'Walk the dojo again' : 'Carry on', cx, y + 28);
-    ctx.font = `13px ${BODY}`; ctx.fillStyle = C.muted; ctx.fillText(`The Way of ${WAYS[saved.way].name} · ${saved.master ? 'Grandmaster' : saved.beaten.length + ' of 12 beaten'}`, cx, y + 49);
+    ctx.font = `22px ${DISPLAY}`; ctx.fillStyle = wcol2; ctx.fillText(saved.q >= Q.DONE ? 'Walk the valley again' : 'Carry on', cx, y + 28);
+    ctx.font = `13px ${BODY}`; ctx.fillStyle = C.muted; ctx.fillText(`The Way of ${WAYS[saved.way].name} · ${saved.q >= Q.DONE ? 'chapter one done' : STAGE_NAME[saved.q]}`, cx, y + 49, bw - 16);
     buttons.push(b1);
     y += 84;
     const b2 = { x: cx - bw / 2, y, w: bw, h: 48, go: () => { choosing = true; pickWay = null; } };
@@ -3262,7 +3827,7 @@ function drawTitle() {
   const bw = Math.min(W - 40, 320), b = { x: cx - bw / 2, y, w: bw, h: 52, go: () => { if (pickWay) { choosing = false; beginGame(pickWay); } } };
   roundRect(b.x, b.y, b.w, b.h, 26); ctx.fillStyle = pickWay ? WAYS[pickWay].color : 'rgba(255,255,255,0.08)'; ctx.fill();
   ctx.textAlign = 'center'; ctx.font = `17px ${BODY}`; ctx.fillStyle = pickWay ? C.night : C.muted;
-  ctx.fillText(pickWay ? `Enter the dojo · ${WAYS[pickWay].name}` : 'Pick a way above', cx, y + 32);
+  ctx.fillText(pickWay ? `Begin · ${WAYS[pickWay].name}` : 'Pick a way above', cx, y + 32);
   buttons.push(b);
   if (saved) { const bb = { x: cx - 60, y: y + 60, w: 120, h: 30, go: () => { choosing = false; } }; ctx.font = `13px ${BODY}`; ctx.fillStyle = C.muted; ctx.fillText('Back', cx, y + 80); buttons.push(bb); }
 }
@@ -3281,7 +3846,7 @@ function drawOverlay() {
     ctx.font = `${Math.min(28, W / 13)}px ${DISPLAY}`; ctx.fillStyle = Wy.color; ctx.fillText(`The Way of ${Wy.name}`, cx, 40);
     ctx.font = `bold 12px ${BODY}`; ctx.fillStyle = C.gold; const tl = wrapLines(`${Wy.twist}: ${Wy.twistWhat}`, Math.min(W - 24, 560));
     ctx.font = `12px ${BODY}`; tl.slice(0, 3).forEach((l, i) => { ctx.fillStyle = i ? C.fg : C.fg; ctx.fillText(l, cx, 60 + i * 15); });
-    ctx.font = `11px ${BODY}`; ctx.fillStyle = C.muted; ctx.fillText('● basic · ●● skilled · ●●● master. Tap one to see it and trace it.', cx, 64 + Math.min(3, tl.length) * 15, W - 24);
+    ctx.font = `11px ${BODY}`; ctx.fillStyle = C.muted; ctx.fillText(save.scribe ? 'Tap one to see it and trace it. End an attack with a little curl to hold it.' : '● basic · ●● skilled · ●●● master. Tap one to see it and trace it.', cx, 64 + Math.min(3, tl.length) * 15, W - 24);
     const cols = W > 700 ? 5 : 4, cw = Math.min(170, (W - 16) / cols), rows = 5, top = 74 + Math.min(3, tl.length) * 15 + 8, ch = Math.min(150, (H - top - 56) / rows), r = Math.min(cw * 0.3, (ch - 40) / 2.1);
     const x0 = cx - cw * cols / 2;
     MOVES[way].forEach((m, i) => {
@@ -3339,21 +3904,39 @@ function drawOverlay() {
                         earth: 'Raise stones with Stone Wall and Earth Spike, then throw them with Rock Throw or burst them with Shatter.',
                         air: 'Keep moving while you write: wind makes every air spell stronger, and standing still lets it die away.' };
     const tips = ['Watch what they write in the air above them: when a big spell is coming, shield, dodge or wall it off.', TWIST_TIP[save.way],
-                  'Rough glyphs still work, only weaker and smaller. Clean ones hit full strength: open MOVES and trace one to practise.', `Your way beats ${WAYS[WAYS[save.way].beats].name}: try a fighter of that hall.`];
+                  'Rough glyphs still work, but only just. Every bit neater hits harder, and a perfect one twice as hard: open MOVES and trace one to practise.', `Your way beats ${WAYS[WAYS[save.way].beats].name}: its fighters are the easiest for you.`];
     wrapText(tips[(save.stats.falls - 1) % tips.length], cx, H * 0.36 + 34, Math.min(W - 40, 420), 21);
     if (O.t > 0.8) { ctx.globalAlpha = 0.6 + 0.4 * Math.sin(T * 4); ctx.font = `14px ${BODY}`; ctx.fillStyle = C.gold; ctx.fillText('Tap to try again', cx, H - 30); ctx.globalAlpha = 1; buttons.push({ x: 0, y: 0, w: W, h: H, go: afterFall }); }
     return;
   }
-  if (O.kind === 'victory') {
+  if (O.kind === 'talk') {
+    // someone talking: their name, their words, a tap to go on
+    const [who, text] = O.pages[O.i] || ['', ''], bw = Math.min(W - 24, 460), x0 = cx - bw / 2;
+    ctx.font = `16px ${BODY}`; const ls = wrapLines(text, bw - 36), bh = 64 + ls.length * 22, y0 = Math.min(H - bh - 24, Math.max(H * 0.3, L.wide ? H / 2 - bh / 2 : L.pad.cy - L.pad.r - bh - 4));
+    roundRect(x0, y0, bw, bh, 16); ctx.fillStyle = C.night2; ctx.fill(); ctx.strokeStyle = who ? C.gold : C.line; ctx.lineWidth = 2; ctx.stroke();
+    ctx.textAlign = 'left';
+    if (who) { ctx.font = `${Math.min(22, W / 17)}px ${DISPLAY}`; ctx.fillStyle = C.gold; ctx.fillText(who, x0 + 18, y0 + 32); }
+    ctx.font = who ? `16px ${BODY}` : `italic 16px ${BODY}`; ctx.fillStyle = who ? C.fg : C.paper;
+    ls.forEach((l, i) => ctx.fillText(l, x0 + 18, y0 + (who ? 60 : 40) + i * 22));
+    ctx.textAlign = 'center';
+    if (O.t > 0.25) { ctx.globalAlpha = 0.6 + 0.4 * Math.sin(T * 4); ctx.font = `13px ${BODY}`; ctx.fillStyle = C.gold; ctx.fillText(O.i < O.pages.length - 1 ? 'Tap to go on' : 'Tap', cx, Math.min(H - 12, y0 + bh + 22)); ctx.globalAlpha = 1; }
+    buttons.push({ x: 0, y: 0, w: W, h: H, go: talkNext });
+    return;
+  }
+  if (O.kind === 'end') {
     const Wy = WAYS[save.way], S = save.stats, mins = Math.max(1, Math.round(((S.t1 || Date.now()) - S.t0) / 60000));
-    ctx.save(); ctx.strokeStyle = hexA(Wy.color, 0.25); ctx.lineWidth = 18; ctx.lineCap = 'round'; ctx.beginPath(); ctx.arc(cx, H * 0.3, Math.min(W, H) * 0.2, 2.4, 2.4 + TAU * 0.86 * Math.min(1, O.t / 1.5)); ctx.stroke(); ctx.restore();
-    ctx.font = `${Math.min(36, W / 10)}px ${DISPLAY}`; ctx.fillStyle = C.gold; ctx.fillText('Grandmaster', cx, H * 0.3 - 6);
-    ctx.font = `${Math.min(22, W / 16)}px ${DISPLAY}`; ctx.fillStyle = Wy.color; ctx.fillText(`of the Way of ${Wy.name}`, cx, H * 0.3 + 26);
+    ctx.save(); ctx.strokeStyle = hexA(C.gold, 0.25); ctx.lineWidth = 18; ctx.lineCap = 'round'; ctx.beginPath(); ctx.arc(cx, H * 0.28, Math.min(W, H) * 0.2, 2.4, 2.4 + TAU * 0.86 * Math.min(1, O.t / 1.5)); ctx.stroke(); ctx.restore();
+    ctx.font = `${Math.min(34, W / 11)}px ${DISPLAY}`; ctx.fillStyle = C.gold; ctx.fillText('The Golden Crane', cx, H * 0.28 - 4);
+    ctx.font = `${Math.min(20, W / 17)}px ${DISPLAY}`; ctx.fillStyle = Wy.color; ctx.fillText('End of chapter one', cx, H * 0.28 + 26);
     ctx.font = `15px ${BODY}`; ctx.fillStyle = C.fg;
-    const lines = [`Every fighter in the dojo beaten, the Grandmaster too.`, `${mins} minute${mins === 1 ? '' : 's'} · ${S.falls} fall${S.falls === 1 ? '' : 's'} · ${S.casts} moves written · ${S.casts ? Math.round(100 * S.clean / S.casts) : 0}% clean`];
-    lines.forEach((l, i) => ctx.fillText(l, cx, H * 0.56 + i * 24, W - 30));
-    const b = { x: cx - 120, y: H * 0.56 + 70, w: 240, h: 48, go: () => { overlay = null; state = 'title'; choosing = true; pickWay = null; } };
-    pill(b, 'Try another way', C.gold); buttons.push(b);
+    let y = wrapText('The package was your grandfather’s golden crane, and a buyer waits in the far city of Kyōsei. The road there is long. To be continued.', cx, H * 0.5, Math.min(W - 40, 420), 21);
+    ctx.fillStyle = C.muted; ctx.font = `13px ${BODY}`;
+    ctx.fillText(`${mins} minute${mins === 1 ? '' : 's'} · ${S.wins} fights won · ${S.falls} fall${S.falls === 1 ? '' : 's'} · ${S.casts ? Math.round(100 * S.clean / S.casts) : 0}% clean`, cx, y + 16, W - 30);
+    const b = { x: cx - 120, y: y + 50, w: 240, h: 48, go: () => { overlay = null; state = 'title'; choosing = true; pickWay = null; } };
+    pill(b, 'Play again', C.gold); buttons.push(b);
+    const c2 = { x: cx - 120, y: y + 108, w: 240, h: 40, go: () => { overlay = null; } };
+    pill(c2, 'Stay in the valley', C.muted); buttons.push(c2);
+    return;
   }
 }
 
@@ -3365,6 +3948,7 @@ cv.addEventListener('pointerdown', e => {
   const B = panelButtons();
   if (hit(B.moves, x, y)) { overlay = { kind: 'scroll', t: 0 }; SFX.tap(); return; }
   if (hit(B.sound, x, y)) { setSound(!soundOn); SFX.tap(); return; }
+  if (HELD) { const b = heldBtn(); if (Math.hypot(x - b.cx, y - b.cy) < b.r + 12) { releaseHeld(); return; } }
   if (TILT.on) { const b = tiltBubble(); if (Math.hypot(x - b.cx, y - b.cy) < b.r + 8) { TILT.relevel = true; SFX.tap(); return; } }
   if (inPad(x, y)) { if (!PAD.pen) { PAD.penId = e.pointerId; penDown(x, y, e); try { cv.setPointerCapture(e.pointerId); } catch (_) {} } return; }
   const inArena = x >= L.arena.x && x <= L.arena.x + L.arena.w && y >= L.arena.y && y <= L.arena.y + L.arena.h;
@@ -3383,6 +3967,7 @@ for (const ev of ['touchstart', 'touchmove', 'touchend', 'gesturestart']) docume
 window.addEventListener('keydown', e => {
   keys[e.code] = true; audio();
   if (e.code === 'Escape' && overlay && overlay.kind === 'scroll') overlay = null;
+  if (e.code === 'Space' && state === 'play' && !overlay) { releaseHeld(); e.preventDefault(); }
   if ((e.code === 'KeyM' || e.code === 'Tab') && state === 'play' && !overlay) { overlay = { kind: 'scroll', t: 0 }; e.preventDefault(); }
 });
 window.addEventListener('keyup', e => { keys[e.code] = false; });
@@ -3406,16 +3991,17 @@ if (hot && hot.ready) hot.ready(boot); else boot(hot && hot.data || {});
 
 // ── for tests: start a way, write a move as a steady hand would, step time by hand ──
 window.INKDOJO = {
-  get state() { return state; }, get overlay() { return overlay; }, get fight() { return FIGHT; }, get player() { return player; }, get foes() { return FOES; }, get master() { return MASTERF; }, get student() { return STUDENTF; }, get save() { return save; },
+  get state() { return state; }, get overlay() { return overlay; }, get fight() { return FIGHT; }, get player() { return player; }, get foes() { return FOES; }, get npcs() { return NPCS; }, get save() { return save; },
+  get scene() { return SCENE; }, get held() { return HELD; }, Q, goal, enterScene, talkNext, afterLearn, afterFall, releaseHeld, whitesBeaten, fighters,
   begin(way) { beginGame(way); }, cont() { save = loadSave(); continueGame(); },
-  write(key, o = {}) { const m = MOVES[save.way].find(m => m.key === key); return padJudge(writeOut(m, { wobble: 0.01, ...o })); },
+  write(key, o = {}) { const m = MOVES[save.way].find(m => m.key === key); let s = writeOut(m, { wobble: 0.01, ...o }); if (o.curl) s = withCurl(s); return padJudge(s); },
   // cast any spell straight away, as anyone, at a given strength (for looking at spells)
   castAs(who, id, P = 1) { const f = who === 'foe' ? FIGHT && FIGHT.foe : player, [way, key] = id.split(':'), m = MOVES[way].find(m => m.key === key); if (!f || !m) return false; f.ki = Math.max(f.ki, m.cost); if (!startMove(f, m, P, foeOf(f))) return false; f.act.t = 0; return true; },
   manual(on) { MANUAL = on; }, step(n = 1, dt = 1 / 60) { for (let i = 0; i < n; i++) update(dt); },
   tapOverlay() { const b = buttons[buttons.length - 1]; if (b) b.go(); }, close() { overlay = null; },
   teleport(x, y) { player.x = x; player.y = y; updateCam(0, true); },
   koFoe() { if (FIGHT && FIGHT.on) knockedOut(FIGHT.foe, player); }, koMe() { if (FIGHT && FIGHT.on) knockedOut(player, FIGHT.foe); },
-  get tilt() { return TILT; }, tiltBubble,
+  get tilt() { return TILT; }, tiltBubble, heldBtn,
   // a bot plays you: it walks as a fighter would and writes the spell a fighter would pick, by hand (so not always neatly)
   // the player played by a fighter's mind too, so two ways can be weighed against each other on equal terms
   dmgLog(on) { if (on) DMGLOG = {}; const L = DMGLOG; if (!on) DMGLOG = null; return L; },
@@ -3429,7 +4015,7 @@ window.INKDOJO = {
     const R = padJudge(writeOut(c.move, { wobble: wobble ?? (0.008 + Math.random() * 0.03), seed: Math.random() * 9 }));
     return R && R.verdict !== 'fizzle' ? c.move.key : 'fizzle';
   },
-  INK, ROSTER, MOVES, RANKS, WAYMOD, ADV, HALL, YOU, skillAt, tierNow, learnedCount, myMoves, padJudge, startFight, setSound, spawnMaster, setupWorld, resetFighter,
+  INK, ROSTER, MOVES, RANKS, WAYMOD, ADV, HALL, YOU, skillAt, skillFor, learnedCount, myMoves, padJudge, startFight, setSound, setupWorld, resetFighter,
   get shots() { return SHOTS; }, get waves() { return WAVES; }, get zones() { return ZONES; }, get ents() { return ENTS; }, get stones() { return STONES; }, get fx() { return FX; },
 };
 })();
