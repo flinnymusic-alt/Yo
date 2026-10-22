@@ -1,0 +1,493 @@
+<title>Free Fruit Finder</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Atkinson+Hyperlegible:wght@400;700&display=swap">
+<style>
+/* Layout: field-guide index. A header strip, filter row, then a grid of tree
+   cards like specimen labels; tapping one opens its record sheet. */
+:root {
+  --bg: #f2f4ec;
+  --surface: #ffffff;
+  --ink: #1c2a1f;
+  --muted: #5d6b5f;
+  --line: #d6dccd;
+  --leaf: #2d6a3c;
+  --leaf-ink: #ffffff;
+  --plum: #7d2a57;
+  --ripe: #e8a317;
+  --ripe-bg: #fff3d6;
+  --ripe-ink: #6b4600;
+  --bare-bg: #e8ebe4;
+  --bare-ink: #4a554c;
+  --shade: rgba(20, 30, 22, .55);
+  --display: "Bricolage Grotesque", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  --body: "Atkinson Hyperlegible", "Segoe UI", system-ui, sans-serif;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #121a14; --surface: #1b251d; --ink: #e6ede4; --muted: #9aaa9c; --line: #2e3b30;
+  --leaf: #5fae6f; --leaf-ink: #0d1a10; --plum: #e08bb8; --ripe: #f2b93b;
+  --ripe-bg: #3a2c0c; --ripe-ink: #ffd889; --bare-bg: #263027; --bare-ink: #b5c2b6;
+  --shade: rgba(0, 0, 0, .7); color-scheme: dark; } }
+:root[data-theme="dark"] {
+  --bg: #121a14; --surface: #1b251d; --ink: #e6ede4; --muted: #9aaa9c; --line: #2e3b30;
+  --leaf: #5fae6f; --leaf-ink: #0d1a10; --plum: #e08bb8; --ripe: #f2b93b;
+  --ripe-bg: #3a2c0c; --ripe-ink: #ffd889; --bare-bg: #263027; --bare-ink: #b5c2b6;
+  --shade: rgba(0, 0, 0, .7); color-scheme: dark; }
+
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font: 16px/1.5 var(--body); }
+.wrap { max-width: 1120px; margin: 0 auto;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+h1, h2, h3 { font-family: var(--display); line-height: 1.1; text-wrap: balance; margin: 0; }
+button, input, select, textarea { font: inherit; color: inherit; }
+:focus-visible { outline: 3px solid var(--ripe); outline-offset: 2px; }
+
+header { padding-block: 28px 18px; display: flex; flex-wrap: wrap; gap: 16px; align-items: end; justify-content: space-between; }
+header h1 { font-size: clamp(2rem, 6vw, 3.2rem); font-weight: 800; letter-spacing: -.02em; }
+header h1 span { color: var(--leaf); }
+header p { margin: 6px 0 0; color: var(--muted); max-width: 52ch; }
+.btn { border: 0; border-radius: 999px; padding: 11px 20px; font-weight: 700; cursor: pointer;
+  background: var(--leaf); color: var(--leaf-ink); display: inline-flex; gap: 8px; align-items: center; }
+.btn:hover { filter: brightness(1.08); }
+.btn.ghost { background: transparent; color: var(--ink); border: 1.5px solid var(--line); }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+
+.filters { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding-block: 6px 18px; border-top: 1.5px solid var(--ink); padding-top: 16px; }
+.filters input[type=search] { flex: 1 1 220px; min-width: 0; padding: 10px 14px; border-radius: 10px; border: 1.5px solid var(--line); background: var(--surface); }
+.seg { display: inline-flex; border: 1.5px solid var(--line); border-radius: 999px; overflow: hidden; background: var(--surface); }
+.seg button { border: 0; background: transparent; padding: 8px 14px; cursor: pointer; font-size: .9rem; }
+.seg button[aria-pressed=true] { background: var(--ink); color: var(--bg); }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; padding-bottom: 18px; }
+.chip { border: 1.5px solid var(--line); background: transparent; border-radius: 999px; padding: 4px 12px; font-size: .85rem; cursor: pointer; }
+.chip[aria-pressed=true] { border-color: var(--plum); color: var(--plum); font-weight: 700; }
+.count { color: var(--muted); font-size: .9rem; margin-left: auto; font-variant-numeric: tabular-nums; }
+
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 18px; padding-bottom: 48px; }
+.card { background: var(--surface); border: 1.5px solid var(--line); border-radius: 14px; overflow: hidden; cursor: pointer; text-align: left; padding: 0; display: flex; flex-direction: column; }
+.card:hover { border-color: var(--leaf); }
+.photo { aspect-ratio: 4 / 3; width: 100%; max-width: 100%; background: var(--bare-bg); object-fit: cover; display: block; }
+.ph { aspect-ratio: 4 / 3; width: 100%; display: grid; place-items: center; background: var(--bare-bg); color: var(--muted); font-size: .85rem; }
+.card .body { padding: 12px 14px 14px; display: grid; gap: 6px; min-width: 0; }
+.card h3 { font-size: 1.25rem; font-weight: 700; }
+.place { color: var(--muted); font-size: .9rem; overflow-wrap: anywhere; }
+.meta { display: flex; justify-content: space-between; gap: 8px; align-items: center; font-size: .82rem; color: var(--muted); }
+.status { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 2px 10px; font-size: .8rem; font-weight: 700; }
+.status::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+.status.yes { background: var(--ripe-bg); color: var(--ripe-ink); }
+.status.yes::before { background: var(--ripe); }
+.status.no { background: var(--bare-bg); color: var(--bare-ink); }
+
+.empty { border: 2px dashed var(--line); border-radius: 16px; padding: 40px 20px; text-align: center; color: var(--muted); grid-column: 1 / -1; }
+.empty h2 { color: var(--ink); font-size: 1.5rem; margin-bottom: 8px; }
+.empty p { max-width: 46ch; margin: 0 auto 18px; }
+
+/* Sheets (add form and tree record) */
+.overlay { position: fixed; inset: 0; background: var(--shade); z-index: 20; display: flex; justify-content: center; align-items: flex-start; overflow-y: auto;
+  padding: calc(24px + env(safe-area-inset-top, 0px)) max(12px, env(safe-area-inset-right, 0px)) calc(24px + env(safe-area-inset-bottom, 0px)) max(12px, env(safe-area-inset-left, 0px)); }
+.sheet { background: var(--surface); border-radius: 18px; width: 100%; max-width: 620px; overflow: hidden; }
+.sheet-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 16px 20px; border-bottom: 1.5px solid var(--line); }
+.sheet-head h2 { font-size: 1.4rem; }
+.x { border: 0; background: var(--bare-bg); width: 36px; height: 36px; border-radius: 50%; cursor: pointer; font-size: 1.2rem; line-height: 1; flex: none; }
+.sheet-body { padding: 18px 20px 22px; display: grid; gap: 16px; }
+label { display: grid; gap: 6px; font-weight: 700; font-size: .92rem; }
+label small, .hint { font-weight: 400; color: var(--muted); font-size: .84rem; }
+input[type=text], textarea, select { width: 100%; padding: 10px 12px; border-radius: 10px; border: 1.5px solid var(--line); background: var(--bg); }
+textarea { min-height: 84px; resize: vertical; }
+.row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media (max-width: 480px) { .row2 { grid-template-columns: 1fr; } }
+.drop { border: 2px dashed var(--line); border-radius: 12px; padding: 18px; text-align: center; cursor: pointer; color: var(--muted); display: grid; gap: 8px; }
+.drop img { border-radius: 8px; max-height: 260px; margin: 0 auto; }
+.radios { display: flex; gap: 10px; flex-wrap: wrap; }
+.radios label { display: flex; align-items: center; gap: 8px; font-weight: 400; border: 1.5px solid var(--line); border-radius: 999px; padding: 6px 14px; cursor: pointer; }
+.radios label:has(input:checked) { border-color: var(--leaf); font-weight: 700; }
+.err { color: var(--plum); font-weight: 700; margin: 0; }
+.gps { font-size: .84rem; color: var(--leaf); font-weight: 700; }
+
+.rec-photo { width: 100%; max-height: 420px; object-fit: cover; display: block; background: var(--bare-bg); }
+dl { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; margin: 0; }
+dt { color: var(--muted); font-size: .85rem; text-transform: uppercase; letter-spacing: .06em; padding-top: 2px; }
+dd { margin: 0; overflow-wrap: anywhere; }
+.notes { display: grid; gap: 10px; }
+.note { border-left: 3px solid var(--line); padding: 2px 0 2px 12px; }
+.note.yes { border-color: var(--ripe); }
+.note p { margin: 2px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.note .by { font-size: .8rem; color: var(--muted); }
+.section-label { font-family: var(--display); font-weight: 700; font-size: 1.1rem; border-top: 1.5px solid var(--line); padding-top: 14px; }
+.actions { display: flex; gap: 10px; flex-wrap: wrap; justify-content: space-between; align-items: center; }
+.linkish { color: var(--leaf); font-weight: 700; }
+.toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(20px + env(safe-area-inset-bottom, 0px)); background: var(--ink); color: var(--bg); padding: 10px 18px; border-radius: 999px; z-index: 40; font-weight: 700; }
+.notice { background: var(--ripe-bg); color: var(--ripe-ink); border-radius: 10px; padding: 10px 14px; font-size: .9rem; margin-bottom: 14px; }
+@media (prefers-reduced-motion: no-preference) { .card { transition: border-color .15s; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Free Fruit <span>Finder</span></h1>
+      <p>Fruit trees anyone can pick from, mapped by the people who walk past them. Post a tree, then leave notes on when it's ripe.</p>
+    </div>
+    <button class="btn" id="addBtn" type="button">+ Add a tree</button>
+  </header>
+
+  <div id="notice" class="notice" hidden></div>
+
+  <div class="filters">
+    <input type="search" id="q" placeholder="Search by place, street, park…" aria-label="Search trees">
+    <div class="seg" role="group" aria-label="Fruiting filter">
+      <button type="button" data-f="all" aria-pressed="true">All</button>
+      <button type="button" data-f="yes" aria-pressed="false">Fruiting now</button>
+      <button type="button" data-f="no" aria-pressed="false">Not fruiting</button>
+    </div>
+    <span class="count" id="count"></span>
+  </div>
+  <div class="chips" id="chips"></div>
+
+  <main class="grid" id="grid">
+    <div class="empty">
+      <h2>No trees yet</h2>
+      <p>Know a fig hanging over a sidewalk or a lemon tree in a park? Snap a photo and add it. If your phone saved the location in the photo, we'll fill it in for you.</p>
+      <button class="btn" type="button" data-add>+ Add the first tree</button>
+    </div>
+  </main>
+</div>
+
+<!-- Add tree sheet -->
+<div class="overlay" id="addSheet" hidden>
+  <form class="sheet" id="addForm" novalidate>
+    <div class="sheet-head"><h2>Add a fruit tree</h2><button class="x" type="button" data-close aria-label="Close">×</button></div>
+    <div class="sheet-body">
+      <div>
+        <div class="drop" id="drop" tabindex="0" role="button" aria-label="Choose a photo">
+          <img id="preview" alt="" hidden>
+          <span id="dropText"><b>Tap to add a photo</b><br><small>or drag one here</small></span>
+        </div>
+        <input type="file" id="file" accept="image/*" hidden>
+        <p class="gps" id="gpsMsg" hidden></p>
+      </div>
+      <label for="fruit">What kind of fruit?
+        <input type="text" id="fruit" list="fruitList" placeholder="e.g. Fig" autocomplete="off" required>
+      </label>
+      <datalist id="fruitList"></datalist>
+      <label for="place">Where is it? <small>Street, cross streets, park, landmark — enough for someone to find it.</small>
+        <input type="text" id="place" placeholder="e.g. Corner of Oak St & 5th, over the fence by the bus stop" required>
+      </label>
+      <label for="coords">Map coordinates <small>Optional. Filled from your photo when it has GPS, or paste "lat, long" from a maps app.</small>
+        <input type="text" id="coords" placeholder="37.7749, -122.4194" inputmode="decimal">
+      </label>
+      <div>
+        <div style="font-weight:700;font-size:.92rem;margin-bottom:6px">Is it fruiting right now?</div>
+        <div class="radios">
+          <label><input type="radio" name="st" value="yes"> Yes, fruit on it</label>
+          <label><input type="radio" name="st" value="no"> Not right now</label>
+        </div>
+      </div>
+      <label for="firstNote">First note <small>Optional. Ripeness, how to reach it, anything useful.</small>
+        <textarea id="firstNote" placeholder="Branches hang over the sidewalk. Ripe figs are soft and droopy."></textarea>
+      </label>
+      <p class="err" id="addErr" hidden></p>
+      <div class="actions">
+        <span class="hint">Only post trees that are public or that the owner shares.</span>
+        <button class="btn" id="saveTree" type="submit">Post tree</button>
+      </div>
+    </div>
+  </form>
+</div>
+
+<!-- Tree record sheet -->
+<div class="overlay" id="recSheet" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="recTitle">
+    <div class="sheet-head"><h2 id="recTitle"></h2><button class="x" type="button" data-close aria-label="Close">×</button></div>
+    <div id="recPhoto"></div>
+    <div class="sheet-body">
+      <dl id="recInfo"></dl>
+      <div class="section-label">Notes from pickers</div>
+      <div class="notes" id="recNotes"></div>
+      <form id="noteForm" class="sheet-body" style="padding:0" novalidate>
+        <label for="noteText">Add a note <small>When does it fruit? Is it ripe? Easy to reach?</small>
+          <textarea id="noteText" placeholder="Picked a bag of plums on July 20. Still lots left up high."></textarea>
+        </label>
+        <div>
+          <div style="font-weight:700;font-size:.92rem;margin-bottom:6px">Fruiting today?</div>
+          <div class="radios">
+            <label><input type="radio" name="nst" value="" checked> Didn't check</label>
+            <label><input type="radio" name="nst" value="yes"> Fruiting</label>
+            <label><input type="radio" name="nst" value="no"> Not fruiting</label>
+          </div>
+        </div>
+        <p class="err" id="noteErr" hidden></p>
+        <div class="actions">
+          <button class="btn ghost" type="button" id="delTree" hidden>Remove tree</button>
+          <button class="btn" type="submit" id="saveNote">Post note</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast" hidden></div>
+
+<script>
+(() => {
+  const FRUITS = ["Apple","Apricot","Avocado","Cherry","Fig","Feijoa","Grapefruit","Guava","Lemon","Lime","Loquat","Mandarin","Mango","Mulberry","Olive","Orange","Peach","Pear","Persimmon","Plum","Pomegranate","Quince","Walnut","Blackberry"];
+  const $ = (id) => document.getElementById(id);
+  const state = { trees: [], notes: [], filter: "all", fruit: null, q: "", open: null };
+  let db = null, assets = null, user = null, myId = null, names = {}, isEditor = false;
+  let photoBlob = null;
+
+  $("fruitList").innerHTML = FRUITS.map(f => `<option value="${f}">`).join("");
+
+  const esc = (s) => String(s ?? "").replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
+  const titleCase = (s) => s.trim().replace(/\s+/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+  const ago = (ms) => {
+    if (!ms) return "";
+    const d = Math.round((Date.now() - ms) / 86400000);
+    if (d < 1) return "today";
+    if (d === 1) return "yesterday";
+    if (d < 45) return d + " days ago";
+    return new Date(ms).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+  };
+  const toast = (msg) => { const t = $("toast"); t.textContent = msg; t.hidden = false; clearTimeout(toast.t); toast.t = setTimeout(() => t.hidden = true, 2400); };
+  const statusPill = (s, when) => s === "yes"
+    ? `<span class="status yes">Fruiting${when ? " · " + esc(ago(when)) : ""}</span>`
+    : `<span class="status no">Not fruiting${when ? " · " + esc(ago(when)) : ""}</span>`;
+  const photoHtml = (t, cls) => t.photoId
+    ? `<img class="${cls}" src="/_blob/${esc(t.photoId)}" alt="${esc(t.fruit)} tree" loading="lazy" onerror="this.outerHTML='<div class=&quot;ph&quot;>Photo not available</div>'">`
+    : `<div class="ph">No photo</div>`;
+  const mapsUrl = (t) => (typeof t.lat === "number" && typeof t.lng === "number")
+    ? `https://www.google.com/maps/search/?api=1&query=${t.lat},${t.lng}`
+    : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(t.place || "")}`;
+
+  // ---------- rendering ----------
+  function render() {
+    const trees = state.trees;
+    const kinds = [...new Set(trees.map(t => t.fruit))].sort();
+    $("chips").innerHTML = kinds.length > 1
+      ? kinds.map(k => `<button type="button" class="chip" data-fruit="${esc(k)}" aria-pressed="${state.fruit === k}">${esc(k)} <span style="opacity:.6">${trees.filter(t => t.fruit === k).length}</span></button>`).join("")
+      : "";
+    const q = state.q.toLowerCase();
+    const shown = trees.filter(t =>
+      (state.filter === "all" || t.status === state.filter) &&
+      (!state.fruit || t.fruit === state.fruit) &&
+      (!q || (t.place + " " + t.fruit).toLowerCase().includes(q)));
+    $("count").textContent = trees.length ? `${shown.length} of ${trees.length} trees` : "";
+    if (!trees.length) return; // keep the designed empty state
+    if (!shown.length) {
+      $("grid").innerHTML = `<div class="empty"><h2>No matches</h2><p>Try a different fruit or clear the search.</p></div>`;
+      return;
+    }
+    const nCount = {};
+    state.notes.forEach(n => nCount[n.treeId] = (nCount[n.treeId] || 0) + 1);
+    $("grid").innerHTML = shown.map(t => `
+      <button type="button" class="card" data-tree="${esc(t.id)}">
+        ${photoHtml(t, "photo")}
+        <div class="body">
+          <h3>${esc(t.fruit)}</h3>
+          <div class="place">${esc(t.place)}</div>
+          <div class="meta">${statusPill(t.status, t.statusAt)}<span>${nCount[t.id] || 0} note${nCount[t.id] === 1 ? "" : "s"}</span></div>
+        </div>
+      </button>`).join("");
+  }
+
+  async function resolveNames(ids) {
+    if (!user) return;
+    const need = ids.filter(id => id && !(id in names));
+    if (!need.length) return;
+    try {
+      const ps = await user.profiles(need);
+      need.forEach(id => names[id] = (ps[id] && ps[id].name) || "");
+    } catch (e) {}
+  }
+  const who = (id) => id && id === myId ? "you" : (names[id] || "Someone");
+
+  async function renderRecord() {
+    const t = state.trees.find(x => x.id === state.open);
+    if (!t) { closeSheet("recSheet"); return; }
+    const notes = state.notes.filter(n => n.treeId === t.id).sort((a, b) => b.createdAt - a.createdAt);
+    await resolveNames([t.createdBy, ...notes.map(n => n.createdBy)]);
+    $("recTitle").textContent = t.fruit + " tree";
+    const ph = $("recPhoto");
+    if (ph.dataset.tree !== t.id) { ph.dataset.tree = t.id; ph.innerHTML = photoHtml(t, "rec-photo"); }
+    const hasCoords = typeof t.lat === "number";
+    $("recInfo").innerHTML = `
+      <dt>Status</dt><dd>${statusPill(t.status, t.statusAt)}</dd>
+      <dt>Where</dt><dd>${esc(t.place)}<br><a class="linkish" href="${mapsUrl(t)}" target="_blank" rel="noopener">Open in Maps ↗</a>${hasCoords ? ` <span class="hint">${t.lat.toFixed(5)}, ${t.lng.toFixed(5)}</span>` : ""}</dd>
+      <dt>Posted</dt><dd>by ${esc(who(t.createdBy))}, ${esc(ago(t.createdAt))}</dd>`;
+    $("recNotes").innerHTML = notes.length ? notes.map(n => `
+      <div class="note ${n.status === "yes" ? "yes" : ""}">
+        <div class="by">${esc(who(n.createdBy))} · ${esc(ago(n.createdAt))}${n.status ? " · " + (n.status === "yes" ? "saw fruit" : "no fruit") : ""}</div>
+        ${n.text ? `<p>${esc(n.text)}</p>` : ""}
+      </div>`).join("") : `<p class="hint" style="margin:0">No notes yet. Be the first to say when it fruits.</p>`;
+    $("delTree").hidden = !(db && (t.createdBy === myId || isEditor));
+  }
+
+  // ---------- sheets ----------
+  function openSheet(id) { $(id).hidden = false; document.body.style.overflow = "hidden"; }
+  function closeSheet(id) { $(id).hidden = true; if ($("addSheet").hidden && $("recSheet").hidden) document.body.style.overflow = ""; if (id === "recSheet") state.open = null; }
+  document.querySelectorAll("[data-close]").forEach(b => b.addEventListener("click", () => closeSheet(b.closest(".overlay").id)));
+  document.querySelectorAll(".overlay").forEach(o => o.addEventListener("click", e => { if (e.target === o) closeSheet(o.id); }));
+  document.addEventListener("keydown", e => { if (e.key === "Escape") { closeSheet("addSheet"); closeSheet("recSheet"); } });
+
+  function openAdd() {
+    if (!db) { toast("Sign in to add trees"); return; }
+    $("addForm").reset(); photoBlob = null;
+    $("preview").hidden = true; $("dropText").hidden = false; $("gpsMsg").hidden = true; $("addErr").hidden = true;
+    $("drop").style.display = assets ? "" : "none";
+    openSheet("addSheet"); $("fruit").focus();
+  }
+  $("addBtn").addEventListener("click", openAdd);
+  document.addEventListener("click", e => {
+    if (e.target.closest("[data-add]")) openAdd();
+    const card = e.target.closest("[data-tree]");
+    if (card) { state.open = card.dataset.tree; $("noteForm").reset(); $("noteErr").hidden = true; $("recPhoto").dataset.tree = ""; renderRecord(); openSheet("recSheet"); }
+    const chip = e.target.closest("[data-fruit]");
+    if (chip) { state.fruit = state.fruit === chip.dataset.fruit ? null : chip.dataset.fruit; render(); }
+    const seg = e.target.closest("[data-f]");
+    if (seg) { state.filter = seg.dataset.f; document.querySelectorAll("[data-f]").forEach(b => b.setAttribute("aria-pressed", b === seg)); render(); }
+  });
+  $("q").addEventListener("input", e => { state.q = e.target.value.trim(); render(); });
+
+  // ---------- photo: EXIF GPS + downscale ----------
+  function readGps(buf) {
+    try {
+      const v = new DataView(buf);
+      if (v.getUint16(0) !== 0xFFD8) return null;
+      let off = 2;
+      while (off + 4 < v.byteLength) {
+        const marker = v.getUint16(off), size = v.getUint16(off + 2);
+        if (marker === 0xFFE1 && v.getUint32(off + 4) === 0x45786966) {
+          const t = off + 10, le = v.getUint16(t) === 0x4949;
+          const u16 = o => v.getUint16(t + o, le), u32 = o => v.getUint32(t + o, le);
+          const ifd0 = u32(4); let gpsOff = 0;
+          for (let i = 0, n = u16(ifd0); i < n; i++) { const e = ifd0 + 2 + i * 12; if (u16(e) === 0x8825) gpsOff = u32(e + 8); }
+          if (!gpsOff) return null;
+          const g = {};
+          for (let i = 0, n = u16(gpsOff); i < n; i++) {
+            const e = gpsOff + 2 + i * 12, tag = u16(e);
+            if (tag === 1 || tag === 3) g[tag] = String.fromCharCode(v.getUint8(t + e + 8));
+            if (tag === 2 || tag === 4) { const p = u32(e + 8); const r = k => u32(p + k * 8) / u32(p + k * 8 + 4); g[tag] = r(0) + r(1) / 60 + r(2) / 3600; }
+          }
+          if (g[2] == null || g[4] == null || !isFinite(g[2]) || !isFinite(g[4])) return null;
+          return { lat: g[1] === "S" ? -g[2] : g[2], lng: g[3] === "W" ? -g[4] : g[4] };
+        }
+        if ((marker & 0xFF00) !== 0xFF00) break;
+        off += 2 + size;
+      }
+    } catch (e) {}
+    return null;
+  }
+  async function shrink(file) {
+    const url = URL.createObjectURL(file);
+    try {
+      const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = url; });
+      const s = Math.min(1, 1600 / Math.max(img.naturalWidth, img.naturalHeight));
+      const c = document.createElement("canvas");
+      c.width = Math.round(img.naturalWidth * s); c.height = Math.round(img.naturalHeight * s);
+      c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+      return await new Promise(res => c.toBlob(res, "image/jpeg", 0.85));
+    } finally { URL.revokeObjectURL(url); }
+  }
+  async function takePhoto(file) {
+    if (!file || !file.type.startsWith("image/")) return;
+    $("dropText").innerHTML = "Preparing photo…";
+    const gps = readGps(await file.arrayBuffer());
+    try { photoBlob = await shrink(file); } catch (e) { photoBlob = null; }
+    if (!photoBlob) { $("dropText").innerHTML = "<b>That photo couldn't be read.</b><br><small>Try a JPG or PNG.</small>"; return; }
+    $("preview").src = URL.createObjectURL(photoBlob); $("preview").hidden = false;
+    $("dropText").innerHTML = "<small>Tap to change photo</small>";
+    if (gps) {
+      $("coords").value = gps.lat.toFixed(6) + ", " + gps.lng.toFixed(6);
+      $("gpsMsg").textContent = "Location found in your photo and filled in below."; $("gpsMsg").hidden = false;
+    } else { $("gpsMsg").hidden = true; }
+  }
+  $("drop").addEventListener("click", () => $("file").click());
+  $("drop").addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); $("file").click(); } });
+  $("file").addEventListener("change", e => takePhoto(e.target.files[0]));
+  $("drop").addEventListener("dragover", e => e.preventDefault());
+  $("drop").addEventListener("drop", e => { e.preventDefault(); takePhoto(e.dataTransfer.files[0]); });
+
+  function parseCoords(s) {
+    const m = String(s).match(/(-?\d{1,3}(?:\.\d+)?)\s*[, ]\s*(-?\d{1,3}(?:\.\d+)?)/);
+    if (!m) return null;
+    const lat = +m[1], lng = +m[2];
+    return Math.abs(lat) <= 90 && Math.abs(lng) <= 180 ? { lat, lng } : null;
+  }
+
+  // ---------- writes ----------
+  $("addForm").addEventListener("submit", async e => {
+    e.preventDefault();
+    const err = (m) => { $("addErr").textContent = m; $("addErr").hidden = false; };
+    const fruit = titleCase($("fruit").value), place = $("place").value.trim();
+    const st = (document.querySelector("input[name=st]:checked") || {}).value;
+    const coordsRaw = $("coords").value.trim(), coords = coordsRaw ? parseCoords(coordsRaw) : null;
+    if (!fruit) return err("Add the kind of fruit.");
+    if (!place) return err("Describe where the tree is so people can find it.");
+    if (coordsRaw && !coords) return err("Coordinates should look like 37.7749, -122.4194. Or leave them blank.");
+    if (!st) return err("Say whether it's fruiting right now.");
+    $("saveTree").disabled = true; $("saveTree").textContent = "Posting…"; $("addErr").hidden = true;
+    try {
+      let photoId = null;
+      if (photoBlob && assets) photoId = (await assets.upload(photoBlob)).id;
+      const now = Date.now();
+      const tree = { fruit, place, status: st, statusAt: now, createdAt: now, createdBy: myId, photoId };
+      if (coords) { tree.lat = coords.lat; tree.lng = coords.lng; }
+      const ref = await db.collection("trees").add(tree);
+      const text = $("firstNote").value.trim();
+      if (text) await db.collection("notes").add({ treeId: ref.id, text, status: st, createdAt: now, createdBy: myId });
+      closeSheet("addSheet"); toast("Tree posted");
+    } catch (x) {
+      err(x && x.code === "permission_denied" ? "You have view-only access, so you can't post trees here." : "Couldn't post the tree. Check your connection and try again.");
+    } finally { $("saveTree").disabled = false; $("saveTree").textContent = "Post tree"; }
+  });
+
+  $("noteForm").addEventListener("submit", async e => {
+    e.preventDefault();
+    const err = (m) => { $("noteErr").textContent = m; $("noteErr").hidden = false; };
+    if (!db) return err("Sign in to add notes.");
+    const text = $("noteText").value.trim();
+    const st = (document.querySelector("input[name=nst]:checked") || {}).value || "";
+    if (!text && !st) return err("Write a note or say whether it's fruiting.");
+    const treeId = state.open;
+    $("saveNote").disabled = true; $("noteErr").hidden = true;
+    try {
+      const now = Date.now();
+      await db.collection("notes").add({ treeId, text, status: st, createdAt: now, createdBy: myId });
+      if (st) await db.doc("trees/" + treeId).update({ status: st, statusAt: now });
+      $("noteForm").reset(); toast("Note posted");
+    } catch (x) {
+      err(x && x.code === "permission_denied" ? "You have view-only access, so you can't post notes here." : "Couldn't post the note. Try again.");
+    } finally { $("saveNote").disabled = false; }
+  });
+
+  let armed = false;
+  $("delTree").addEventListener("click", async () => {
+    const b = $("delTree");
+    if (!armed) { armed = true; b.textContent = "Tap again to remove"; setTimeout(() => { armed = false; b.textContent = "Remove tree"; }, 3000); return; }
+    armed = false; b.textContent = "Remove tree";
+    const id = state.open, t = state.trees.find(x => x.id === id);
+    try {
+      await db.doc("trees/" + id).delete();
+      for (const n of state.notes.filter(n => n.treeId === id)) await db.doc("notes/" + n.id).delete().catch(() => {});
+      if (t && t.photoId && assets) assets.delete(t.photoId).catch(() => {});
+      closeSheet("recSheet"); toast("Tree removed");
+    } catch (x) { $("noteErr").textContent = "Couldn't remove this tree."; $("noteErr").hidden = false; }
+  });
+
+  // ---------- boot ----------
+  function showNotice(msg) { $("notice").textContent = msg; $("notice").hidden = false; }
+  (async () => {
+    if (!window.claude || !window.claude.use) { showNotice("Open this page on claude.ai to see and share trees."); return; }
+    [db, user, assets] = await Promise.all([claude.use("db"), claude.use("user"), claude.use("assets")]);
+    if (!db) { showNotice("Sign in to claude.ai to see and add trees."); $("addBtn").disabled = true; return; }
+    try { myId = user ? await user.id() : null; isEditor = user ? await user.canEdit() : false; } catch (e) {}
+    db.collection("trees").orderBy("createdAt", "desc").onSnapshot(s => {
+      state.trees = s.docs.map(d => ({ id: d.id, ...d.data() })).filter(t => t.fruit);
+      render(); if (state.open) renderRecord();
+    }, () => showNotice("Lost connection to the tree list. Reload to try again."));
+    db.collection("notes").onSnapshot(s => {
+      state.notes = s.docs.map(d => ({ id: d.id, ...d.data() }));
+      render(); if (state.open) renderRecord();
+    });
+  })();
+})();
+</script>
