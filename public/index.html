@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Free Fruit Finder</title>
+  <meta name="description" content="A shared map of free fruit trees anyone can pick from. Drop a pin, add a photo, and leave notes on when it's ripe.">
+  <meta name="theme-color" content="#2d6a3c">
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700;12..96,800&family=Atkinson+Hyperlegible:wght@400;700&display=swap">
+  <link rel="stylesheet" href="/vendor/leaflet/leaflet.css">
+  <link rel="stylesheet" href="/vendor/leaflet/MarkerCluster.css">
+  <link rel="stylesheet" href="/vendor/leaflet/MarkerCluster.Default.css">
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+  <header class="top">
+    <h1>Free Fruit <span>Finder</span></h1>
+    <button class="btn" id="addBtn" type="button">+ Add a tree</button>
+  </header>
+
+  <div class="toolbar" role="search">
+    <label class="field"><span class="sr">City</span>
+      <select id="citySel"><option value="">All cities</option></select>
+    </label>
+    <label class="field"><span class="sr">Fruit</span>
+      <select id="fruitSel"><option value="">All fruit</option></select>
+    </label>
+    <div class="seg" role="group" aria-label="Fruiting filter">
+      <button type="button" data-status="" aria-pressed="true">All</button>
+      <button type="button" data-status="yes" aria-pressed="false">Fruiting now</button>
+    </div>
+    <input type="search" id="search" placeholder="Search street, park…" aria-label="Search trees">
+  </div>
+
+  <div id="banner" class="banner" hidden></div>
+
+  <main class="layout">
+    <section class="map-wrap" aria-label="Map of trees">
+      <div id="map"></div>
+      <button type="button" class="map-btn" id="locateBtn" aria-label="Show my location">◎ Near me</button>
+    </section>
+    <section class="list-wrap" aria-label="Trees in view">
+      <div class="list-head"><h2 id="listTitle">Trees in view</h2><span id="listCount" class="muted"></span></div>
+      <div id="list" class="list">
+        <p class="muted">Loading trees…</p>
+      </div>
+    </section>
+  </main>
+
+  <!-- Add a tree -->
+  <div class="overlay" id="addSheet" hidden>
+    <form class="sheet" id="addForm" novalidate aria-labelledby="addTitle">
+      <div class="sheet-head"><h2 id="addTitle">Add a fruit tree</h2><button class="x" type="button" data-close aria-label="Close">×</button></div>
+      <div class="sheet-body">
+        <div class="step">
+          <div class="step-label">1. Photo <span class="muted">(recommended)</span></div>
+          <button type="button" class="drop" id="drop">
+            <img id="preview" alt="Selected photo" hidden>
+            <span id="dropText"><b>Take or choose a photo</b><br><small>If it has location data, we'll place the pin for you.</small></span>
+          </button>
+          <input type="file" id="file" accept="image/*" hidden>
+        </div>
+
+        <div class="step">
+          <div class="step-label">2. Where is it?</div>
+          <div class="pin-tools">
+            <button type="button" class="btn ghost small" id="useLoc">◎ Use my location</button>
+            <span class="muted small">or tap the map / drag the pin</span>
+          </div>
+          <div id="pickMap" class="pick-map"></div>
+          <p id="pinMsg" class="small muted">No pin yet.</p>
+          <label for="city">City <small>Filled in from the pin. Fix it if it's wrong.</small>
+            <input type="text" id="city" maxlength="80" autocomplete="address-level2" placeholder="e.g. Oakland, California">
+          </label>
+          <label for="place">How to find it <small>Street, cross streets, landmark.</small>
+            <input type="text" id="place" maxlength="200" placeholder="e.g. Over the fence on 5th St, by the bus stop">
+          </label>
+        </div>
+
+        <div class="step">
+          <div class="step-label">3. The tree</div>
+          <label for="fruit">Kind of fruit
+            <input type="text" id="fruit" list="fruitList" maxlength="40" autocomplete="off" placeholder="e.g. Fig">
+          </label>
+          <datalist id="fruitList"></datalist>
+          <fieldset class="radios">
+            <legend>Is it fruiting right now?</legend>
+            <label><input type="radio" name="status" value="yes"> Yes, fruit on it</label>
+            <label><input type="radio" name="status" value="no"> Not right now</label>
+          </fieldset>
+          <label for="firstNote">First note <small>Optional. Ripeness, access, tips.</small>
+            <textarea id="firstNote" maxlength="1000" placeholder="Ripe figs are soft and droopy. Branches hang over the sidewalk."></textarea>
+          </label>
+          <label for="addName">Your name <small>Optional. Shown on your note.</small>
+            <input type="text" id="addName" maxlength="40" autocomplete="nickname">
+          </label>
+          <input type="text" name="website" id="website" class="hp" tabindex="-1" autocomplete="off" aria-hidden="true">
+        </div>
+
+        <p class="err" id="addErr" role="alert" hidden></p>
+        <div class="actions">
+          <span class="small muted">Only post trees on public land, or that the owner is happy to share.</span>
+          <button class="btn" id="saveTree" type="submit">Post tree</button>
+        </div>
+      </div>
+    </form>
+  </div>
+
+  <!-- Tree details -->
+  <div class="overlay" id="treeSheet" hidden>
+    <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="treeTitle">
+      <div class="sheet-head"><h2 id="treeTitle"></h2><button class="x" type="button" data-close aria-label="Close">×</button></div>
+      <div id="treePhoto"></div>
+      <div class="sheet-body">
+        <div id="treeInfo" class="info"></div>
+        <div class="link-row">
+          <a class="btn" id="dirLink" target="_blank" rel="noopener">Directions in Google Maps ↗</a>
+          <button type="button" class="btn ghost" id="shareBtn">Copy link</button>
+        </div>
+        <h3 class="section-label">Notes from pickers</h3>
+        <div id="notes" class="notes"></div>
+        <form id="noteForm" class="note-form" novalidate>
+          <label for="noteText">Add a note <small>When does it fruit? Is it ripe? Easy to reach?</small>
+            <textarea id="noteText" maxlength="1000" placeholder="Picked a bag of plums on July 20. Plenty left up high."></textarea>
+          </label>
+          <fieldset class="radios">
+            <legend>Fruiting today?</legend>
+            <label><input type="radio" name="nstatus" value="" checked> Didn't check</label>
+            <label><input type="radio" name="nstatus" value="yes"> Fruiting</label>
+            <label><input type="radio" name="nstatus" value="no"> Not fruiting</label>
+          </fieldset>
+          <label for="noteName">Your name <small>Optional</small>
+            <input type="text" id="noteName" maxlength="40" autocomplete="nickname">
+          </label>
+          <p class="err" id="noteErr" role="alert" hidden></p>
+          <div class="actions">
+            <button class="btn ghost danger" type="button" id="delTree" hidden>Remove tree</button>
+            <button class="btn" type="submit" id="saveNote">Post note</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast" role="status" hidden></div>
+
+  <script src="/vendor/leaflet/leaflet.js"></script>
+  <script src="/vendor/leaflet/leaflet.markercluster.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>

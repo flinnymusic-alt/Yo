@@ -1,0 +1,17 @@
+{
+  "name": "free-fruit-finder",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A shared map of free fruit trees anyone can pick from.",
+  "type": "module",
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node --test test/*.test.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@netlify/blobs": "10.0.11"
+  }
+}
