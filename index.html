@@ -1,0 +1,648 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="Clickable concept: filter the Following feed to friends only and build friend groups by drag and drop.">
+<style>:root{color-scheme:light;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)} body{margin:0} img{max-width:100%} [hidden]{display:none!important}</style>
+<title>Friend Groups Feed</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Figtree:wght@400;500;600;700;800&display=swap">
+<style>
+/* Layout: an interactive phone prototype on the left, a short design brief beside it (stacks under it on narrow screens). */
+:root {
+  --bg: #e8eaee; --fg: #16171a; --muted: #585c66; --line: #d0d3d9; --panel: #f6f7f9;
+  --accent: #f0952a;
+  /* the app itself is always dark, matching the product */
+  --app-bg: #0e0e10; --app-card: #1b1b1f; --app-raise: #26262b; --app-line: #2c2c31;
+  --app-text: #f3f3f5; --app-muted: #9b9ba4; --app-accent: #f59a2c; --app-accent-ink: #1a1206;
+  --font-display: "Bricolage Grotesque", "Figtree", system-ui, sans-serif;
+  --font-ui: "Figtree", system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #111215; --fg: #ececef; --muted: #9a9ea8; --line: #2a2c31; --panel: #18191d; --accent: #f5a043; color-scheme: dark } }
+:root[data-theme="dark"] { --bg: #111215; --fg: #ececef; --muted: #9a9ea8; --line: #2a2c31; --panel: #18191d; --accent: #f5a043; color-scheme: dark }
+
+* { box-sizing: border-box }
+body { background: var(--bg); color: var(--fg); font-family: var(--font-ui); font-size: 15px; line-height: 1.5;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 32px; }
+button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; padding: 0 }
+button:focus-visible, input:focus-visible { outline: 2px solid var(--app-accent); outline-offset: 2px }
+
+.stage { display: grid; grid-template-columns: 392px minmax(0, 400px); gap: 56px; justify-content: center; align-items: start; max-width: 1000px; margin: 0 auto }
+@media (max-width: 860px) { .stage { grid-template-columns: minmax(0, 420px); gap: 36px } }
+
+/* ---------- Phone ---------- */
+.phone { width: 100%; max-width: 392px; height: min(820px, 86dvh); min-height: 560px; border-radius: 44px; padding: 10px; background: #000;
+  box-shadow: 0 0 0 1px #3a3a40, 0 30px 60px -20px rgba(0,0,0,.45); margin: 0 auto }
+.screen { position: relative; height: 100%; border-radius: 35px; overflow: hidden; background: var(--app-bg); color: var(--app-text); font-family: var(--font-ui) }
+.scroll { position: absolute; inset: 0; overflow-y: auto; padding-bottom: 96px; scrollbar-width: none }
+.scroll::-webkit-scrollbar { display: none }
+.status { display: flex; justify-content: space-between; align-items: center; padding: 14px 26px 4px; font-weight: 700; font-size: 15px }
+.status span:last-child { font-size: 12px; letter-spacing: .02em; color: var(--app-text) }
+.topbar { display: flex; align-items: center; justify-content: space-between; padding: 8px 18px 10px }
+.topbar h1 { margin: 0; font-family: var(--font-display); font-weight: 700; font-size: 26px; letter-spacing: -.01em }
+.topbar .icons { display: flex; gap: 14px; align-items: center }
+.icon-btn { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 50% }
+.icon-btn svg { width: 22px; height: 22px; stroke: var(--app-text); fill: none; stroke-width: 1.8 }
+.me { width: 32px; height: 32px; border-radius: 50%; background: #7fd8c0; color: #fff; display: grid; place-items: center; font-size: 13px; font-weight: 600 }
+
+/* filter chips */
+.chips-wrap { position: sticky; top: 0; z-index: 5; background: var(--app-bg); border-bottom: 1px solid var(--app-line) }
+.chips { display: flex; gap: 8px; overflow-x: auto; padding: 8px 18px 12px; scrollbar-width: none }
+.chips::-webkit-scrollbar { display: none }
+.chip { flex: none; display: inline-flex; align-items: center; gap: 7px; height: 34px; padding: 0 14px; border-radius: 17px; background: var(--app-raise); font-weight: 600; font-size: 14px; white-space: nowrap; transition: background .15s, color .15s, transform .15s }
+.chip:hover { background: #303036 }
+.chip.on { background: var(--app-text); color: var(--app-bg) }
+.chip .dot { width: 9px; height: 9px; border-radius: 50% }
+.chip .n { min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--app-accent); color: var(--app-accent-ink); font-size: 11px; font-weight: 800; display: grid; place-items: center }
+.chip.add { background: transparent; border: 1.5px dashed #4a4a52; color: var(--app-muted) }
+.chip.add:hover { color: var(--app-text); border-color: var(--app-muted) }
+.chip-sep { flex: none; width: 1px; background: var(--app-line); margin: 6px 2px }
+
+.strip { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 18px 4px; font-size: 13px; color: var(--app-muted); min-height: 40px }
+.strip b { color: var(--app-text); font-weight: 700 }
+.strip .act { color: var(--app-accent); font-weight: 700; white-space: nowrap }
+
+/* stories */
+.stories { display: flex; gap: 14px; overflow-x: auto; padding: 10px 18px 16px; scrollbar-width: none }
+.stories::-webkit-scrollbar { display: none }
+.story { flex: none; width: 66px; display: flex; flex-direction: column; align-items: center; gap: 6px; font-size: 12px; color: var(--app-text) }
+.story .name { width: 100%; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.ring { position: relative; padding: 2.5px; border-radius: 50%; background: var(--app-line) }
+.ring.new { background: conic-gradient(from 200deg, #ffc15a, var(--app-accent), #f2624b, #ffc15a) }
+.ring .av { border: 2.5px solid var(--app-bg) }
+.story.sel .name { color: var(--app-accent); font-weight: 700 }
+
+.av { border-radius: 50%; display: grid; place-items: center; color: #fff; font-weight: 700; flex: none; position: relative; text-shadow: 0 1px 2px rgba(0,0,0,.25) }
+.av.sq { border-radius: 30% }
+.badge { position: absolute; right: -2px; bottom: -2px; width: 17px; height: 17px; border-radius: 50%; background: #3d8bff; border: 2px solid var(--app-bg); display: grid; place-items: center }
+.badge svg { width: 9px; height: 9px; stroke: #fff; stroke-width: 3.2; fill: none }
+
+/* feed */
+.feed { display: flex; flex-direction: column; gap: 8px; background: #1e1e22 }
+.post { background: var(--app-bg); padding: 16px 18px 6px }
+.post-head { display: flex; align-items: center; gap: 12px }
+.post-head .who { flex: 1; min-width: 0 }
+.post-head .nm { font-weight: 700; font-size: 16px; display: flex; align-items: center; gap: 6px }
+.post-head .nm .tag { font-size: 10.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--app-muted); border: 1px solid #3a3a41; border-radius: 4px; padding: 0 5px; line-height: 16px }
+.post-head .meta { font-size: 13px; color: var(--app-muted) }
+.more { width: 32px; height: 32px; display: grid; place-items: center; border-radius: 50% }
+.more:hover { background: var(--app-raise) }
+.more svg { width: 18px; height: 18px; fill: var(--app-text) }
+.body-text { margin: 12px 0 2px; font-size: 15.5px; line-height: 1.45 }
+.media { margin-top: 12px; border-radius: 12px; overflow: hidden; background: var(--app-card) }
+.thumb { position: relative; aspect-ratio: 16/9; max-width: 100%; display: flex; align-items: flex-end; padding: 12px }
+.thumb.photo { aspect-ratio: 4/3 }
+.thumb .big { font-family: var(--font-display); font-weight: 700; font-size: 25px; line-height: 1; text-transform: uppercase; color: #ffe14a; text-shadow: 0 2px 0 rgba(0,0,0,.55); max-width: 80%; text-wrap: balance }
+.thumb .dur { position: absolute; right: 10px; bottom: 10px; font-size: 12px; font-weight: 700; background: rgba(0,0,0,.72); padding: 2px 6px; border-radius: 4px; font-variant-numeric: tabular-nums }
+.thumb .play { position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%); width: 50px; height: 50px; border-radius: 50%; background: rgba(0,0,0,.45); display: grid; place-items: center }
+.thumb .play svg { width: 20px; height: 20px; fill: #fff; margin-left: 3px }
+.caption { padding: 10px 14px 12px; font-size: 15px; font-weight: 500 }
+.caption small { display: block; color: var(--app-muted); font-size: 13px; font-weight: 400; margin-top: 2px }
+.actions { display: flex; justify-content: space-between; padding: 8px 0 4px }
+.actions button { display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 8px; border-radius: 18px; font-size: 13px; color: var(--app-muted); font-variant-numeric: tabular-nums }
+.actions button:hover { background: var(--app-raise) }
+.actions svg { width: 22px; height: 22px; stroke: var(--app-text); fill: none; stroke-width: 1.7 }
+.actions .liked svg { fill: var(--app-accent); stroke: var(--app-accent) }
+.actions .liked { color: var(--app-accent) }
+
+.empty { padding: 48px 32px; text-align: center; color: var(--app-muted) }
+.empty h3 { color: var(--app-text); font-size: 17px; margin: 0 0 6px }
+.empty button { margin-top: 16px; height: 40px; padding: 0 18px; border-radius: 20px; background: var(--app-accent); color: var(--app-accent-ink); font-weight: 700 }
+
+/* bottom nav */
+.nav { position: absolute; left: 12px; right: 12px; bottom: 12px; height: 70px; border-radius: 26px; background: rgba(24,24,28,.94); backdrop-filter: blur(10px); border: 1px solid var(--app-line); display: grid; grid-template-columns: repeat(5, 1fr); align-items: center; padding: 0 4px; z-index: 6 }
+.nav button { display: flex; flex-direction: column; align-items: center; gap: 3px; font-size: 11.5px; font-weight: 700; height: 58px; justify-content: center; border-radius: 20px }
+.nav svg { width: 23px; height: 23px; stroke: var(--app-text); fill: none; stroke-width: 1.7 }
+.nav .on { background: #2a2a30; color: var(--app-accent) }
+.nav .on svg { fill: var(--app-accent); stroke: var(--app-accent) }
+
+/* sheets */
+.scrim { position: absolute; inset: 0; background: rgba(0,0,0,.55); opacity: 0; pointer-events: none; transition: opacity .2s; z-index: 20 }
+.scrim.show { opacity: 1; pointer-events: auto }
+.sheet { position: absolute; left: 0; right: 0; bottom: 0; max-height: 88%; display: flex; flex-direction: column; background: #17171a; border-radius: 22px 22px 0 0; border-top: 1px solid var(--app-line); transform: translateY(105%); transition: transform .26s cubic-bezier(.2,.8,.2,1); z-index: 21 }
+.sheet.show { transform: none }
+.grab { width: 38px; height: 5px; border-radius: 3px; background: #44444b; margin: 8px auto 4px; flex: none }
+.sheet-head { display: flex; align-items: center; justify-content: space-between; padding: 6px 18px 12px; flex: none }
+.sheet-head h2 { margin: 0; font-size: 18px; font-weight: 800 }
+.sheet-head .x { color: var(--app-muted); font-weight: 600 }
+.sheet-body { overflow-y: auto; padding: 0 18px 18px; flex: 1; min-height: 0 }
+.sheet-foot { display: flex; gap: 10px; padding: 12px 18px 18px; border-top: 1px solid var(--app-line); flex: none }
+.btn { height: 46px; border-radius: 23px; padding: 0 18px; font-weight: 700; font-size: 15px }
+.btn.primary { flex: 1; background: var(--app-accent); color: var(--app-accent-ink) }
+.btn.primary:disabled { background: #3a3a40; color: #77777f; cursor: not-allowed }
+.btn.ghost { background: var(--app-raise) }
+.btn.danger { background: transparent; color: #ff7a6b }
+
+.field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px }
+.field label, .lbl { font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--app-muted) }
+.input { height: 46px; border-radius: 12px; background: var(--app-raise); border: 1px solid transparent; color: var(--app-text); padding: 0 14px; font: inherit; font-size: 16px; width: 100% }
+.input:focus { border-color: var(--app-accent); outline: none }
+.swatches { display: flex; gap: 10px }
+.sw { width: 30px; height: 30px; border-radius: 50%; border: 3px solid transparent }
+.sw.on { border-color: var(--app-text) }
+.seg { display: flex; background: var(--app-raise); border-radius: 10px; padding: 3px; margin: 4px 0 10px }
+.seg button { flex: 1; height: 32px; border-radius: 8px; font-size: 13px; font-weight: 700; color: var(--app-muted) }
+.seg button.on { background: #3a3a41; color: var(--app-text) }
+.row { display: flex; align-items: center; gap: 12px; padding: 9px 0; width: 100%; text-align: left }
+.row .txt { flex: 1; min-width: 0 }
+.row .t1 { font-weight: 600; font-size: 15px }
+.row .t2 { font-size: 12.5px; color: var(--app-muted) }
+.check { width: 24px; height: 24px; border-radius: 50%; border: 2px solid #55555d; display: grid; place-items: center; flex: none }
+.check svg { width: 13px; height: 13px; stroke: var(--app-accent-ink); stroke-width: 3.2; fill: none; opacity: 0 }
+.row.on .check { background: var(--app-accent); border-color: var(--app-accent) }
+.row.on .check svg { opacity: 1 }
+.picked { display: flex; gap: 6px; flex-wrap: wrap; min-height: 8px; margin-bottom: 8px }
+.pill { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px 0 4px; border-radius: 14px; background: var(--app-raise); font-size: 13px; font-weight: 600 }
+.menu-item { display: flex; align-items: center; gap: 12px; width: 100%; padding: 13px 0; font-size: 15px; font-weight: 600; text-align: left; border-bottom: 1px solid var(--app-line) }
+.menu-item:last-child { border-bottom: 0 }
+.menu-item .ico { width: 24px; height: 24px; display: grid; place-items: center }
+.menu-item .ico svg { width: 20px; height: 20px; stroke: var(--app-text); fill: none; stroke-width: 1.8 }
+.menu-item small { display: block; color: var(--app-muted); font-weight: 400; font-size: 12.5px }
+
+.toast { position: absolute; left: 50%; bottom: 96px; transform: translate(-50%, 20px); background: var(--app-text); color: var(--app-bg); padding: 10px 16px; border-radius: 12px; font-size: 13.5px; font-weight: 600; opacity: 0; transition: .2s; z-index: 30; white-space: nowrap; pointer-events: none }
+.toast.show { opacity: 1; transform: translate(-50%, 0) }
+
+/* ---------- Brief ---------- */
+.brief { padding-top: 12px }
+.eyebrow { font-size: 12px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--accent) }
+.brief h2 { font-family: var(--font-display); font-size: clamp(30px, 4vw, 40px); line-height: 1.05; letter-spacing: -.02em; margin: 8px 0 14px; text-wrap: balance }
+.brief p { color: var(--muted); margin: 0 0 14px; max-width: 60ch }
+.brief h3 { font-size: 13px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; margin: 28px 0 10px }
+.rules { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none }
+.rules li { display: grid; grid-template-columns: 86px 1fr; gap: 12px; padding: 12px 14px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; font-size: 14px }
+.rules li b { font-size: 13px }
+.rules li span { color: var(--muted) }
+.try { margin: 0; padding-left: 20px; color: var(--muted); display: grid; gap: 6px }
+.try b { color: var(--fg); font-weight: 600 }
+.reset { margin-top: 24px; font-size: 13px; color: var(--muted); text-decoration: underline; text-underline-offset: 3px }
+/* drag a person onto a group */
+[data-drag] { -webkit-touch-callout: none; user-select: none; -webkit-user-select: none; cursor: grab }
+.ghost { position: fixed; z-index: 1000; pointer-events: none; transform: translate(-50%, -70%) scale(1.08); display: flex; flex-direction: column; align-items: center; gap: 4px; font: 700 12px var(--font-ui); filter: drop-shadow(0 10px 18px rgba(0,0,0,.55)); transition: transform .12s }
+.ghost .tagname { background: var(--app-accent); color: var(--app-accent-ink); padding: 2px 9px; border-radius: 10px }
+.ghost.over { transform: translate(-50%, -70%) scale(.8) }
+.screen.dragging, .screen.dragging * { cursor: grabbing !important }
+.screen.dragging .chip:not([data-drop]), .screen.dragging .chip-sep { opacity: .3 }
+.screen.dragging .chip[data-drop] { box-shadow: inset 0 0 0 1.5px var(--app-accent) }
+.screen.dragging .chip.add { border-color: var(--app-accent); color: var(--app-accent); box-shadow: none }
+.chip.hot { background: var(--app-accent) !important; color: var(--app-accent-ink) !important; transform: scale(1.1) }
+.chip.hot .dot { background: var(--app-accent-ink) !important }
+.chip.pop { animation: pop .5s }
+@keyframes pop { 35% { transform: scale(1.16) } }
+.tray { position: absolute; left: 0; right: 0; bottom: 0; z-index: 8; background: #17171a; border-top: 1px solid var(--app-line); border-radius: 22px 22px 0 0; padding: 14px 16px 18px; transform: translateY(105%); transition: transform .2s cubic-bezier(.2,.8,.2,1); box-shadow: 0 -16px 30px rgba(0,0,0,.4) }
+.screen.dragging .tray { transform: none }
+.tray .lbl { display: block; margin-bottom: 10px }
+.tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px }
+.tile { min-height: 64px; border-radius: 14px; background: var(--app-raise); display: flex; flex-direction: column; justify-content: center; gap: 4px; padding: 10px 12px; text-align: left; font-weight: 700; font-size: 14px; transition: transform .12s, background .12s; min-width: 0 }
+.tile .tn { display: flex; align-items: center; gap: 7px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.tile .dot { width: 10px; height: 10px; border-radius: 50%; flex: none }
+.tile small { font-size: 11.5px; font-weight: 500; color: var(--app-muted) }
+.tile.has small { color: var(--app-accent) }
+.tile.new { background: transparent; border: 1.5px dashed #55555d; color: var(--app-muted) }
+.tile.hot { background: var(--app-accent); color: var(--app-accent-ink); transform: scale(1.05) }
+.tile.hot small { color: var(--app-accent-ink) }
+.tile.hot .dot { background: var(--app-accent-ink) !important }
+.tile.remove { grid-column: 1 / -1; min-height: 58px; flex-direction: row; align-items: center; gap: 12px; background: #2a1715; border: 1.5px dashed #7a3a33; color: #ffb3a8 }
+.tile.remove svg { width: 22px; height: 22px; stroke: currentColor; fill: none; stroke-width: 1.8; flex: none }
+.tile.remove small { color: #d98b80 }
+.tile.remove.hot { background: #e5533f; border-color: #e5533f; color: #fff }
+.tile.remove.hot small { color: #ffe1dc }
+.toast.act { pointer-events: auto; display: flex; gap: 14px; align-items: center }
+.toast .undo { color: #c46a00; font-weight: 800 }
+.strip.hint { color: var(--app-accent); font-weight: 700 }
+.coach { margin: 10px 18px 0; padding: 10px 12px; border-radius: 12px; background: #2a2116; border: 1px solid #5a3f1c; color: #ffd9a8; font-size: 13px; display: flex; gap: 10px; align-items: center }
+.coach b { color: #fff }
+.coach button { margin-left: auto; color: #c9a47a; font-size: 20px; line-height: 1; padding: 0 4px }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important } }
+</style>
+</head>
+<body>
+
+<div class="stage">
+  <div class="phone">
+    <div class="screen" id="screen">
+      <div class="scroll" id="scroll">
+        <div class="status"><span>11:51</span><span>5G ▮ 72%</span></div>
+        <div class="topbar">
+          <h1>Following</h1>
+          <div class="icons">
+            <button class="icon-btn" aria-label="Search" data-toast="Search is outside this demo"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg></button>
+            <div class="me" aria-label="Your profile">F</div>
+          </div>
+        </div>
+        <div class="chips-wrap"><div class="chips" id="chips" role="tablist" aria-label="Feed filter"></div></div>
+        <div id="coach"></div>
+        <div class="strip" id="strip"></div>
+        <div class="stories" id="stories"></div>
+        <div class="feed" id="feed"></div>
+      </div>
+
+      <nav class="nav" aria-label="Main">
+        <button data-toast="Only the Following tab is in this demo"><svg viewBox="0 0 24 24"><path d="M4 11 12 4l8 7v9H4z"/></svg>Home</button>
+        <button data-toast="Only the Following tab is in this demo"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="m10 9 5 3-5 3z"/></svg>Shorts</button>
+        <button data-toast="Only the Following tab is in this demo"><svg viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="2"/><path d="M12 9v6M9 12h6"/></svg>Create</button>
+        <button class="on"><svg viewBox="0 0 24 24"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z"/></svg>Following</button>
+        <button data-toast="Only the Following tab is in this demo"><svg viewBox="0 0 24 24"><rect x="4" y="7" width="16" height="12" rx="2"/><path d="M8 4h8M10.5 11l4 2-4 2z"/></svg>Library</button>
+      </nav>
+
+      <div class="tray" id="tray" aria-hidden="true"></div>
+      <div class="scrim" id="scrim"></div>
+      <div class="sheet" id="sheet" role="dialog" aria-modal="true"></div>
+      <div class="toast" id="toast" role="status"></div>
+    </div>
+  </div>
+
+  <section class="brief">
+    <div class="eyebrow">Concept · Following tab</div>
+    <h2>Friend groups: a feed of just your people</h2>
+    <p>Right now the story row mixes close friends with news channels and public figures, and you can only filter by one account at a time. This concept adds a filter row above the feed so you can switch to all your friends, all creators, or a group you made yourself.</p>
+
+    <h3>How accounts get sorted</h3>
+    <ul class="rules">
+      <li><b>Friend</b><span>You follow each other. Mutual follows are a strong signal that it's someone you know.</span></li>
+      <li><b>Creator</b><span>Verified, or a channel with a large following that doesn't follow you back.</span></li>
+      <li><b>Override</b><span>Any post's menu lets you move someone between Friend and Creator, so a friend whose channel blew up stays a friend.</span></li>
+    </ul>
+
+    <h3>Try it</h3>
+    <ol class="try">
+      <li>Tap <b>Friends</b>. The seven creator channels disappear from the feed and the story row.</li>
+      <li><b>Drag</b> any picture or name (story row or a post) onto a group. Drop it on a chip at the top, or on a group in the tray that slides up from the bottom. On a phone, press and hold first. Adding someone copies them, so they stay in their other groups too.</li>
+      <li>Drag someone onto <b>+ New group</b> to start a group with them.</li>
+      <li>Open <b>Family</b> and drag someone out onto <b>Remove from Family</b>. Tap <b>Undo</b> if you change your mind. Drop them on another group instead to copy them there.</li>
+            <li>Tap <b>⋯</b> on any post to add that person to a group.</li>
+      <li>Tap an avatar in the story row to see one person, as the app works today.</li>
+    </ol>
+    <button class="reset" id="reset">Reset demo to starting groups</button>
+  </section>
+</div>
+
+<script>
+(() => {
+const people = [
+  { id: 'linda',  name: 'Linda Chen',     hue: 335, kind: 'friend', note: 'Mom' },
+  { id: 'david',  name: 'David Chen',     hue: 205, kind: 'friend', note: 'Dad' },
+  { id: 'amy',    name: 'Amy Chen',       hue: 280, kind: 'friend', note: 'Sister' },
+  { id: 'grace',  name: 'Grace Liu',      hue: 160, kind: 'friend' },
+  { id: 'tom',    name: 'Tom Reyes',      hue: 25,  kind: 'friend' },
+  { id: 'hannah', name: 'Hannah Park',    hue: 350, kind: 'friend' },
+  { id: 'jenna',  name: 'Jenna Ortiz',    hue: 45,  kind: 'friend' },
+  { id: 'marcus', name: 'Marcus Bell',    hue: 230, kind: 'friend' },
+  { id: 'kevin',  name: 'Kevin Wu',       hue: 120, kind: 'friend' },
+  { id: 'newton', name: 'Newton Ade',     hue: 15,  kind: 'friend' },
+  { id: 'mimi',   name: 'Mimi Santos',    hue: 310, kind: 'friend' },
+  { id: 'ben',    name: 'Ben Carter',     hue: 190, kind: 'friend' },
+  { id: 'daily',  name: 'Daily Brief',        hue: 212, kind: 'creator', followers: '2.1M' },
+  { id: 'chef',   name: "Chef Lin's Kitchen", hue: 8,   kind: 'creator', followers: '860K' },
+  { id: 'trails', name: 'Peak Trails',        hue: 140, kind: 'creator', followers: '1.4M' },
+  { id: 'market', name: 'Market Minute',      hue: 48,  kind: 'creator', followers: '3.2M' },
+  { id: 'sci',    name: 'The Science Hour',   hue: 262, kind: 'creator', followers: '990K' },
+  { id: 'laugh',  name: 'Laugh Lab',          hue: 325, kind: 'creator', followers: '2.7M' },
+  { id: 'strings',name: 'Studio Strings',     hue: 28,  kind: 'creator', followers: '410K' },
+];
+const byId = Object.fromEntries(people.map(p => [p.id, p]));
+const baseKind = Object.fromEntries(people.map(p => [p.id, p.kind]));
+
+const posts = [
+  { id: 1,  by: 'daily',  ago: 18,   type: 'video', big: 'Storm season starts early', title: 'What forecasters are watching this week', dur: '9:12', likes: 4210, cm: 388, hue: 212 },
+  { id: 2,  by: 'amy',    ago: 26,   type: 'photo', text: 'Dumpling night round two. Mom still folds them twice as fast as me.', likes: 14, cm: 5, hue: 20 },
+  { id: 3,  by: 'market', ago: 33,   type: 'video', big: 'Why rates still matter', title: 'Three charts that explain your mortgage', dur: '15:59', likes: 9802, cm: 1204, hue: 48 },
+  { id: 4,  by: 'marcus', ago: 51,   type: 'video', title: 'Garage jam: rough draft of the new song', dur: '3:42', likes: 22, cm: 9, hue: 230 },
+  { id: 5,  by: 'linda',  ago: 64,   type: 'text',  text: "Who's coming Sunday? I'm making the big pot of soup, so tell me by Friday.", likes: 8, cm: 11 },
+  { id: 6,  by: 'laugh',  ago: 80,   type: 'video', big: 'Office printer saga', title: 'Every office has this one printer', dur: '4:05', likes: 31200, cm: 2150, hue: 325 },
+  { id: 7,  by: 'grace',  ago: 95,   type: 'video', title: 'Five-minute warmup before Thursday rehearsal', dur: '5:10', likes: 17, cm: 4, hue: 160 },
+  { id: 8,  by: 'trails', ago: 130,  type: 'video', big: '14 miles, one ridge', title: 'The quietest trail in the Sierra', dur: '22:47', likes: 12800, cm: 640, hue: 140 },
+  { id: 9,  by: 'kevin',  ago: 160,  type: 'photo', text: 'New pedalboard is finally wired. Bring earplugs Saturday.', likes: 19, cm: 7, hue: 120 },
+  { id: 10, by: 'chef',   ago: 190,  type: 'video', big: 'Perfect scallion pancakes', title: 'Layers, every time: the folding trick', dur: '11:30', likes: 6400, cm: 512, hue: 8 },
+  { id: 11, by: 'tom',    ago: 240,  type: 'text',  text: 'Choir folks: we moved Thursday to 7:30 so the hall can set up. See you there.', likes: 12, cm: 3 },
+  { id: 12, by: 'newton', ago: 300,  type: 'photo', text: 'Night market with the crew. Best skewers in town, no debate.', likes: 41, cm: 12, hue: 285 },
+  { id: 13, by: 'sci',    ago: 360,  type: 'video', big: 'How bees vote', title: 'Swarms pick a new home by debating', dur: '13:04', likes: 8800, cm: 702, hue: 262 },
+  { id: 14, by: 'david',  ago: 420,  type: 'photo', text: 'Tomatoes came in early this year.', likes: 9, cm: 4, hue: 0 },
+  { id: 15, by: 'hannah', ago: 500,  type: 'video', title: 'Alto line for the new arrangement (slow)', dur: '2:58', likes: 11, cm: 2, hue: 350 },
+  { id: 16, by: 'strings',ago: 620,  type: 'video', big: 'Cello vs. subway', title: 'Bach suite at rush hour', dur: '6:21', likes: 5300, cm: 290, hue: 28 },
+  { id: 17, by: 'mimi',   ago: 900,  type: 'photo', text: 'Finished the quilt! Three winters of work.', likes: 37, cm: 15, hue: 310 },
+  { id: 18, by: 'ben',    ago: 1300, type: 'text',  text: 'Anyone have a spare snare stand I can borrow this weekend?', likes: 5, cm: 6 },
+  { id: 19, by: 'jenna',  ago: 1700, type: 'photo', text: 'Sunrise from the choir trip. Worth the 5am bus.', likes: 28, cm: 6, hue: 38 },
+  { id: 20, by: 'daily',  ago: 1900, type: 'video', big: 'The week in 6 minutes', title: 'Your Friday catch-up', dur: '6:00', likes: 3900, cm: 221, hue: 200 },
+];
+
+const COLORS = ['#f59a2c', '#ef5b7a', '#4fb0ff', '#3fcf8e', '#b58cff'];
+const seedGroups = () => [
+  { id: 'g1', name: 'Family',     color: '#ef5b7a', members: ['linda', 'david', 'amy'] },
+  { id: 'g2', name: 'Choir',      color: '#3fcf8e', members: ['grace', 'tom', 'hannah', 'jenna'] },
+  { id: 'g3', name: 'Band',       color: '#4fb0ff', members: ['marcus', 'kevin', 'ben', 'newton'] },
+];
+
+const KEY = 'friend-groups-demo-v1';
+let state = { filter: { type: 'all' }, groups: seedGroups(), liked: [], kinds: {} };
+try { const s = JSON.parse(localStorage.getItem(KEY)); if (s && Array.isArray(s.groups)) state = { ...state, ...s, filter: { type: 'all' } }; } catch (e) {}
+const save = () => { try { localStorage.setItem(KEY, JSON.stringify({ groups: state.groups, liked: state.liked, kinds: state.kinds, coachDone: state.coachDone })); } catch (e) {} };
+const kindOf = id => state.kinds[id] || baseKind[id];
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const initials = n => n.replace(/[^A-Za-z ]/g, '').split(' ').filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase();
+const ago = m => m < 60 ? `${m} minutes ago` : m < 1440 ? `${Math.round(m / 60)} hour${Math.round(m / 60) > 1 ? 's' : ''} ago` : `${Math.round(m / 1440)} day${Math.round(m / 1440) > 1 ? 's' : ''} ago`;
+const fmt = n => n >= 1000 ? (n / 1000).toFixed(n >= 10000 ? 0 : 1).replace('.0', '') + 'K' : n;
+const check = '<svg viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>';
+
+function avatar(p, size) {
+  const creator = kindOf(p.id) === 'creator';
+  return `<div class="av${creator ? ' sq' : ''}" style="width:${size}px;height:${size}px;font-size:${Math.round(size * .36)}px;background:linear-gradient(140deg,hsl(${p.hue} 65% 58%),hsl(${(p.hue + 40) % 360} 60% 38%))">${esc(initials(p.name))}${creator ? `<span class="badge">${check}</span>` : ''}</div>`;
+}
+
+function audience(f = state.filter) {
+  if (f.type === 'friends') return people.filter(p => kindOf(p.id) === 'friend').map(p => p.id);
+  if (f.type === 'creators') return people.filter(p => kindOf(p.id) === 'creator').map(p => p.id);
+  if (f.type === 'group') { const g = state.groups.find(g => g.id === f.id); return g ? g.members : []; }
+  if (f.type === 'person') return [f.id];
+  return people.map(p => p.id);
+}
+const fresh = ids => posts.filter(p => ids.includes(p.by) && p.ago < 1440).length;
+const same = (a, b) => a.type === b.type && a.id === b.id;
+
+function renderChips() {
+  const f = state.filter;
+  const base = [{ type: 'all', label: 'All' }, { type: 'friends', label: 'Friends' }, { type: 'creators', label: 'Creators' }];
+  let h = base.map(c => `<button class="chip${same(f, c) ? ' on' : ''}" role="tab" aria-selected="${same(f, c)}" data-f="${c.type}">${c.label}</button>`).join('');
+  h += '<span class="chip-sep" aria-hidden="true"></span>';
+  h += state.groups.map(g => {
+    const on = f.type === 'group' && f.id === g.id, n = fresh(g.members);
+    return `<button class="chip${on ? ' on' : ''}" role="tab" aria-selected="${on}" data-f="group" data-id="${g.id}" data-drop="${g.id}"><span class="dot" style="background:${g.color}"></span>${esc(g.name)}${n && !on ? `<span class="n">${n}</span>` : ''}</button>`;
+  }).join('');
+  h += `<button class="chip add" data-new data-drop="new">+ New group</button>`;
+  $('chips').innerHTML = h;
+}
+
+function renderStrip() {
+  const f = state.filter, ids = audience();
+  const nf = people.filter(p => kindOf(p.id) === 'friend').length, nc = people.length - nf;
+  let h = '';
+  if (f.type === 'all') h = `<span><b>Everyone you follow</b> · ${nf} friends, ${nc} creators</span>`;
+  if (f.type === 'friends') h = `<span><b>Friends only</b> · ${nc} creators hidden</span><button class="act" data-f="all">Show all</button>`;
+  if (f.type === 'creators') h = `<span><b>Creators</b> · channels and public accounts</span>`;
+  if (f.type === 'group') { const g = state.groups.find(g => g.id === f.id); h = `<span><b>${esc(g.name)}</b> · ${ids.length} ${ids.length === 1 ? 'person' : 'people'}</span><button class="act" data-edit="${g.id}">Edit group</button>`; }
+  if (f.type === 'person') h = `<span><b>${esc(byId[f.id].name)}</b> · their posts only</span><button class="act" data-back>Back to ${state.prev ? 'feed' : 'all'}</button>`;
+  $('strip').innerHTML = h;
+}
+
+function renderStories() {
+  const f = state.filter;
+  const ids = f.type === 'person' ? audience(state.prev || { type: 'all' }) : audience();
+  const list = ids.map(id => byId[id]).sort((a, b) => (fresh([b.id]) - fresh([a.id])));
+  $('stories').innerHTML = list.map(p => `
+    <button data-drag="${p.id}" class="story${f.type === 'person' && f.id === p.id ? ' sel' : ''}" data-person="${p.id}" aria-label="Show only ${esc(p.name)}">
+      <span class="ring${fresh([p.id]) ? ' new' : ''}">${avatar(p, 58)}</span>
+      <span class="name">${esc(p.note || (kindOf(p.id) === 'creator' ? p.name : p.name.split(' ')[0]))}</span>
+    </button>`).join('');
+  $('stories').hidden = !list.length;
+}
+
+function media(p) {
+  const art = `background:radial-gradient(120% 90% at 80% 10%,hsl(${p.hue} 70% 55% / .9),transparent 60%),radial-gradient(90% 80% at 10% 100%,hsl(${(p.hue + 50) % 360} 60% 30%),transparent 70%),linear-gradient(160deg,hsl(${p.hue} 40% 22%),hsl(${(p.hue + 20) % 360} 30% 10%))`;
+  if (p.type === 'video') return `<div class="media"><div class="thumb" style="${art}">${p.big ? `<div class="big">${esc(p.big)}</div>` : ''}<span class="play"><svg viewBox="0 0 24 24"><path d="M7 4l13 8-13 8z"/></svg></span><span class="dur">${p.dur}</span></div><div class="caption">${esc(p.title)}<small>${ago(p.ago)}</small></div></div>`;
+  if (p.type === 'photo') return `<div class="media"><div class="thumb photo" style="${art}"></div></div>`;
+  return '';
+}
+
+function renderFeed() {
+  const ids = audience();
+  const list = posts.filter(p => ids.includes(p.by)).sort((a, b) => a.ago - b.ago);
+  if (!list.length) {
+    const g = state.filter.type === 'group' && state.groups.find(g => g.id === state.filter.id);
+    $('feed').innerHTML = `<div class="empty"><h3>${g && !g.members.length ? 'This group is empty' : 'No posts yet'}</h3>${g ? 'Add people to start a feed for this group.' : 'Nothing new from these accounts.'}${g ? `<br><button data-edit="${g.id}">Add people</button>` : ''}</div>`;
+    return;
+  }
+  $('feed').innerHTML = list.map(p => {
+    const a = byId[p.by], liked = state.liked.includes(p.id), creator = kindOf(a.id) === 'creator';
+    return `<article class="post">
+      <div class="post-head"><span data-drag="${a.id}" style="display:flex">${avatar(a, 46)}</span>
+        <div class="who"><div class="nm"><span data-drag="${a.id}">${esc(a.name)}</span>${creator ? '<span class="tag">Creator</span>' : ''}</div><div class="meta">${ago(p.ago)} · ${creator ? 'Public' : 'Friends'}</div></div>
+        <button class="more" data-menu="${a.id}" aria-label="Options for ${esc(a.name)}"><svg viewBox="0 0 24 24"><circle cx="12" cy="5" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="12" cy="19" r="1.8"/></svg></button>
+      </div>
+      ${p.text ? `<p class="body-text">${esc(p.text)}</p>` : ''}${media(p)}
+      <div class="actions">
+        <button class="${liked ? 'liked' : ''}" data-like="${p.id}" aria-pressed="${liked}"><svg viewBox="0 0 24 24"><path d="M7 10v10H4V10zm0 0 4-7c1.5 0 2.5 1 2.2 2.6L12.6 9H19a2 2 0 0 1 2 2.3l-1.2 6.8A2 2 0 0 1 17.8 20H7"/></svg>${fmt(p.likes + (liked ? 1 : 0))}</button>
+        <button data-toast="Comments are outside this demo"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="13" rx="3"/><path d="M9 17v3l4-3M8 9h8M8 12.5h5"/></svg>${fmt(p.cm)}</button>
+        <button data-toast="Share is outside this demo"><svg viewBox="0 0 24 24"><path d="M14 5l7 6-7 6v-3.5c-5 0-8 1.5-10 5 .5-5 3-10 10-10.5z"/></svg>Share</button>
+        <button data-toast="Saved to Library"><svg viewBox="0 0 24 24"><path d="M7 4h10v16l-5-4-5 4z"/></svg></button>
+      </div>
+    </article>`;
+  }).join('');
+}
+
+function renderCoach() {
+  $('coach').innerHTML = state.coachDone ? '' : `<div class="coach"><span><b>New:</b> press and drag anyone's picture or name onto a group to add them. Inside a group, drag them out to remove.</span><button data-coach aria-label="Dismiss tip">×</button></div>`;
+}
+function render() { renderCoach(); renderChips(); renderStrip(); renderStories(); renderFeed(); }
+
+function setFilter(f) {
+  if (f.type === 'person') { if (state.filter.type !== 'person') state.prev = state.filter; }
+  else state.prev = null;
+  state.filter = f; render(); $('scroll').scrollTo({ top: 0, behavior: 'smooth' });
+  const chip = $('chips').querySelector('.on'); if (chip) chip.scrollIntoView({ inline: 'nearest', block: 'nearest' });
+}
+
+let toastT;
+function toast(msg, undo) {
+  const t = $('toast'); t.innerHTML = `<span>${esc(msg)}</span>` + (undo ? '<button class="undo">Undo</button>' : '');
+  t.classList.toggle('act', !!undo); t.classList.add('show');
+  if (undo) t.querySelector('.undo').onclick = e => { e.stopPropagation(); t.classList.remove('show', 'act'); undo(); };
+  clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show', 'act'), undo ? 4000 : 1800);
+}
+
+/* ---------- sheets ---------- */
+function openSheet(html) { $('sheet').innerHTML = '<div class="grab"></div>' + html; $('scrim').classList.add('show'); $('sheet').classList.add('show'); }
+function closeSheet() { $('scrim').classList.remove('show'); $('sheet').classList.remove('show'); draft = null; }
+$('scrim').onclick = closeSheet;
+
+let draft = null;
+function openEditor(groupId, preselect) {
+  const g = state.groups.find(g => g.id === groupId);
+  draft = { id: g ? g.id : null, name: g ? g.name : '', color: g ? g.color : COLORS[state.groups.length % COLORS.length], members: g ? [...g.members] : (preselect ? [preselect] : []), tab: 'friends', q: '' };
+  openSheet(`
+    <div class="sheet-head"><h2>${g ? 'Edit group' : 'New group'}</h2><button class="x" data-close>Cancel</button></div>
+    <div class="sheet-body" id="ed-body">
+      <div class="field"><label for="group-name">Group name</label><input class="input" id="group-name" maxlength="20" placeholder="e.g. College friends" value="${esc(draft.name)}" autocomplete="off"></div>
+      <div class="field"><span class="lbl">Color</span><div class="swatches" id="swatches"></div></div>
+      <div class="lbl" style="margin-top:6px">People <span id="pcount"></span></div>
+      <div class="picked" id="picked" style="margin-top:8px"></div>
+      <input class="input" id="member-search" placeholder="Search people you follow" autocomplete="off">
+      <div class="seg" role="tablist"><button data-tab="friends">Friends</button><button data-tab="all">Everyone</button></div>
+      <div id="mlist"></div>
+    </div>
+    <div class="sheet-foot">${g ? '<button class="btn danger" data-delete>Delete</button>' : ''}<button class="btn primary" id="save-group">${g ? 'Save' : 'Create group'}</button></div>`);
+  $('group-name').oninput = e => { draft.name = e.target.value; syncEditor(); };
+  $('member-search').oninput = e => { draft.q = e.target.value.toLowerCase(); syncEditor(); };
+  syncEditor();
+  if (!g) setTimeout(() => $('group-name').focus({ preventScroll: true }), 280);
+}
+function syncEditor() {
+  if (!draft) return;
+  $('swatches').innerHTML = COLORS.map(c => `<button class="sw${c === draft.color ? ' on' : ''}" style="background:${c}" data-color="${c}" aria-label="Color ${c}"></button>`).join('');
+  $('pcount').textContent = draft.members.length ? `· ${draft.members.length} selected` : '';
+  $('picked').innerHTML = draft.members.map(id => `<span class="pill">${avatar(byId[id], 20)}${esc(byId[id].name.split(' ')[0])}</span>`).join('');
+  document.querySelectorAll('.seg button').forEach(b => b.classList.toggle('on', b.dataset.tab === draft.tab));
+  const list = people.filter(p => (draft.tab === 'all' || kindOf(p.id) === 'friend') && (!draft.q || p.name.toLowerCase().includes(draft.q)));
+  $('mlist').innerHTML = list.length ? list.map(p => {
+    const on = draft.members.includes(p.id), cr = kindOf(p.id) === 'creator';
+    return `<button class="row${on ? ' on' : ''}" data-toggle="${p.id}" aria-pressed="${on}">${avatar(p, 40)}<span class="txt"><span class="t1">${esc(p.name)}</span><br><span class="t2">${cr ? `Creator · ${p.followers} followers` : (p.note ? p.note + ' · ' : '') + 'Follows you back'}</span></span><span class="check">${check}</span></button>`;
+  }).join('') : '<p class="t2" style="color:var(--app-muted)">No one matches that name.</p>';
+  const ok = draft.name.trim() && draft.members.length;
+  $('save-group').disabled = !ok;
+}
+function saveGroup() {
+  const name = draft.name.trim();
+  if (draft.id) { const g = state.groups.find(g => g.id === draft.id); Object.assign(g, { name, color: draft.color, members: draft.members }); }
+  else { draft.id = 'g' + Date.now(); state.groups.push({ id: draft.id, name, color: draft.color, members: draft.members }); }
+  const id = draft.id;
+  save(); closeSheet(); setFilter({ type: 'group', id }); toast(`${name} saved`);
+}
+
+function openMenu(pid) {
+  const p = byId[pid], cr = kindOf(pid) === 'creator', first = p.name.split(' ')[0];
+  openSheet(`
+    <div class="sheet-head"><div style="display:flex;gap:12px;align-items:center">${avatar(p, 40)}<div><h2>${esc(p.name)}</h2><div class="t2" style="color:var(--app-muted);font-size:13px">${cr ? 'Creator · ' + (p.followers || 'public account') : 'Friend · follows you back'}</div></div></div><button class="x" data-close>Done</button></div>
+    <div class="sheet-body">
+      <div class="lbl" style="margin:4px 0 4px">Add to a group</div>
+      <div id="menu-groups"></div>
+      <button class="menu-item" data-newwith="${pid}"><span class="ico"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></span><span>New group with ${esc(first)}</span></button>
+      <div class="lbl" style="margin:16px 0 4px">Feed</div>
+      <button class="menu-item" data-person="${pid}"><span class="ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 20c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg></span><span>Only show ${esc(first)}<small>Same as tapping their avatar</small></span></button>
+      <button class="menu-item" data-flip="${pid}"><span class="ico"><svg viewBox="0 0 24 24"><path d="M7 7h12l-3-3M17 17H5l3 3"/></svg></span><span>Treat as ${cr ? 'a friend' : 'a creator'}<small>${cr ? 'Show them under Friends instead of Creators' : 'Hide them when you pick Friends'}</small></span></button>
+    </div>`);
+  syncMenu(pid);
+}
+function syncMenu(pid) {
+  const el = $('menu-groups'); if (!el) return;
+  el.innerHTML = state.groups.length ? state.groups.map(g => { const on = g.members.includes(pid);
+    return `<button class="row${on ? ' on' : ''}" data-ingroup="${g.id}" data-pid="${pid}" aria-pressed="${on}"><span class="dot" style="width:12px;height:12px;border-radius:50%;background:${g.color};margin:0 6px"></span><span class="txt"><span class="t1">${esc(g.name)}</span> <span class="t2">· ${g.members.length}</span></span><span class="check">${check}</span></button>`; }).join('')
+    : '<p class="t2" style="color:var(--app-muted)">You have no groups yet.</p>';
+}
+
+/* ---------- events ---------- */
+document.addEventListener('click', e => {
+  const t = e.target.closest('button, [data-toast]'); if (!t) return;
+  const d = t.dataset;
+  if (d.toast) return toast(d.toast);
+  if (d.coach !== undefined) { state.coachDone = true; save(); return renderCoach(); }
+  if (d.f) { closeSheet(); return setFilter(d.id ? { type: d.f, id: d.id } : { type: d.f }); }
+  if (d.new !== undefined) return openEditor(null);
+  if (d.edit) return openEditor(d.edit);
+  if (d.back !== undefined) return setFilter(state.prev || { type: 'all' });
+  if (d.person) { const wasSheet = $('sheet').classList.contains('show'); if (wasSheet) closeSheet();
+    if (state.filter.type === 'person' && state.filter.id === d.person) return setFilter(state.prev || { type: 'all' });
+    return setFilter({ type: 'person', id: d.person }); }
+  if (d.like) { const id = +d.like; state.liked = state.liked.includes(id) ? state.liked.filter(x => x !== id) : [...state.liked, id]; save(); return renderFeed(); }
+  if (d.menu) return openMenu(d.menu);
+  if (d.close !== undefined) return closeSheet();
+  if (d.color) { draft.color = d.color; return syncEditor(); }
+  if (d.tab) { draft.tab = d.tab; return syncEditor(); }
+  if (d.toggle) { const id = d.toggle; draft.members = draft.members.includes(id) ? draft.members.filter(x => x !== id) : [...draft.members, id]; return syncEditor(); }
+  if (t.id === 'save-group') return saveGroup();
+  if (d.delete !== undefined) { const g = state.groups.find(g => g.id === draft.id);
+    if (t.dataset.confirm) { state.groups = state.groups.filter(x => x.id !== g.id); save(); closeSheet(); setFilter({ type: 'friends' }); return toast(`${g.name} deleted`); }
+    t.dataset.confirm = '1'; t.textContent = 'Tap again to delete'; return; }
+  if (d.ingroup) { const g = state.groups.find(g => g.id === d.ingroup), pid = d.pid, has = g.members.includes(pid);
+    g.members = has ? g.members.filter(x => x !== pid) : [...g.members, pid]; save(); syncMenu(pid); render();
+    return toast(`${has ? 'Removed from' : 'Added to'} ${g.name}`); }
+  if (d.newwith) { const pid = d.newwith; closeSheet(); return setTimeout(() => openEditor(null, pid), 180); }
+  if (d.flip) { const pid = d.flip, now = kindOf(pid) === 'creator' ? 'friend' : 'creator';
+    if (now === baseKind[pid]) delete state.kinds[pid]; else state.kinds[pid] = now;
+    save(); closeSheet(); render(); return toast(`${byId[pid].name.split(' ')[0]} now counts as a ${now}`); }
+});
+$('reset').onclick = () => { state.groups = seedGroups(); state.liked = []; state.kinds = {}; state.coachDone = false; save(); closeSheet(); setFilter({ type: 'all' }); toast('Demo reset'); };
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeSheet(); });
+
+/* ---------- drag a person onto a group chip (copies them in) ---------- */
+const screenEl = $('screen');
+let drag = null, suppressClick = false;
+const firstName = pid => byId[pid].note || byId[pid].name.split(' ')[0];
+
+screenEl.addEventListener('pointerdown', e => {
+  const src = e.target.closest('[data-drag]');
+  if (!src || e.button > 0 || $('sheet').classList.contains('show')) return;
+  drag = { pid: src.dataset.drag, id: e.pointerId, x: e.clientX, y: e.clientY, touch: e.pointerType !== 'mouse', live: false };
+  // on touch, a short hold starts the drag so normal swipes still scroll
+  if (drag.touch) drag.timer = setTimeout(() => drag && startDrag(drag.x, drag.y), 260);
+});
+window.addEventListener('pointermove', e => {
+  if (!drag || e.pointerId !== drag.id) return;
+  if (!drag.live) {
+    const far = Math.hypot(e.clientX - drag.x, e.clientY - drag.y) > 7;
+    if (!far) return;
+    if (drag.touch) { clearTimeout(drag.timer); drag = null; return; }
+    startDrag(e.clientX, e.clientY);
+  }
+  moveDrag(e.clientX, e.clientY);
+});
+window.addEventListener('pointerup', e => { if (drag && e.pointerId === drag.id) endDrag(true); });
+window.addEventListener('pointercancel', e => { if (drag && e.pointerId === drag.id) endDrag(false); });
+screenEl.addEventListener('touchmove', e => { if (drag && drag.live) e.preventDefault(); }, { passive: false });
+screenEl.addEventListener('contextmenu', e => { if (e.target.closest('[data-drag]')) e.preventDefault(); });
+document.addEventListener('click', e => { if (suppressClick) { suppressClick = false; e.stopPropagation(); e.preventDefault(); } }, true);
+
+function startDrag(x, y) {
+  drag.live = true; clearTimeout(drag.timer);
+  const g = document.createElement('div'); g.className = 'ghost';
+  g.innerHTML = avatar(byId[drag.pid], 56) + `<span class="tagname">${esc(firstName(drag.pid))}</span>`;
+  document.body.appendChild(g); drag.ghost = g;
+  screenEl.classList.add('dragging');
+  $('strip').classList.add('hint');
+  $('strip').innerHTML = `<span>Drop ${esc(firstName(drag.pid))} on a group, or on New group</span>`;
+  const pid = drag.pid;
+  const cur = state.filter.type === 'group' && state.groups.find(g => g.id === state.filter.id && g.members.includes(pid));
+  if (cur) $('strip').innerHTML = `<span>Drag ${esc(firstName(pid))} out of ${esc(cur.name)} to remove, or onto another group</span>`;
+  const removeTile = cur ? `<div class="tile remove" data-drop="remove"><svg viewBox="0 0 24 24"><path d="M5 7h14M10 7V4h4v3M7 7l1 13h8l1-13"/></svg><span><span class="tn">Remove from ${esc(cur.name)}</span><small>${esc(firstName(pid))} stays in your other groups</small></span></div>` : '';
+  $('tray').innerHTML = `<span class="lbl">${cur ? 'Move' : 'Add'} ${esc(firstName(pid))}</span><div class="tiles">` + removeTile + state.groups.filter(g => g !== cur).map(g => {
+    const has = g.members.includes(pid);
+    return `<div class="tile${has ? ' has' : ''}" data-drop="${g.id}"><span class="tn"><span class="dot" style="background:${g.color}"></span>${esc(g.name)}</span><small>${has ? 'Already in' : g.members.length + ' people'}</small></div>`;
+  }).join('') + `<div class="tile new" data-drop="new"><span class="tn">+ New group</span><small>Start with ${esc(firstName(pid))}</small></div></div>`;
+  try { navigator.vibrate && navigator.vibrate(12); } catch (err) {}
+  moveDrag(x, y);
+}
+function moveDrag(x, y) {
+  drag.ghost.style.left = x + 'px'; drag.ghost.style.top = y + 'px';
+  const el = document.elementFromPoint(x, y), t = el && el.closest('[data-drop]');
+  if (drag.hot !== t) {
+    if (drag.hot) drag.hot.classList.remove('hot');
+    if (t) t.classList.add('hot');
+    drag.hot = t; drag.ghost.classList.toggle('over', !!t);
+  }
+  // nudge the chip row when the pointer sits near either end
+  const chips = $('chips'), r = chips.getBoundingClientRect();
+  if (y > r.top && y < r.bottom) { if (x < r.left + 40) chips.scrollLeft -= 10; else if (x > r.right - 40) chips.scrollLeft += 10; }
+}
+function endDrag(ok) {
+  const d = drag; drag = null; clearTimeout(d.timer);
+  if (!d.live) return;
+  suppressClick = true; setTimeout(() => { suppressClick = false; }, 60);
+  d.ghost.remove(); screenEl.classList.remove('dragging'); $('strip').classList.remove('hint');
+  if (d.hot) d.hot.classList.remove('hot');
+  renderStrip();
+  if (ok && d.hot) dropOn(d.hot.dataset.drop, d.pid);
+}
+function dropOn(target, pid) {
+  state.coachDone = true; save();
+  if (target === 'new') { renderCoach(); return openEditor(null, pid); }
+  if (target === 'remove') {
+    const g = state.groups.find(g => g.id === state.filter.id), i = g.members.indexOf(pid);
+    g.members.splice(i, 1); save(); render();
+    return toast(`Removed ${firstName(pid)} from ${g.name}`, () => { g.members.splice(i, 0, pid); save(); render(); toast(`${firstName(pid)} is back in ${g.name}`); });
+  }
+  const g = state.groups.find(g => g.id === target);
+  if (g.members.includes(pid)) return toast(`${firstName(pid)} is already in ${g.name}`);
+  g.members.push(pid); save(); render();
+  const chip = $('chips').querySelector(`[data-drop="${g.id}"]`);
+  if (chip) { chip.classList.add('pop'); chip.scrollIntoView({ inline: 'nearest', block: 'nearest' }); }
+  toast(`Added ${firstName(pid)} to ${g.name}`);
+}
+
+render();
+})();
+</script>
+
+</body>
+</html>
