@@ -1,0 +1,465 @@
+<title>Bass Tab Colors</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;700&family=IBM+Plex+Mono:wght@500;700&family=IBM+Plex+Sans:wght@400;600&display=swap">
+<style>
+/* Layout: one column workbench — controls on top, colored tab sheet in the middle, clickable neck at the bottom */
+:root {
+  --bg: #f3f2ee;
+  --panel: #ffffff;
+  --fg: #1d1c1a;
+  --muted: #6d6a63;
+  --line: #d6d3cb;
+  --accent: #b5651d;
+  --E: #d22f2f;
+  --A: #2563d6;
+  --D: #1e9a4a;
+  --G: #8a8780;
+  --wood: #e7dccb;
+  --fret: #b9ad99;
+  --display: "Barlow Condensed", "Arial Narrow", sans-serif;
+  --body: "IBM Plex Sans", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #17181a; --panel: #212226; --fg: #ecebe7; --muted: #9a978f; --line: #3a3b40; --accent: #e09a52;
+    --E: #ff5a5a; --A: #5b93ff; --D: #3ccf72; --G: #a3a199; --wood: #2c2721; --fret: #5a5145;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #17181a; --panel: #212226; --fg: #ecebe7; --muted: #9a978f; --line: #3a3b40; --accent: #e09a52;
+  --E: #ff5a5a; --A: #5b93ff; --D: #3ccf72; --G: #a3a199; --wood: #2c2721; --fret: #5a5145;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--fg); font-family: var(--body); font-size: 15px;
+  padding-block: 20px 40px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.wrap { max-width: 1040px; margin: 0 auto; display: grid; gap: 18px; }
+header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px 20px; }
+h1 { font-family: var(--display); font-weight: 700; font-size: 2.2rem; letter-spacing: .01em; margin: 0; text-wrap: balance; }
+.legend { display: flex; gap: 14px; font-family: var(--mono); font-size: .85rem; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; font-weight: 700; }
+.legend i { width: 18px; height: 4px; border-radius: 2px; display: inline-block; }
+.label { font-family: var(--display); font-size: .95rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px; display: grid; gap: 14px; }
+.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); }
+.tabs button { border: 0; background: none; color: var(--muted); font: 600 .95rem var(--body); padding: 8px 12px; border-bottom: 3px solid transparent; cursor: pointer; margin-bottom: -1px; }
+.tabs button[aria-selected="true"] { color: var(--fg); border-bottom-color: var(--accent); }
+.row { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; }
+.field { display: grid; gap: 4px; }
+select, button.btn, .chip {
+  font: 500 .92rem var(--body); color: var(--fg); background: var(--bg); border: 1px solid var(--line);
+  border-radius: 7px; padding: 7px 11px; cursor: pointer;
+}
+button.btn:hover, .chip:hover { border-color: var(--accent); }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+button:focus-visible, select:focus-visible, .cell:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip[aria-pressed="true"] { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+.note-chip { font-family: var(--mono); font-weight: 700; min-width: 46px; }
+.note-chip.tone { border-color: var(--accent); box-shadow: inset 0 -3px 0 var(--accent); }
+.hint { color: var(--muted); font-size: .88rem; margin: 0; }
+
+/* Tab sheet */
+.sheet-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 10px; }
+.sheet { display: flex; flex-wrap: wrap; gap: 18px 0; }
+.bar { display: grid; grid-template-rows: 22px repeat(4, 26px); border-left: 2px solid var(--fg); padding-right: 6px; position: relative; }
+.bar:last-child { border-right: 2px solid var(--fg); }
+.bar.current .chord { color: var(--accent); }
+.bar .chord { font-family: var(--display); font-weight: 700; font-size: 1.1rem; padding-left: 6px; line-height: 22px; white-space: nowrap; cursor: pointer; }
+.strings-col { display: grid; grid-template-rows: 22px repeat(4, 26px); font-family: var(--mono); font-weight: 700; padding-right: 6px; }
+.strings-col div { line-height: 26px; }
+.lane { display: flex; align-items: center; position: relative; min-width: 34px; padding: 0 4px; }
+.lane::before { content: ""; position: absolute; left: 0; right: 0; top: 50%; height: 2px; opacity: .45; }
+.lane[data-s="0"]::before { background: var(--G); }
+.lane[data-s="1"]::before { background: var(--D); }
+.lane[data-s="2"]::before { background: var(--A); }
+.lane[data-s="3"]::before { background: var(--E); }
+.cells { display: contents; }
+.cell {
+  position: relative; z-index: 1; width: 30px; height: 24px; border: 0; background: transparent; padding: 0;
+  font: 700 1.05rem var(--mono); font-variant-numeric: tabular-nums; cursor: pointer;
+}
+.cell.on { background: var(--panel); border-radius: 5px; }
+.cell.on:hover { text-decoration: line-through; }
+.cell.playing { background: var(--fg); color: var(--panel) !important; }
+.c0 { color: var(--G); } .c1 { color: var(--D); } .c2 { color: var(--A); } .c3 { color: var(--E); }
+.empty { color: var(--muted); font-size: .9rem; padding: 18px 0; }
+.sheet-scroll { overflow-x: auto; }
+
+/* Neck */
+.neck-scroll { overflow-x: auto; padding-bottom: 4px; }
+.neck { display: grid; grid-template-columns: 34px repeat(13, minmax(44px, 1fr)); min-width: 640px; background: var(--wood); border-radius: 6px; }
+.neck .nlabel { font: 700 .9rem var(--mono); display: grid; place-items: center; background: var(--panel); }
+.fretbtn { position: relative; height: 34px; border: 0; border-right: 2px solid var(--fret); background: transparent; cursor: pointer; padding: 0; font: 700 .85rem var(--mono); }
+.fretbtn.nut { border-right: 5px solid var(--fg); }
+.fretbtn::before { content: ""; position: absolute; left: 0; right: 0; top: 50%; }
+.fretbtn[data-s="0"]::before { height: 2px; background: var(--G); }
+.fretbtn[data-s="1"]::before { height: 3px; background: var(--D); }
+.fretbtn[data-s="2"]::before { height: 4px; background: var(--A); }
+.fretbtn[data-s="3"]::before { height: 5px; background: var(--E); }
+.fretbtn span { position: relative; z-index: 1; display: inline-grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; opacity: 0; transition: opacity .1s; }
+.fretbtn:hover span, .fretbtn.tone span { opacity: 1; background: var(--panel); }
+.fretbtn.tone span { box-shadow: 0 0 0 2px var(--accent); }
+.fretnums { display: contents; }
+.fretnums div { font: 500 .78rem var(--mono); color: var(--muted); text-align: center; padding: 3px 0; background: var(--panel); }
+.toast { min-height: 1.2em; font-size: .88rem; color: var(--muted); }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>Bass Tab Colors</h1>
+    <div class="legend" aria-label="String colors">
+      <span><i style="background:var(--G)"></i>G</span>
+      <span><i style="background:var(--D)"></i>D</span>
+      <span><i style="background:var(--A)"></i>A</span>
+      <span><i style="background:var(--E)"></i>E</span>
+    </div>
+  </header>
+
+  <section class="panel">
+    <div class="tabs" role="tablist">
+      <button role="tab" id="tab-prog" aria-selected="true">Chord progressions</button>
+      <button role="tab" id="tab-build" aria-selected="false">Build your own</button>
+    </div>
+
+    <div id="pane-prog" class="row">
+      <div class="field"><span class="label">Progression</span>
+        <select id="prog"></select></div>
+      <div class="field"><span class="label">Key</span>
+        <select id="key"></select></div>
+      <div class="field"><span class="label">Bass pattern</span>
+        <select id="pattern">
+          <option value="roots">Roots (R R R R)</option>
+          <option value="r5">Root–fifth (R R 5 5)</option>
+          <option value="octave">Octave (R 8 R 8)</option>
+          <option value="walk">Walking (R 3 5 6)</option>
+        </select></div>
+      <div class="field"><span class="label">&nbsp;</span>
+        <button class="btn primary" id="gen">Make tab</button></div>
+    </div>
+
+    <div id="pane-build" hidden style="display:grid;gap:14px">
+      <div class="field"><span class="label">1 · Pick a chord to add a bar</span>
+        <div class="row">
+          <div class="chips" id="rootChips"></div>
+        </div>
+        <div class="row">
+          <div class="chips" id="qualChips"></div>
+          <button class="btn primary" id="addChord">Add chord</button>
+        </div>
+      </div>
+      <div class="field"><span class="label">2 · Click a note — it goes on the closest string</span>
+        <div class="chips" id="noteChips"></div>
+        <p class="hint">Notes in the current chord are underlined. Or click any spot on the neck below to place it yourself.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="sheet-head">
+      <span class="label">Tab</span>
+      <div class="row">
+        <label class="label" for="bpm">Tempo</label>
+        <select id="bpm"><option>70</option><option>90</option><option selected>110</option><option>130</option></select>
+        <button class="btn" id="play">▶ Play</button>
+        <button class="btn" id="undo">Undo</button>
+        <button class="btn" id="clear">Clear</button>
+        <button class="btn" id="copy">Copy text</button>
+      </div>
+    </div>
+    <div class="sheet-scroll"><div class="sheet" id="sheet"></div></div>
+    <div class="toast" id="toast">Click a number to remove it. Click a chord name to make that bar the one you add to.</div>
+  </section>
+
+  <section class="panel">
+    <span class="label">Neck — click to add</span>
+    <div class="neck-scroll"><div class="neck" id="neck"></div></div>
+  </section>
+</div>
+
+<script>
+const NOTES = ["C","C#","D","Eb","E","F","F#","G","Ab","A","Bb","B"];
+// Strings top to bottom as tab shows them: G D A E. Open pitches as MIDI.
+const STRINGS = [{n:"G",m:43},{n:"D",m:38},{n:"A",m:33},{n:"E",m:28}];
+const MAXF = 12;
+const QUAL = {
+  "":   {name:"maj", tones:[0,4,7],    walk:[0,4,7,9]},
+  "m":  {name:"min", tones:[0,3,7],    walk:[0,3,7,10]},
+  "7":  {name:"7",   tones:[0,4,7,10], walk:[0,4,7,10]},
+  "m7": {name:"m7",  tones:[0,3,7,10], walk:[0,3,7,10]},
+  "maj7":{name:"maj7",tones:[0,4,7,11],walk:[0,4,7,11]},
+};
+// [semitones from key, quality]
+const PROGS = {
+  "Pop — I V vi IV":        [[0,""],[7,""],[9,"m"],[5,""]],
+  "50s — I vi IV V":        [[0,""],[9,"m"],[5,""],[7,""]],
+  "Sad pop — vi IV I V":    [[9,"m"],[5,""],[0,""],[7,""]],
+  "Rock — I bVII IV I":     [[0,""],[10,""],[5,""],[0,""]],
+  "Jazz — ii V I":          [[2,"m7"],[7,"7"],[0,"maj7"],[0,"maj7"]],
+  "12-bar blues":           [[0,"7"],[0,"7"],[0,"7"],[0,"7"],[5,"7"],[5,"7"],[0,"7"],[0,"7"],[7,"7"],[5,"7"],[0,"7"],[7,"7"]],
+  "Andalusian — i bVII bVI V": [[0,"m"],[10,""],[8,""],[7,""]],
+};
+const PATTERNS = {
+  roots: q => [0,0,0,0],
+  r5: q => [0,0,7,7],
+  octave: q => [0,12,0,12],
+  walk: q => QUAL[q].walk,
+};
+
+let bars = [];       // [{root, q, notes:[{s,f}]}]
+let current = -1;    // bar index new notes go into
+let history = [];
+let pickRoot = 0, pickQual = "";
+
+const $ = id => document.getElementById(id);
+const chordName = b => NOTES[b.root] + b.q;
+const midiOf = n => STRINGS[n.s].m + n.f;
+
+function lastNote() {
+  for (let i = bars.length - 1; i >= 0; i--) if (bars[i].notes.length) return bars[i].notes.at(-1);
+  return null;
+}
+function save() { history.push(JSON.stringify({bars, current})); if (history.length > 100) history.shift(); }
+
+// Pick a string/fret for a pitch, staying near the hand. Favors E and A strings.
+function place(midi, near) {
+  const hand = near ? near.f : 3;
+  let best = null, bestCost = Infinity;
+  STRINGS.forEach((st, s) => {
+    const f = midi - st.m;
+    if (f < 0 || f > MAXF) return;
+    let cost = Math.abs(f - hand) + (s < 2 ? 1.5 : 0) + f * 0.15;
+    if (f === 0) cost -= 0.5;
+    if (cost < bestCost) { bestCost = cost; best = {s, f}; }
+  });
+  return best;
+}
+// Choose the octave of a pitch class closest to the last note, inside the bass range.
+function pitchNear(pc, near) {
+  const ref = near ? midiOf(near) : 31;
+  let best = null;
+  for (let m = 28; m <= 55; m++) if (((m % 12) + 12) % 12 === pc) {
+    if (best === null || Math.abs(m - ref) < Math.abs(best - ref)) best = m;
+  }
+  return best;
+}
+function rootMidi(pc) { return 28 + ((pc - 4 + 12) % 12); } // lowest root at or above low E
+
+function generate() {
+  save();
+  const key = +$("key").value, prog = PROGS[$("prog").value], pat = $("pattern").value;
+  let prev = null;
+  bars = prog.map(([off, q]) => {
+    const root = (key + off) % 12;
+    const r = rootMidi(root);
+    const notes = PATTERNS[pat](q).map(iv => { const n = place(r + iv, prev); prev = n; return n; }).filter(Boolean);
+    return {root, q, notes};
+  });
+  current = bars.length - 1;
+  render();
+}
+
+function addNotePc(pc) {
+  if (current < 0) addChord(pc, "", true);
+  save();
+  const near = lastNote();
+  const n = place(pitchNear(pc, near), near);
+  bars[current].notes.push(n);
+  pluck(midiOf(n));
+  render();
+}
+function addAt(s, f) {
+  if (current < 0) addChord(((STRINGS[s].m + f) % 12), "", true);
+  save();
+  bars[current].notes.push({s, f});
+  pluck(STRINGS[s].m + f);
+  render();
+}
+function addChord(root, q, silent) {
+  if (!silent) save();
+  bars.push({root, q, notes: []});
+  current = bars.length - 1;
+  if (!silent) render();
+}
+
+function render() {
+  const sheet = $("sheet");
+  sheet.innerHTML = "";
+  if (!bars.length) {
+    sheet.innerHTML = '<div class="empty">No bars yet. Make a tab from a progression, or add a chord and click notes.</div>';
+  } else {
+    const names = document.createElement("div");
+    names.className = "strings-col";
+    names.innerHTML = "<div></div>" + STRINGS.map((st, s) => `<div class="c${s}">${st.n}</div>`).join("");
+    sheet.appendChild(names);
+    bars.forEach((b, bi) => {
+      const bar = document.createElement("div");
+      bar.className = "bar" + (bi === current ? " current" : "");
+      const ch = document.createElement("div");
+      ch.className = "chord"; ch.textContent = chordName(b); ch.title = "Add notes to this bar";
+      ch.onclick = () => { current = bi; render(); };
+      bar.appendChild(ch);
+      const slots = Math.max(b.notes.length, 1);
+      STRINGS.forEach((st, s) => {
+        const lane = document.createElement("div");
+        lane.className = "lane"; lane.dataset.s = s;
+        for (let i = 0; i < slots; i++) {
+          const n = b.notes[i];
+          const btn = document.createElement("button");
+          btn.className = "cell c" + s;
+          btn.dataset.bar = bi; btn.dataset.i = i;
+          if (n && n.s === s) {
+            btn.classList.add("on"); btn.textContent = n.f;
+            btn.title = `${st.n} string, fret ${n.f} (${NOTES[midiOf(n) % 12]}) — click to remove`;
+            btn.onclick = () => { save(); b.notes.splice(i, 1); render(); };
+          } else {
+            btn.tabIndex = -1; btn.setAttribute("aria-hidden", "true"); btn.style.cursor = "default";
+          }
+          lane.appendChild(btn);
+        }
+        bar.appendChild(lane);
+      });
+      sheet.appendChild(bar);
+    });
+  }
+  highlightTones();
+}
+
+function currentTones() {
+  const b = bars[current];
+  return b ? QUAL[b.q].tones.map(t => (b.root + t) % 12) : [];
+}
+function highlightTones() {
+  const tones = currentTones();
+  document.querySelectorAll(".note-chip").forEach(c => c.classList.toggle("tone", tones.includes(+c.dataset.pc)));
+  document.querySelectorAll(".fretbtn").forEach(c => c.classList.toggle("tone", tones.includes(+c.dataset.pc)));
+}
+
+function buildUI() {
+  Object.keys(PROGS).forEach(k => $("prog").add(new Option(k, k)));
+  NOTES.forEach((n, i) => $("key").add(new Option(n, i)));
+  $("key").value = 4; // E
+
+  const rc = $("rootChips");
+  NOTES.forEach((n, i) => {
+    const b = document.createElement("button");
+    b.className = "chip"; b.textContent = n; b.setAttribute("aria-pressed", i === pickRoot);
+    b.onclick = () => { pickRoot = i; rc.querySelectorAll(".chip").forEach((c, j) => c.setAttribute("aria-pressed", j === i)); };
+    rc.appendChild(b);
+  });
+  const qc = $("qualChips");
+  Object.entries(QUAL).forEach(([q, v]) => {
+    const b = document.createElement("button");
+    b.className = "chip"; b.textContent = v.name; b.setAttribute("aria-pressed", q === pickQual);
+    b.onclick = () => { pickQual = q; qc.querySelectorAll(".chip").forEach(c => c.setAttribute("aria-pressed", c === b)); };
+    qc.appendChild(b);
+  });
+  const nc = $("noteChips");
+  NOTES.forEach((n, i) => {
+    const b = document.createElement("button");
+    b.className = "chip note-chip"; b.textContent = n; b.dataset.pc = i;
+    b.onclick = () => addNotePc(i);
+    nc.appendChild(b);
+  });
+
+  const neck = $("neck");
+  STRINGS.forEach((st, s) => {
+    const l = document.createElement("div");
+    l.className = "nlabel c" + s; l.textContent = st.n;
+    neck.appendChild(l);
+    for (let f = 0; f <= MAXF; f++) {
+      const b = document.createElement("button");
+      b.className = "fretbtn c" + s + (f === 0 ? " nut" : "");
+      b.dataset.s = s; b.dataset.pc = (st.m + f) % 12;
+      b.title = `${st.n} string fret ${f} — ${NOTES[(st.m + f) % 12]}`;
+      b.innerHTML = `<span>${f}</span>`;
+      b.onclick = () => addAt(s, f);
+      neck.appendChild(b);
+    }
+  });
+  const nums = document.createElement("div");
+  nums.className = "fretnums";
+  nums.innerHTML = "<div></div>" + Array.from({length: MAXF + 1}, (_, f) => `<div>${[3,5,7,9,12].includes(f) ? "•" + f : f}</div>`).join("");
+  neck.appendChild(nums);
+
+  const tabs = [["tab-prog","pane-prog"],["tab-build","pane-build"]];
+  tabs.forEach(([t, p]) => $(t).onclick = () => tabs.forEach(([t2, p2]) => {
+    $(t2).setAttribute("aria-selected", t2 === t); $(p2).hidden = t2 !== t;
+  }));
+
+  $("gen").onclick = generate;
+  $("addChord").onclick = () => { addChord(pickRoot, pickQual); toast(`Added ${NOTES[pickRoot]}${pickQual}. Now click notes.`); };
+  $("undo").onclick = () => { const h = history.pop(); if (h) { ({bars, current} = JSON.parse(h)); render(); } };
+  $("clear").onclick = () => { save(); bars = []; current = -1; render(); };
+  $("copy").onclick = copyText;
+  $("play").onclick = play;
+}
+
+function toText() {
+  const lines = STRINGS.map(st => st.n + "|");
+  let head = "  ";
+  bars.forEach(b => {
+    const cols = b.notes.map(n => String(n.f));
+    const widths = cols.map(c => c.length);
+    const barW = widths.reduce((a, w) => a + w + 1, 1);
+    head += chordName(b).padEnd(barW + 1);
+    STRINGS.forEach((_, s) => {
+      let seg = "-";
+      b.notes.forEach((n, i) => { seg += (n.s === s ? cols[i] : "-".repeat(widths[i])) + "-"; });
+      lines[s] += seg + "|";
+    });
+  });
+  return head.trimEnd() + "\n" + lines.join("\n");
+}
+async function copyText() {
+  const t = toText();
+  try { await navigator.clipboard.writeText(t); toast("Copied tab as text."); }
+  catch { toast("Copy blocked here. Text tab:\n" + t); }
+}
+function toast(msg) { $("toast").textContent = msg; $("toast").style.whiteSpace = "pre"; }
+
+// Sound
+let ctx;
+function pluck(midi, when = 0, dur = 0.5) {
+  try {
+    ctx = ctx || new (window.AudioContext || window.webkitAudioContext)();
+    const t = ctx.currentTime + when;
+    const o = ctx.createOscillator(), g = ctx.createGain(), lp = ctx.createBiquadFilter();
+    o.type = "sawtooth"; o.frequency.value = 440 * Math.pow(2, (midi - 69) / 12);
+    lp.type = "lowpass"; lp.frequency.setValueAtTime(1200, t); lp.frequency.exponentialRampToValueAtTime(200, t + dur);
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.35, t + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(lp).connect(g).connect(ctx.destination); o.start(t); o.stop(t + dur + 0.05);
+  } catch {}
+}
+let playTimers = [];
+function play() {
+  playTimers.forEach(clearTimeout); playTimers = [];
+  document.querySelectorAll(".cell.playing").forEach(c => c.classList.remove("playing"));
+  const beat = 60 / +$("bpm").value;
+  let t = 0;
+  bars.forEach((b, bi) => b.notes.forEach((n, i) => {
+    pluck(midiOf(n), t, beat * 0.9);
+    const at = t * 1000;
+    playTimers.push(setTimeout(() => {
+      document.querySelectorAll(".cell.playing").forEach(c => c.classList.remove("playing"));
+      const el = document.querySelector(`.lane[data-s="${n.s}"] .cell[data-bar="${bi}"][data-i="${i}"]`);
+      if (el) el.classList.add("playing");
+    }, at));
+    t += beat;
+  }));
+  playTimers.push(setTimeout(() => document.querySelectorAll(".cell.playing").forEach(c => c.classList.remove("playing")), t * 1000));
+}
+
+buildUI();
+generate();
+history = [];
+</script>
