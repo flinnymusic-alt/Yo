@@ -208,6 +208,13 @@ const PROGS = {
   "12-bar blues":           [[0,"7"],[0,"7"],[0,"7"],[0,"7"],[5,"7"],[5,"7"],[0,"7"],[0,"7"],[7,"7"],[5,"7"],[0,"7"],[7,"7"]],
   "Andalusian — i bVII bVI V": [[0,"m"],[10,""],[8,""],[7,""]],
 };
+// Songs: chords relative to the song's key, which is set when you pick it.
+const SONGS = {
+  "Viva la Vida — Coldplay":   {key: 8, chords: [[5,""],[7,""],[0,""],[9,"m"]]},
+  "Simply the Best — Tina Turner": {key: 5, chords: [[0,""],[0,""],[9,"m"],[7,"7"]]},
+  "Flowers — Miley Cyrus":     {key: 9, chords: [[0,"m"],[5,"m"],[10,""],[3,""],[0,"m"],[5,"m"],[10,""],[3,""],[8,""],[7,"7"],[0,"m"],[0,"m"]]},
+};
+Object.entries(SONGS).forEach(([k, v]) => PROGS[k] = v.chords);
 const PATTERNS = {
   roots: q => [0,0,0,0],
   r5: q => [0,0,7,7],
@@ -345,9 +352,13 @@ function highlightTones() {
 }
 
 function buildUI() {
-  Object.keys(PROGS).forEach(k => $("prog").add(new Option(k, k)));
+  const gSongs = document.createElement("optgroup"); gSongs.label = "Songs";
+  const gProgs = document.createElement("optgroup"); gProgs.label = "Common progressions";
+  Object.keys(PROGS).forEach(k => (SONGS[k] ? gSongs : gProgs).appendChild(new Option(k, k)));
+  $("prog").append(gSongs, gProgs);
+  $("prog").onchange = () => { const s = SONGS[$("prog").value]; if (s) $("key").value = s.key; generate(); };
   NOTES.forEach((n, i) => $("key").add(new Option(n, i)));
-  $("key").value = 4; // E
+  $("key").value = 8; // Ab, for Viva la Vida
 
   const rc = $("rootChips");
   NOTES.forEach((n, i) => {
