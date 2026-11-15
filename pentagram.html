@@ -1985,6 +1985,7 @@ function advFoeDown(f) {
   if (f.rival) { if (f.phoenixUp) phoenixRise(f); else rivalDown(f); return; }
   f.dead = true;
   kills++;
+  if (f.beast) { beastDown(f); return; }
   if (f.titan) {
     SFX.bossDown(); shake = 14;
     burst(f.x, f.y, TYPE_COLOR[f.elem], 80, 460);
@@ -1996,6 +1997,7 @@ function advFoeDown(f) {
   SFX.kill();
   burst(f.x, f.y, TYPE_COLOR[f.elem], 14, 240);
   addScore(Math.round(10 * f.maxHp / ARCH[f.art].hp), f.x, f.y - f.r - 14);
+  if (f.pay || f.roam) payBounty(f.x, f.y, f.pay || 3);                  // (the city pays for every beast of the wilds)
   if ((ADV.world.minions = (ADV.world.minions || 0) + 1) >= COIN_EVERY) {
     ADV.world.minions = 0; giveTokens(f.x, f.y, TOKENS_COIN, true); SFX.discover();
     floatText(f.x, f.y - 56, `${COIN_EVERY} minions! A coin worth ${TOKENS_COIN}`, '#ffd24a', 15);
@@ -2015,6 +2017,7 @@ function shotHitPlayer(s) {
   else if (s.elem === 'water') player.chill = Math.max(player.chill || 0, 2);
   else if (s.elem === 'earth') pushPlayer(s.vx, s.vy, 260);
   else if (s.elem === 'spirit' && s.from && !s.from.dead) s.from.hp = Math.min(s.from.maxHp, s.from.hp + s.dmg);
+  else if (s.elem === 'web' || s.elem === 'ink') { player.chill = Math.max(player.chill || 0, 3.2); floatText(player.x, player.y - 34, s.elem === 'web' ? 'webbed' : 'inked', '#e8e8f0', 13); }
   else if (s.elem === 'poison') { player.poisonT = Math.max(player.poisonT || 0, 4); floatText(player.x, player.y - 34, 'poisoned', '#7dff4a', 13); }
   else if (s.elem === 'hex' && !(player.hexT > 0)) { player.hexT = 2.6; player.loaded = null; player.charging = null; burst(player.x, player.y, '#4caf50', 30, 220); tipMsg('Hexed! You’re a frog till it wears off', '#8fdf6a', 2.6); }
 }
@@ -2032,7 +2035,7 @@ function sapPlayer(d) {
 function foeBlocked(f, x, y) {
   if (f.serpent) return landAt(x, y) !== L_WATER;
   if (segWallHit(x, y, f.r * 0.8)) return true;
-  if (f.fly) return landAt(x, y) === L_ROCK;
+  if (f.fly || f.swim) return landAt(x, y) === L_ROCK;
   return landBlocks(x, y, f.r * 0.8);
 }
 function updateAdvFoe(f, dt) {
@@ -2056,6 +2059,7 @@ function updateAdvFoe(f, dt) {
       if (bd < f.r + t.r + 6 && f.hitCd <= 0) { f.hitCd = 0.8; damageFoe(t, f.dmg * 2.5, 'confusion'); burst(t.x, t.y, '#ff8ad8', 6, 120); }
     } else { if (Math.random() < dt * 1.5) f.wander = rnd(0, TAU); f.x += Math.cos(f.wander || 0) * spd * dt; f.y += Math.sin(f.wander || 0) * spd * dt; }
   } else if (f.rival) updateRival(f, dt, d, spd);
+  else if (f.beast && beastStep(f, dt, d, spd, dx, dy)) { /* it moved itself */ }
   else if (f.how === 'orbit') {
     // a wisp circling its wizard, healing them
     const o = f.owner;
@@ -3239,6 +3243,7 @@ function drawAdvFoe(f) {
     ctx.beginPath(); ctx.moveTo(player.x, player.y); ctx.quadraticCurveTo((player.x + f.x) / 2 + Math.sin(elapsed * 9) * 30, (player.y + f.y) / 2, f.x, f.y); ctx.stroke();
   }
   if (f.dummy) { drawDummy(f); return; }
+  if (f.beast) { drawBeast(f); return; }
   if (f.rival) { drawRival(f); return; }
   if (f.serpent) { drawSerpent(f); return; }
   if (f.titan) {
@@ -5119,7 +5124,8 @@ function updateLand(dt) {
       }
     }
   }
-  for (const f of foes) if ((f.far || f.serpent) && !f.boss && !f.dead && Math.hypot(f.x - player.x, f.y - player.y) > 1700) f.dead = true;
+  updateBeasts(dt);
+  for (const f of foes) if ((f.far || f.serpent) && !f.chief && !f.dead && Math.hypot(f.x - player.x, f.y - player.y) > 1700) f.dead = true;
   if (WLD.fogDirty) { WLD.fogDirty = false; X.seen[L.id] = Array.from(WLD.seen).join(''); advSave(); }
 }
 // at home: walk out through a gate in the mountains and you're in its land
@@ -5256,6 +5262,365 @@ function drawFarGround(camX, camY) {
   const L = LANDNOW;
   if (inView(L.arch.x, L.arch.y, 260, camX, camY)) drawArch(L.arch.x, L.arch.y, L.gate.ox, L.gate.oy, 'The way home', 'to the world you know');
   for (const s of L.sites) if ((s.look === 'pool' || s.look === 'ring' || s.look === 'crater') && inView(s.x, s.y, 300, camX, camY)) drawSite(s);
+}
+
+// ── the beasts of the far lands: two kinds in each land, each with its own way of fighting ──
+// The city pays a bounty in tokens for every one you bring down (`pay`, times the land's tier).
+// shot: what it shoots; ai: how it moves (see beastStep); how: one of the minions' ways of moving.
+const BEASTS = {
+  leaper:   { name: 'Mire Leaper', land: 'mere', elem: 'water', hp: 5, spd: 60, r: 12, dmg: 1.6, pay: 6, ai: 'hop', col: ['#3fa08a', '#8fe0c0'], tip: 'It sits, then leaps. Step aside as it jumps.' },
+  snapjaw:  { name: 'Snapjaw', land: 'mere', elem: 'earth', hp: 13, spd: 50, r: 15, dmg: 2.4, pay: 12, ai: 'shell', col: ['#6a7a3a', '#b0b860'], tip: 'It tucks into its shell and shrugs off half of every blow, then lunges.' },
+  boar:     { name: 'Thornback', land: 'wood', elem: 'earth', hp: 9, spd: 160, r: 14, dmg: 2.2, pay: 8, how: 'charge', col: ['#6a4a30', '#a07a50'], tip: 'It charges in a straight line and turns slowly. Sidestep it.' },
+  spinner:  { name: 'Web Spinner', land: 'wood', elem: 'spirit', hp: 5, spd: 100, r: 11, dmg: 0.9, pay: 10, range: 300, shot: { elem: 'web', color: '#e8e8f0', speed: 250, r: 8, cd: 2.6 }, col: ['#5a3a7a', '#b08ae0'], tip: 'Its web slows you to a crawl. Keep moving, or burn it first.' },
+  bloat:    { name: 'Fen Bloat', land: 'fen', elem: 'earth', hp: 8, spd: 56, r: 15, dmg: 1.8, pay: 8, burst: true, col: ['#8a9a3a', '#d0d860'], tip: 'It bursts in a ring of poison when it dies. Kill it from a distance.' },
+  leech:    { name: 'Bog Leech', land: 'fen', elem: 'water', hp: 2, spd: 128, r: 7, dmg: 0.8, pay: 3, swarm: 6, col: ['#6a2a3a', '#b05a6a'], tip: 'They come in swarms. One wide spell clears them.' },
+  crab:     { name: 'Reef Crab', land: 'coast', elem: 'water', hp: 10, spd: 108, r: 13, dmg: 2, pay: 9, how: 'zigzag', swim: true, col: ['#c85a3a', '#ff9a6a'], tip: 'It scuttles round you sideways and darts in to pinch. It swims, too.' },
+  gull:     { name: 'Storm Gull', land: 'coast', elem: 'air', hp: 4, spd: 170, r: 10, dmg: 1.6, pay: 9, fly: true, ai: 'dive', col: ['#e8eef4', '#8a98a8'], tip: 'It circles, then dives straight through you. It hunts boats too.' },
+  roller:   { name: 'Stone Roller', land: 'crag', elem: 'earth', hp: 12, spd: 195, r: 15, dmg: 2.6, pay: 10, how: 'charge', col: ['#8a8072', '#b8ae9c'], tip: 'A boulder with a temper. It rolls fast down the canyons.' },
+  bat:      { name: 'Echo Bat', land: 'crag', elem: 'air', hp: 3, spd: 150, r: 8, dmg: 1.1, pay: 4, fly: true, swarm: 5, ai: 'flit', col: ['#4a3a5a', '#8a6aa0'], tip: 'A fluttering swarm. Lightning leaps from one to the next.' },
+  howler:   { name: 'Frost Howler', land: 'snow', elem: 'water', hp: 7, spd: 122, r: 12, dmg: 1.8, pay: 9, how: 'zigzag', col: ['#e4eef4', '#9ac0d8'], tip: 'They circle as a pack and lunge in turn. Its bite chills you.' },
+  yeti:     { name: 'Rime Giant', land: 'snow', elem: 'water', hp: 22, spd: 52, r: 19, dmg: 3, pay: 18, range: 380, shot: { elem: 'water', color: '#d8f0ff', speed: 210, r: 13, cd: 3, boom: 70 }, col: ['#f0f4f8', '#7ab0d0'], tip: 'It hurls blocks of ice that burst where they land.' },
+  burrower: { name: 'Sand Burrower', land: 'dune', elem: 'earth', hp: 9, spd: 130, r: 13, dmg: 2.4, pay: 11, ai: 'burrow', col: ['#b08a4a', '#e0c078'], tip: 'Nothing can hurt it under the sand. Strike when it bursts out.' },
+  devil:    { name: 'Dust Devil', land: 'dune', elem: 'air', hp: 6, spd: 112, r: 13, dmg: 1.2, pay: 10, fly: true, ai: 'whirl', col: ['#d8c088', '#f4e8c0'], tip: 'It drags you into itself. Earth weighs it down.' },
+  hound:    { name: 'Cinder Hound', land: 'ash', elem: 'fire', hp: 9, spd: 136, r: 12, dmg: 2.2, pay: 12, how: 'zigzag', col: ['#2a2020', '#ff7a2a'], tip: 'A demon’s dog. Its bite sets you alight.' },
+  demon:    { name: 'Ash Demon', land: 'ash', elem: 'fire', hp: 20, spd: 72, r: 16, dmg: 2.4, pay: 22, range: 330, ai: 'summon', shot: { elem: 'fire', color: '#ff7a2a', speed: 280, r: 8, cd: 2.4, n: 3 }, col: ['#8a1a1a', '#ff5a2a'], tip: 'It calls imps to it and blinks away when you close in.' },
+  drone:    { name: 'Grey Drone', land: 'star', elem: 'air', hp: 6, spd: 124, r: 11, dmg: 1.5, pay: 12, fly: true, range: 340, ai: 'strafe', shot: { elem: 'air', color: '#7af0e0', speed: 520, r: 5, cd: 1.8, laser: true }, col: ['#9aa4b4', '#7af0e0'], tip: 'It circles and fires fast bolts. Fire brings it down.' },
+  abductor: { name: 'Abductor', land: 'star', elem: 'spirit', hp: 16, spd: 82, r: 17, dmg: 0.9, pay: 22, fly: true, ai: 'beam', nobite: true, col: ['#6a7488', '#c88aff'], tip: 'Its beam lifts you toward it and drains you. Get out from under it.' },
+  squid:    { name: 'Tide Crawler', land: 'isle', elem: 'water', hp: 9, spd: 92, r: 13, dmg: 1.3, pay: 14, range: 290, swim: true, shot: { elem: 'ink', color: '#2a2a4a', speed: 240, r: 9, cd: 2.4 }, col: ['#5a5aa0', '#a0a0e8'], tip: 'It crawls out of the sea, and its ink slows you. It can’t stand lightning.' },
+  harpy:    { name: 'Storm Harpy', land: 'isle', elem: 'air', hp: 8, spd: 180, r: 12, dmg: 2.4, pay: 16, fly: true, ai: 'dive', col: ['#4a3a4a', '#d8405a'], tip: 'It dives harder than a gull, and from further off.' },
+};
+for (const L of LANDS) L.beasts = Object.keys(BEASTS).filter(k => BEASTS[k].land === L.id);
+const BEAST_HP = [0, 1.2, 1.9, 2.8], BEAST_DMG = [0, 1, 1.3, 1.65], BEAST_PAY = [0, 1, 1.5, 2];
+function makeBeast(kind, x, y, o = {}) {
+  const B = BEASTS[kind], tier = o.tier || (LANDNOW ? LANDNOW.tier : 1), s = o.scale || 1, hp = B.hp * BEAST_HP[tier] * (o.hp || 1);
+  const f = makeAdvFoe(B.fly ? 'flyer' : 'brute', B.elem, x, y);
+  return Object.assign(f, { beast: kind, far: LANDNOW ? LANDNOW.id : 'home', r: B.r * s, scale: s, hp, maxHp: hp, spd: B.spd * rnd(0.93, 1.07), dmg: B.dmg * BEAST_DMG[tier] * (o.dmg || 1),
+    melee: !B.shot && !B.nobite, range: B.range || 0, cd: 0, fly: !!B.fly, how: B.how || 'chase', t1: rnd(0.4, 1.4), t2: rnd(3, 6), t3: 0, t4: rnd(4, 7), sT: rnd(0.8, 2), mode: 0,
+    pay: Math.round(B.pay * BEAST_PAY[tier] * (o.pay || 1)), chief: o.chief || null, tier, swim: !!B.swim });
+}
+// a beast's own moves. Returns true when it has moved itself (otherwise it walks as its `how` says).
+function beastStep(f, dt, d, spd, dx, dy) {
+  const B = BEASTS[f.beast], k = spd / (f.spd || 1), toYou = Math.atan2(dy, dx), fight = state === 'play';
+  f.t1 -= dt; f.t2 -= dt; f.t3 -= dt; f.t4 -= dt; f.sT -= dt;
+  const S = B.shot;
+  if (S && f.sT <= 0 && d < f.range + 70 && !f.sub && fight) {
+    f.sT = S.cd * rnd(0.85, 1.15);
+    const n = (S.n || 1) + (f.chief ? 2 : 0);
+    for (let i = 0; i < n; i++) foeShot(f, toYou + (i - (n - 1) / 2) * 0.24, { elem: S.elem, color: S.color, speed: S.speed, r: S.r, boom: S.boom, laser: S.laser, life: S.boom ? Math.min(2.6, d / S.speed) : 2.6 });
+  }
+  // a chief calls more of its kind to it
+  if (f.chief && f.t4 <= 0 && d < 640 && fight) {
+    f.t4 = 9;
+    const kin = f.chief.calls || f.beast, have = foes.filter(o => o.far && !o.dead && !o.chief && Math.hypot(o.x - f.x, o.y - f.y) < 700).length;
+    for (let i = 0; i < 2 && have + i < 5; i++) {
+      const a = rnd(0, TAU), x = f.x + Math.cos(a) * (f.r + 60), y = f.y + Math.sin(a) * (f.r + 60);
+      if (!BEASTS[kin].fly && landBlocks(x, y, 14)) continue;
+      foes.push(makeBeast(kin, x, y, { tier: f.tier, pay: 0.5 })); burst(x, y, BEASTS[kin].col[1], 12, 160);
+    }
+  }
+  switch (B.ai) {
+    case 'hop':
+      if (f.leap > 0) { f.leap -= dt; f.x += Math.cos(f.dir) * 430 * k * dt; f.y += Math.sin(f.dir) * 430 * k * dt; if (f.leap <= 0) f.t1 = rnd(0.7, 1.4); }
+      else if (f.t1 <= 0 && k > 0) { f.leap = clamp((d - 8) / 430, 0.22, 0.5); f.leap0 = f.leap; f.dir = toYou + rnd(-0.2, 0.2); }
+      return true;
+    case 'shell':
+      if (f.shellT > 0) { f.shellT -= dt; f.skinT = f.shellT > 0 ? 1 : 0; if (f.shellT <= 0) f.rush = 1.3; return true; }
+      if (f.rush > 0) { f.rush -= dt; walkToward(f, player.x, player.y, spd * 2.8, dt, f.r + PLAYER_R - 2); return true; }
+      if (f.t2 <= 0 && d < 300) { f.t2 = rnd(5, 7); f.shellT = 1.8; return true; }
+      return false;
+    case 'dive':
+      if (f.mode === 1) { f.leap -= dt; f.x += Math.cos(f.dir) * 450 * k * dt; f.y += Math.sin(f.dir) * 450 * k * dt; if (f.leap <= 0) { f.mode = 0; f.t1 = rnd(2, 3.4); f.turn = Math.atan2(f.y - player.y, f.x - player.x); } }
+      else {
+        const reach = f.beast === 'harpy' ? 320 : 250;
+        f.turn += dt * 1.15 * (f.wob > 3 ? 1 : -1);
+        moveToward(f, player.x + Math.cos(f.turn) * reach, player.y + Math.sin(f.turn) * reach, spd, dt, 0);
+        if (f.t1 <= 0 && d < reach + 90 && k > 0) { f.mode = 1; f.leap = (d + 160) / 450; f.dir = toYou; }
+      }
+      return true;
+    case 'flit':
+      f.x += Math.sin(elapsed * 9 + f.wob) * 80 * k * dt; f.y += Math.cos(elapsed * 7 + f.wob) * 80 * k * dt;
+      return false;
+    case 'burrow':
+      f.melee = f.mode === 2;
+      if (f.mode === 0) { f.sub = true; moveToward(f, player.x, player.y, spd * 1.25, dt, 30); if (d < 74) { f.mode = 1; f.t1 = 0.6; } }
+      else if (f.mode === 1) { if (f.t1 <= 0) { f.mode = 2; f.sub = false; f.t1 = rnd(3, 4.5); burst(f.x, f.y, '#c8b078', 22, 230); SFX.explode(false); if (d < 64) hurtPlayer(f.dmg * 1.3); } }
+      else { walkToward(f, player.x, player.y, spd * 0.75, dt, f.r + PLAYER_R - 2); if (f.t1 <= 0) { f.mode = 0; burst(f.x, f.y, '#c8b078', 12, 150); } }
+      return true;
+    case 'whirl':
+      f.turn += dt * 2.4;
+      moveToward(f, player.x + Math.cos(f.turn) * 90, player.y + Math.sin(f.turn) * 90, spd, dt, 0);
+      if (d < 220 && fight && !player.onBoat) { player.kx = (player.kx || 0) - dx / d * 560 * dt; player.ky = (player.ky || 0) - dy / d * 560 * dt; }
+      return true;
+    case 'summon':
+      if (f.t2 <= 0 && d < 540 && fight) {
+        f.t2 = 9;
+        for (let i = 0; i < 2; i++) {
+          const a = rnd(0, TAU), x = f.x + Math.cos(a) * 60, y = f.y + Math.sin(a) * 60;
+          if (landBlocks(x, y, 12) || foes.filter(o => o.fromDemon === f && !o.dead).length >= 4) continue;
+          const m = makeAdvFoe('imp', 'fire', x, y, { hp: BEAST_HP[f.tier] }); m.far = f.far; m.fromDemon = f; m.pay = 3; foes.push(m); burst(x, y, '#ff7a2a', 12, 160);
+        }
+      }
+      if (d < 125 && f.t3 <= 0 && k > 0) {
+        f.t3 = 5;
+        const a = toYou + Math.PI + rnd(-0.8, 0.8), p = freeSpot(f.x + Math.cos(a) * 250, f.y + Math.sin(a) * 250, f.r);
+        burst(f.x, f.y, '#ff5a2a', 20, 220); f.x = p.x; f.y = p.y; burst(f.x, f.y, '#ff5a2a', 20, 220);
+      }
+      return false;
+    case 'strafe':
+      f.turn += dt * 0.9 * (f.wob > 3 ? 1 : -1);
+      moveToward(f, player.x + Math.cos(f.turn) * 240, player.y + Math.sin(f.turn) * 240, spd, dt, 0);
+      return true;
+    case 'beam':
+      moveToward(f, player.x, player.y - 20, spd, dt, 130);
+      f.beamOn = d < 205 && fight && k > 0;
+      if (f.beamOn) {
+        if (!player.onBoat) { player.kx = (player.kx || 0) - dx / d * 430 * dt; player.ky = (player.ky || 0) - dy / d * 430 * dt; }
+        if (f.t3 <= 0) { f.t3 = 0.5; sapPlayer(0.4 * BEAST_DMG[f.tier]); floatText(player.x + rnd(-8, 8), player.y - 30, 'drained', '#c88aff', 12); }
+      }
+      return true;
+  }
+  return false;
+}
+// the bounty: tokens at once, a few coins flying to you
+function payBounty(x, y, v, big) {
+  if (!(v > 0)) return;
+  ADV.world.tokens = (ADV.world.tokens || 0) + v; FAR.dirty = true;
+  const n = big ? 12 : 2;
+  for (let i = 0; i < n; i++) { const a = rnd(0, TAU), s = rnd(60, big ? 260 : 150); coins.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, z: 0, vz: rnd(160, 300), t: 0, v: v / n }); }
+  floatText(x, y - 30, `+${v}`, '#ffd24a', big ? 18 : 13);
+}
+const FAR = { dirty: false, saveT: 0 };   // (bounties are saved every few seconds, not on every kill)
+function beastDown(f) {
+  const B = BEASTS[f.beast];
+  f.sub = false;
+  f.chief ? SFX.bossDown() : SFX.kill();
+  if (f.chief) shake = 12;
+  burst(f.x, f.y, B.col[0], f.chief ? 70 : 16, f.chief ? 440 : 240); burst(f.x, f.y, B.col[1], f.chief ? 40 : 8, 200);
+  addScore(f.chief ? 400 : 10 + f.pay, f.x, f.y - f.r - 14, !!f.chief);
+  payBounty(f.x, f.y, f.pay, !!f.chief);
+  if (B.burst) for (let i = 0, n = f.chief ? 16 : 8; i < n; i++) foeShot(f, i * TAU / n, { elem: 'poison', color: '#9adf4a', speed: 190, r: 7, dmg: f.dmg * 0.6, life: 1.2 });
+  const X = farX();
+  if (!f.chief && Math.random() < 0.13) { X.food = Math.min(FOOD_MAX, X.food + 1); floatText(f.x, f.y - 48, '+1 meal', '#f0c890', 13); }
+  else if (Math.random() < 0.1) pickups.push({ x: f.x, y: f.y, kind: Math.random() < 0.5 ? 'hp' : 'mana', t: 14 });
+  missionKill(f);
+}
+const FOOD_MAX = 99;
+function missionKill() {}
+
+// beasts roam the wilds of a far land, away from its town and its gate
+function landSafe(L, x, y) { return Math.hypot(x - L.base.x, y - L.base.y) < (L.town ? (L.town.kind === 'city' ? 900 : 620) : 380) || Math.hypot(x - L.arr.x, y - L.arr.y) < 420; }
+function spawnBeasts(L) {
+  // (out on a boat only what flies or swims can reach you; the rest keep to dry ground)
+  const wet = k => BEASTS[k].fly || BEASTS[k].swim, kinds = L.beasts.filter(k => !player.onBoat || wet(k));
+  if (!kinds.length) return false;
+  for (let tries = 0; tries < 20; tries++) {
+    const a = rnd(0, TAU), dd = rnd(720, 940), x = player.x + Math.cos(a) * dd, y = player.y + Math.sin(a) * dd;
+    if (landSafe(L, x, y) || landAt(x, y) === L_ROCK) continue;
+    const dry = !landBlocks(x, y, 22), can = kinds.filter(k => dry || wet(k));
+    if (!can.length) continue;
+    const lead = can.length > 1 && Math.random() < 0.4 ? can[1] : can[0], B = BEASTS[lead];
+    const list = B.swarm ? Array(B.swarm).fill(lead) : lead === L.beasts[1] ? [lead, ...(Math.random() < 0.5 ? [lead] : []), ...(can.includes(L.beasts[0]) ? [L.beasts[0]] : [])] : Array(3 + Math.floor(rnd(0, 2.5))).fill(lead);
+    for (const k of list) {
+      const px = x + rnd(-80, 80), py = y + rnd(-80, 80);
+      if (!wet(k) && landBlocks(px, py, 14)) continue;
+      foes.push(makeBeast(k, px, py));
+    }
+    return true;
+  }
+  return false;
+}
+function updateBeasts(dt) {
+  const L = LANDNOW;
+  WLD.beastT = (WLD.beastT ?? 5) - dt;
+  if (WLD.beastT <= 0) {
+    WLD.beastT = rnd(6, 10);
+    const near = foes.filter(f => f.far && !f.dead && !f.chief).length;
+    if (near < 5 + 2 * L.tier && !landSafe(L, player.x, player.y)) spawnBeasts(L);
+  }
+  // a town is no place for beasts: any that follow you in turn back
+  for (const f of foes) if (f.far && !f.dead && !f.chief && landSafe(L, f.x, f.y) && Math.hypot(f.x - L.base.x, f.y - L.base.y) < (L.town ? 520 : 300)) { f.fear = Math.max(f.fear || 0, 2); }
+  if (FAR.dirty && (FAR.saveT -= dt) <= 0) { FAR.saveT = 5; FAR.dirty = false; advSave(); }
+}
+
+// ── drawing the beasts ──
+const B_E = (x, y, rx, ry, c) => { ctx.fillStyle = c; ctx.beginPath(); ctx.ellipse(x, y, rx, ry, 0, 0, TAU); ctx.fill(); };
+const B_P = (c, ...pts) => { ctx.fillStyle = c; ctx.beginPath(); for (let i = 0; i < pts.length; i += 2) i ? ctx.lineTo(pts[i], pts[i + 1]) : ctx.moveTo(pts[i], pts[i + 1]); ctx.closePath(); ctx.fill(); };
+const B_L = (c, w, ...pts) => { ctx.strokeStyle = c; ctx.lineWidth = w; ctx.lineCap = 'round'; ctx.beginPath(); for (let i = 0; i < pts.length; i += 2) i ? ctx.lineTo(pts[i], pts[i + 1]) : ctx.moveTo(pts[i], pts[i + 1]); ctx.stroke(); };
+const BEAST_ART = {
+  leaper(f, t, c, w) {
+    const up = f.leap > 0 ? Math.sin((1 - f.leap / (f.leap0 || 0.4)) * Math.PI) * 26 : 0, sq = f.leap > 0 ? 0 : Math.sin(t * 3 + f.wob) * 0.8;
+    B_E(2, 11, 12, 4, 'rgba(0,0,0,0.28)'); ctx.translate(0, -up);
+    B_E(-9, 6, 6, 4, c[0]); B_E(9, 6, 6, 4, c[0]);
+    B_E(0, sq, 13, 10 - sq, c[0]); B_E(0, 3 + sq, 9, 5, c[1]);
+    circle(-6, -8, 4.6, c[1]); circle(6, -8, 4.6, c[1]); circle(-5, -8, 2, '#1a1a1a'); circle(7, -8, 2, '#1a1a1a');
+    B_L('#1a3a30', 1.5, -5, 2, 0, 4, 6, 2);
+  },
+  snapjaw(f, t, c, w) {
+    const tucked = f.shellT > 0, step = Math.sin(w * 0.25) * 2;
+    B_E(2, 12, 16, 5, 'rgba(0,0,0,0.28)');
+    if (!tucked) { for (const [dx, dy] of [[-10, 8], [10, 8]]) B_E(dx, dy + (dx < 0 ? step : -step), 5, 3.5, c[1]); B_E(15, 1, 7, 6, c[1]); B_P('#f4f0e0', 16, 2, 22, 4, 16, 6); circle(17, -2, 1.6, '#1a1a1a'); }
+    B_E(0, 0, 15, 11, c[0]);
+    ctx.strokeStyle = 'rgba(30,40,10,0.55)'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(-9, -6); ctx.lineTo(9, -6); ctx.moveTo(-13, 0); ctx.lineTo(13, 0); ctx.moveTo(-9, 6); ctx.lineTo(9, 6); ctx.moveTo(-5, -10); ctx.lineTo(-5, 10); ctx.moveTo(5, -10); ctx.lineTo(5, 10); ctx.stroke();
+    for (const dx of [-8, 0, 8]) B_P(c[1], dx - 3, -9, dx, -16, dx + 3, -9);
+    if (tucked) circle(0, 0, 18 + Math.sin(t * 12) * 1.5, null, 'rgba(255,255,255,0.6)', 2);
+  },
+  boar(f, t, c, w) {
+    const step = Math.sin(w * 0.3) * 3;
+    B_E(2, 12, 15, 4.5, 'rgba(0,0,0,0.28)');
+    B_L('#3a2a1a', 4, -8, 6, -8, 11 + step, 7, 6, 7, 11 - step);
+    B_E(0, 0, 15, 10, c[0]); B_E(12, 2, 8, 7, c[1]);
+    for (let i = -3; i <= 2; i++) B_P('#3f6a34', i * 5 - 2, -8, i * 5 + 1, -17, i * 5 + 4, -8);
+    B_P('#f4f0e0', 16, 5, 22, 0, 18, 6); circle(14, -1, 1.7, '#ff4a2a'); B_E(20, 4, 2.5, 2, '#3a2a1a');
+  },
+  spinner(f, t, c, w) {
+    B_E(2, 11, 13, 4, 'rgba(0,0,0,0.28)');
+    for (let i = 0; i < 4; i++) for (const s of [-1, 1]) { const a = (-0.9 + i * 0.6) * s, k = Math.sin(w * 0.35 + i * 1.6) * 3; B_L(c[0], 2, Math.sin(a) * 6 * s * s, 0, s * (9 + i), -7 + i * 2 + k * 0.4, s * (15 + i), 6 + i * 1.5 + k); }
+    B_E(-4, 1, 9, 8, c[0]); B_E(6, 0, 6, 5.5, c[1]); B_E(-5, -1, 4, 3, c[1]);
+    for (const [dx, dy] of [[7, -2], [10, -1], [7, 1.5], [10, 2]]) circle(dx, dy, 1.2, '#ff4a4a');
+  },
+  bloat(f, t, c, w) {
+    const p = 1 + Math.sin(t * 3 + f.wob) * 0.07;
+    B_E(2, 12, 15, 5, 'rgba(0,0,0,0.28)');
+    B_E(0, 0, 15 * p, 13 * p, c[0]); B_E(-3, -3, 9 * p, 7 * p, c[1]);
+    for (const [dx, dy, r] of [[-8, 4, 2.5], [6, 6, 2], [9, -3, 2.4], [-2, 8, 1.8], [2, -9, 2]]) circle(dx * p, dy * p, r, '#6a7a2a');
+    circle(-5, -9, 3.4, '#f4f0c0'); circle(5, -9, 3.4, '#f4f0c0'); circle(-5, -9, 1.5, '#1a1a1a'); circle(5, -9, 1.5, '#1a1a1a');
+    B_L('#4a5a1a', 1.5, -7, 2, 0, 4, 7, 2);
+  },
+  leech(f, t, c, w) {
+    const k = Math.sin(w * 0.5 + f.wob) * 2;
+    B_E(1, 6, 8, 2.5, 'rgba(0,0,0,0.28)');
+    B_L(c[0], 6, -8, k, -3, -k, 3, k, 8, -k); B_L(c[1], 2, -8, k - 1, -3, -k - 1, 3, k - 1);
+    circle(8, -k, 3.2, c[0]); circle(9.5, -k, 1.6, '#f4c0c0');
+  },
+  crab(f, t, c, w) {
+    const k = Math.sin(w * 0.4) * 2;
+    B_E(2, 11, 15, 4.5, 'rgba(0,0,0,0.28)');
+    for (const s of [-1, 1]) { for (let i = 0; i < 3; i++) B_L(c[0], 2, s * 8, 2 + i * 2, s * (15 + i), 7 + i * 1.5 + k * s); B_L(c[0], 3, s * 9, -3, s * 15, -9); B_E(s * 16, -11, 5, 4, c[1]); B_P('#7a2a1a', s * 16, -12, s * 21, -15, s * 19, -10); }
+    B_E(0, 0, 13, 9, c[0]); B_E(0, -2, 9, 5, c[1]);
+    B_L(c[0], 1.5, -4, -7, -4, -12); B_L(c[0], 1.5, 4, -7, 4, -12); circle(-4, -13, 2, '#1a1a1a'); circle(4, -13, 2, '#1a1a1a');
+  },
+  gull(f, t, c, w) {
+    const flap = Math.sin(t * (f.mode === 1 ? 4 : 11) + f.wob) * (f.mode === 1 ? 2 : 8);
+    B_E(4, 30, 9, 3, 'rgba(0,0,0,0.2)');
+    B_P(c[1], -3, 0, -22, -6 - flap, -14, 4); B_P(c[1], 3, 0, 22, -6 - flap, 14, 4);
+    B_E(0, 0, 8, 6, c[0]); circle(7, -3, 4.2, c[0]); B_P('#ffb04a', 10, -3, 16, -1.5, 10, -0.5); circle(8, -4, 1.1, '#1a1a1a'); B_P(c[1], -6, 0, -13, 2, -6, 4);
+  },
+  roller(f, t, c, w) {
+    B_E(2, 13, 15, 5, 'rgba(0,0,0,0.3)');
+    ctx.save(); ctx.rotate(w * 0.06);
+    B_P(c[0], -14, -4, -8, -13, 5, -15, 14, -6, 13, 7, 4, 15, -9, 12);
+    B_P(c[1], -8, -13, 5, -15, 2, -4, -9, -3); B_L('rgba(40,34,28,0.6)', 1.5, -3, 2, 6, 6, 10, 1);
+    ctx.restore();
+    circle(-4, -2, 3, '#ffd24a'); circle(6, -2, 3, '#ffd24a'); circle(-4, -2, 1.3, '#1a1a1a'); circle(6, -2, 1.3, '#1a1a1a'); B_L('#1a1a1a', 2, -6, -7, -1, -5); B_L('#1a1a1a', 2, 8, -7, 3, -5);
+  },
+  bat(f, t, c, w) {
+    const flap = Math.sin(t * 18 + f.wob) * 6;
+    B_E(3, 24, 6, 2, 'rgba(0,0,0,0.2)');
+    B_P(c[0], -2, 0, -14, -5 - flap, -10, 1, -13, 5); B_P(c[0], 2, 0, 14, -5 - flap, 10, 1, 13, 5);
+    circle(0, 0, 5, c[1]); B_P(c[1], -4, -3, -3, -9, -1, -4); B_P(c[1], 4, -3, 3, -9, 1, -4); circle(-2, -1, 1, '#ffe14a'); circle(2, -1, 1, '#ffe14a');
+  },
+  howler(f, t, c, w) {
+    const step = Math.sin(w * 0.32) * 3;
+    B_E(2, 12, 14, 4.5, 'rgba(0,0,0,0.28)');
+    B_L(c[1], 3.5, -8, 5, -9, 11 + step, 6, 5, 7, 11 - step);
+    B_L(c[0], 5, -12, -2, -19, -8 + Math.sin(t * 5 + f.wob) * 2);
+    B_E(-1, 0, 13, 8, c[0]); B_E(10, -4, 7, 6, c[0]); B_P(c[0], 15, -4, 21, -2, 15, 0);
+    B_P(c[1], 6, -8, 7, -15, 10, -9); B_P(c[1], 11, -8, 13, -15, 15, -8); circle(12, -5, 1.6, '#4ac8ff'); circle(20, -2, 1.5, '#1a1a1a');
+  },
+  yeti(f, t, c, w) {
+    const step = Math.sin(w * 0.2) * 2, arm = Math.sin(t * 2 + f.wob) * 2;
+    B_E(2, 17, 18, 6, 'rgba(0,0,0,0.3)');
+    B_E(-7, 13 + step, 6, 5, c[0]); B_E(7, 13 - step, 6, 5, c[0]);
+    B_E(-16, 2 + arm, 6, 10, c[0]); B_E(16, 2 - arm, 6, 10, c[0]);
+    B_E(0, 0, 15, 17, c[0]); for (let i = -2; i <= 2; i++) B_P('#d0dce6', i * 5 - 3, 6, i * 5, 13, i * 5 + 3, 6);
+    B_E(0, -9, 8, 6.5, c[1]); circle(-3, -10, 1.6, '#fff'); circle(3, -10, 1.6, '#fff'); B_L('#1a3a50', 2, -3, -5.5, 3, -5.5);
+    B_P('#fff', -5, -4.5, -4, -1, -3, -4.5); B_P('#fff', 5, -4.5, 4, -1, 3, -4.5);
+  },
+  burrower(f, t, c, w) {
+    if (f.mode < 2) {      // under the sand: a moving mound (it shakes just before it bursts out)
+      const sh = f.mode === 1 ? Math.sin(t * 40) * 2.5 : 0;
+      B_E(sh, 4, 16, 8, 'rgba(120,96,50,0.55)'); B_E(sh, 2, 12, 6, c[1]); B_E(sh - 3, 0, 5, 2.5, '#f4e0a8');
+      if (f.mode === 1) circle(0, 2, 30 - f.t1 * 40, null, 'rgba(255,120,60,0.8)', 2.5);
+      return;
+    }
+    B_E(2, 12, 14, 4.5, 'rgba(0,0,0,0.28)');
+    for (let i = 3; i >= 0; i--) B_E(-i * 6 + 4, 4 - i * 0.5 + Math.sin(w * 0.3 + i) * 1.5, 9 - i, 8 - i, i % 2 ? c[1] : c[0]);
+    B_E(10, 0, 8, 8, c[0]); B_P('#f4f0e0', 14, -5, 22, -2, 15, -1); B_P('#f4f0e0', 14, 5, 22, 2, 15, 1); circle(11, -3, 1.6, '#1a1a1a'); circle(11, 3, 1.6, '#1a1a1a');
+  },
+  devil(f, t, c, w) {
+    B_E(2, 14, 12, 4, 'rgba(0,0,0,0.22)');
+    for (let i = 0; i < 5; i++) { const y = 12 - i * 7, rx = 4 + i * 3.4, a = t * 7 + i * 1.3; ctx.strokeStyle = i % 2 ? c[0] : c[1]; ctx.lineWidth = 3; ctx.beginPath(); ctx.ellipse(Math.sin(a) * 2.5, y, rx, 2.6, 0, a, a + 4.6); ctx.stroke(); }
+    circle(-4, -8, 1.8, '#5a3a1a'); circle(4, -8, 1.8, '#5a3a1a');
+  },
+  hound(f, t, c, w) {
+    const step = Math.sin(w * 0.32) * 3;
+    B_E(2, 12, 14, 4.5, 'rgba(0,0,0,0.28)');
+    B_L(c[0], 3.5, -8, 5, -9, 11 + step, 6, 5, 7, 11 - step);
+    B_E(-1, 0, 13, 8, c[0]); B_E(10, -4, 7, 6, c[0]); B_P(c[0], 15, -4, 21, -2, 15, 0);
+    B_L(c[1], 1.6, -9, -2, -4, 2, 0, -3, 5, 3);
+    for (let i = 0; i < 4; i++) { const x = -8 + i * 5, fl = 5 + Math.sin(t * 14 + i * 2) * 2.5; B_P(i % 2 ? '#ffd24a' : c[1], x - 2.5, -6, x, -6 - fl, x + 2.5, -6); }
+    B_P(c[0], 6, -8, 7, -14, 10, -9); circle(12, -5, 1.8, '#ffd24a'); B_P('#f4f0e0', 16, -1, 18, 2, 19, -1);
+  },
+  demon(f, t, c, w) {
+    const bob = Math.sin(t * 2.4 + f.wob) * 2, flap = Math.sin(t * 5) * 3;
+    B_E(2, 16, 15, 5, 'rgba(0,0,0,0.3)'); ctx.translate(0, bob);
+    B_P('#4a1010', -6, -4, -26, -16 - flap, -20, 4, -12, 6); B_P('#4a1010', 6, -4, 26, -16 - flap, 20, 4, 12, 6);
+    B_P(c[0], -11, 14, -8, -6, 8, -6, 11, 14); B_E(0, -10, 9, 8, c[0]);
+    B_P('#2a1a1a', -8, -15, -13, -26, -4, -17); B_P('#2a1a1a', 8, -15, 13, -26, 4, -17);
+    circle(-3.5, -11, 2, '#ffd24a'); circle(3.5, -11, 2, '#ffd24a'); B_L('#2a0a0a', 1.6, -4, -5, 0, -4, 4, -5);
+    const g = ctx.createRadialGradient(15, -2, 1, 15, -2, 9); g.addColorStop(0, '#fff6b0'); g.addColorStop(0.5, c[1]); g.addColorStop(1, 'rgba(255,90,42,0)'); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(15, -2, 9 + Math.sin(t * 9) * 1.5, 0, TAU); ctx.fill();
+  },
+  drone(f, t, c, w) {
+    const bob = Math.sin(t * 3 + f.wob) * 2.5;
+    B_E(3, 26, 10, 3, 'rgba(0,0,0,0.2)'); ctx.translate(0, bob);
+    B_E(0, 2, 14, 5, c[0]); B_E(0, 0, 13, 3.6, '#c8d0dc'); ctx.fillStyle = 'rgba(122,240,224,0.75)'; ctx.beginPath(); ctx.arc(0, -1, 6.5, Math.PI, 0); ctx.fill();
+    for (let i = -1; i <= 1; i++) circle(i * 8, 4, 1.7, (Math.floor(t * 6) + i + 3) % 3 ? c[1] : '#fff');
+  },
+  abductor(f, t, c, w) {
+    const bob = Math.sin(t * 2 + f.wob) * 3;
+    if (f.beamOn) { const dx = (player.x - f.x) * (f.face || 1), dy = player.y - f.y; ctx.fillStyle = `rgba(200,138,255,${0.22 + 0.12 * Math.sin(t * 16)})`; ctx.beginPath(); ctx.moveTo(-6, 6); ctx.lineTo(6, 6); ctx.lineTo(dx + 24, dy + 14); ctx.lineTo(dx - 24, dy + 14); ctx.closePath(); ctx.fill(); }
+    B_E(3, 34, 16, 4.5, 'rgba(0,0,0,0.2)'); ctx.translate(0, bob);
+    B_E(0, 3, 21, 7.5, c[0]); B_E(0, 0, 20, 5.5, '#aab4c8'); ctx.fillStyle = 'rgba(200,138,255,0.8)'; ctx.beginPath(); ctx.arc(0, -2, 10, Math.PI, 0); ctx.fill();
+    circle(-3, -6, 2.4, '#1a1a2a'); circle(4, -6, 2.4, '#1a1a2a');
+    for (let i = -2; i <= 2; i++) circle(i * 7.5, 6, 2, (Math.floor(t * 5) + i + 5) % 2 ? c[1] : '#fff');
+  },
+  squid(f, t, c, w) {
+    B_E(2, 13, 13, 4.5, 'rgba(0,0,0,0.28)');
+    for (let i = -2; i <= 2; i++) { const k = Math.sin(w * 0.3 + i * 1.4 + t * 2) * 3; B_L(c[0], 3, i * 4, 4, i * 6 + k, 9, i * 7 - k * 0.5, 13); }
+    B_P(c[0], -10, 5, -8, -10, 0, -19, 8, -10, 10, 5); B_E(0, 2, 10, 6, c[1]);
+    circle(-4, 0, 3, '#f4f0e0'); circle(4, 0, 3, '#f4f0e0'); circle(-3.5, 0, 1.5, '#1a1a1a'); circle(4.5, 0, 1.5, '#1a1a1a');
+  },
+  harpy(f, t, c, w) {
+    const flap = Math.sin(t * (f.mode === 1 ? 4 : 9) + f.wob) * (f.mode === 1 ? 3 : 10);
+    B_E(4, 34, 11, 3.5, 'rgba(0,0,0,0.2)');
+    B_P(c[0], -3, -2, -28, -10 - flap, -22, 2, -12, 6); B_P(c[0], 3, -2, 28, -10 - flap, 22, 2, 12, 6);
+    B_E(0, 2, 7, 9, '#6a5a6a'); circle(0, -9, 5.5, '#e8c8b0'); B_P(c[1], -5, -11, 0, -18, 5, -11);
+    circle(-2, -9, 1.2, c[1]); circle(2, -9, 1.2, c[1]); B_P('#ffb04a', -4, 10, -2, 15, 0, 10); B_P('#ffb04a', 0, 10, 2, 15, 4, 10);
+  },
+};
+function drawBeast(f) {
+  const B = BEASTS[f.beast], s = f.scale || 1;
+  ctx.save(); ctx.translate(f.x, f.y);
+  ctx.save(); ctx.scale(s * (f.face < 0 ? -1 : 1), s);
+  if (f.flash > 0) ctx.globalAlpha = 0.6;
+  if (f.freeze > 0) ctx.filter = 'none';
+  BEAST_ART[f.beast](f, elapsed, B.col, f.walk || 0);
+  ctx.restore();
+  if (!f.sub) {
+    if (f.freeze > 0) circle(0, 0, f.r + 3, 'rgba(190,230,255,0.55)', '#fff', 1.5);
+    drawStatus(f, f.r);
+    const hurt = f.hp < f.maxHp - 0.01;
+    if (f.chief) {
+      const bw = 90;
+      ctx.textAlign = 'center'; ctx.font = `bold 13px ${SERIF}`; ctx.lineWidth = 3.5; ctx.strokeStyle = 'rgba(0,0,0,0.75)';
+      ctx.strokeText(f.chief.name, 0, -f.r - 22); ctx.fillStyle = '#ffd24a'; ctx.fillText(f.chief.name, 0, -f.r - 22);
+      ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(-bw / 2 - 1, -f.r - 16, bw + 2, 7); ctx.fillStyle = TYPE_COLOR[f.elem]; ctx.fillRect(-bw / 2, -f.r - 15, bw * clamp(f.hp / f.maxHp, 0, 1), 5);
+    } else if (hurt) {
+      const bw = Math.max(18, f.r * 1.8);
+      ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(-bw / 2 - 1, -f.r - 13, bw + 2, 5); ctx.fillStyle = TYPE_COLOR[f.elem]; ctx.fillRect(-bw / 2, -f.r - 12, bw * clamp(f.hp / f.maxHp, 0, 1), 3);
+    } else circle(0, -f.r - 8, 2.6, TYPE_COLOR[f.elem], 'rgba(0,0,0,0.6)', 1);     // a dot of its element's colour, so you know what beats it
+  }
+  ctx.restore();
 }
 
 // ── battle arena terrain ──
