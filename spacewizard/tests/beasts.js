@@ -11,7 +11,7 @@ const { openWorld } = require('./lib');
       player.x = p.x; player.y = p.y;
       const t0 = ADV.world.tokens, seen = {}; let hurt = 0, kills = 0, maxFoes = 0;
       for (let i = 0; i < 120 * 20; i++) {
-        const hp = player.hp;
+        const hp = player.hp; farX().food = 90;
         tick(0.05);
         if (state !== 'play') { state = 'play'; player.hp = player.maxHp; }
         hurt += Math.max(0, hp - player.hp); player.hp = player.maxHp;

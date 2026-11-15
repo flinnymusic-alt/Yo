@@ -1055,8 +1055,12 @@ const HALLS = [
   { id: 'school', name: 'The Spell School', x: 160, y: 3700, w: 588, h: 428, doorW: 96, roof: '#4a5a8a', floor: 'stone' },
   { id: 'scribe', name: 'The Scribe’s House', x: -560, y: 3965, w: 260, h: 190, doorW: 64, roof: '#7a5a3a', floor: 'wood' },
   { id: 'healer', name: 'The Healing House', x: 680, y: 4610, w: 240, h: 170, doorW: 64, roof: '#d8cfc0', floor: 'tile' },
+  { id: 'guild', name: 'The Wayfarers’ Guild', x: -470, y: 3660, w: 300, h: 210, doorW: 80, roof: '#8a3a4a', floor: 'wood' },
 ];
 const HALL_T = 14;                                   // how thick their walls are
+// where the folk with work for a wayfarer stand (down the road from the guild), and the coach post on the green
+const HOME_SPOTS = [[-410, 3930], [-230, 3930], [-90, 4010], [-200, 4070], [-90, 4130], [-200, 4190], [-90, 4250], [-200, 4310], [-120, 4375]];
+const HOME_COACH = { x: -260, y: 4700 };
 const hallOf = id => HALLS.find(h => h.id === id);
 function hallAt(x, y) { for (const h of HALLS) if (x > h.x + HALL_T && x < h.x + h.w - HALL_T && y > h.y + HALL_T && y < h.y + h.h - HALL_T) return h; return null; }
 const SCRIBE = { x: -430, y: 4035, name: 'Elsie the Scribe' };   // her desk
@@ -1511,6 +1515,8 @@ for (const h of HALLS) {
   add(h.x, h.y + h.h - T, d0 - h.x, T); add(d1, h.y + h.h - T, h.x + h.w - d1, T); // the front, with its doorway
   add(h.x, h.y, T, h.h); add(h.x + h.w - T, h.y, T, h.h);                         // the sides
 }
+for (let i = solids.length - 1; i >= 0; i--) { const s = solids[i]; if (HOME_SPOTS.some(([x, y]) => Math.hypot(s.x - x, s.y - y) < 60) || Math.hypot(s.x - HOME_COACH.x, s.y - HOME_COACH.y) < 110) solids.splice(i, 1); }
+solids.push({ x: HOME_COACH.x, y: HOME_COACH.y, r: 24, kind: 'coach', far: true });
 for (let i = solids.length - 1; i >= 0; i--) { const s = solids[i]; if (Math.abs(s.x - STALL.x) < 150 && s.y > STALL.y - 200 && s.y < STALL.y + 80) solids.splice(i, 1); }
 walls.push({ x: STALL.x - 86, y: STALL.y - 90, w: 172, h: 90, stall: true });
 // spatial grid so collision checks only look at nearby solids
@@ -2832,6 +2838,8 @@ function updateWorld(dt) {
     WLD.talk = { name: STALL.name, at: { x: STALL.x + 26, y: STALL.y - 70 }, line: 'Tokens for spells! Tell me what kind of spell you’re after, and I’ll find you one you don’t know yet.', shop: true };
   updateHalls(dt);
   updateQuests(dt);
+  updateFolk();
+  updateCrew(dt);
   updateFarGates();
   if (LANDNOW) return;
   // crystals in chests
@@ -2883,7 +2891,7 @@ function updateHalls(dt) {
     if (WLD.hall && WLD.hall.id === 'school') leaveSchool(false);
     WLD.hall = h;
     if (h && h.id === 'school') enterSchool();
-    if (h && h.id === 'healer') nurseHeals();
+    if (h && (h.id === 'healer' || h.id === 'inn')) nurseHeals();
   }
   for (const H of HALLS) H.lift = clamp((H.lift || 0) + (WLD.hall === H ? 4 : -4) * dt, 0, 1);   // its roof lifts away while you're inside
   if (h && h.id === 'scribe') WLD.talk = { name: SCRIBE.name, at: { x: SCRIBE.x, y: SCRIBE.y - 60 }, line: scribeLine() };
@@ -3512,7 +3520,8 @@ function drawHallInside(h) {
     const open = WLD && WLD.duel && WLD.duel.door > 0;
     ctx.fillStyle = open ? '#1a1410' : '#5a3a20'; ctx.fillRect(cx - 34, h.y + 2, 68, T + 6);
     ELEM_CYCLE.forEach((e, i) => { const bx = x0 + 40 + i * (w - 80) / 4; ctx.fillStyle = TYPE_COLOR[e]; ctx.beginPath(); ctx.moveTo(bx - 12, y0); ctx.lineTo(bx + 12, y0); ctx.lineTo(bx + 12, y0 + 30); ctx.lineTo(bx, y0 + 22); ctx.lineTo(bx - 12, y0 + 30); ctx.fill(); });
-  } else if (h.id === 'scribe') {
+  } else if (h.id === 'guild' || h.id === 'inn') drawInnInside(h);
+  else if (h.id === 'scribe') {
     // shelves of books, a rug, candles, and the scribe's desk
     for (let i = 0; i < 2; i++) { const sx = x0 + 10 + i * (w - 70); ctx.fillStyle = '#5a3a20'; ctx.fillRect(sx, y0 + 4, 50, 16); for (let k = 0; k < 7; k++) { ctx.fillStyle = ['#a03a3a', '#3a6a9a', '#5a8a3a', '#9a7a3a', '#6a4a8a'][k % 5]; ctx.fillRect(sx + 3 + k * 6.6, y0 + 6, 5, 12); } }
     ctx.fillStyle = 'rgba(140,40,50,0.55)'; ctx.fillRect(cx - 50, cy + 18, 100, 50);
@@ -3957,7 +3966,7 @@ function drawTalk() {
   if (mode !== 'adventure' || state !== 'play' || !WLD || !WLD.talk) return;
   const v = WLD.talk, maxW = Math.min(W - 28, 420), more = v.pages > 1;
   ctx.font = `14px ${SERIF}`;
-  const lines = wrapLines(v.line, maxW - 24), bh = 30 + lines.length * 18 + (more || v.shop ? 18 : 0), bx = (W - maxW) / 2, by = panelTop - 36 - bh;
+  const lines = wrapLines(v.line, maxW - 24), bh = 30 + lines.length * 18 + (more || v.shop || v.act ? 18 : 0), bx = (W - maxW) / 2, by = panelTop - 36 - bh;
   roundRect(bx, by, maxW, bh, 10); ctx.fillStyle = 'rgba(255,250,236,0.96)'; ctx.fill(); ctx.strokeStyle = '#6b4a2e'; ctx.lineWidth = 2; ctx.stroke();
   ctx.textAlign = 'left'; ctx.fillStyle = '#7a3a2a'; ctx.font = `bold 13px ${SERIF}`; ctx.fillText(v.name, bx + 12, by + 19);
   ctx.fillStyle = '#2a2018'; ctx.font = `14px ${SERIF}`;
@@ -3972,11 +3981,17 @@ function drawTalk() {
     ctx.fillText('tap to see his spells ▸', bx + maxW - 12, by + bh - 10);
     talkBox = { x: bx, y: by, w: maxW, h: bh, shop: true };
   }
+  if (v.act) {
+    ctx.textAlign = 'right'; ctx.font = `bold 12px ${SERIF}`; ctx.fillStyle = '#9a6a3a';
+    ctx.fillText(v.actLabel || 'tap ▸', bx + maxW - 12, by + bh - 10);
+    talkBox = { x: bx, y: by, w: maxW, h: bh, act: v.act };
+  }
 }
 function talkHit(x, y) {
   const b = talkBox;
   if (!b || state !== 'play' || x < b.x || x > b.x + b.w || y < b.y || y > b.y + b.h) return false;
   if (b.shop) { openShop(); return true; }
+  if (b.act) { b.act(); return true; }
   b.teacher.page = (b.teacher.page + 1) % b.teacher.pages.length;
   WLD.talk = null; talkBox = null; SFX.buff();
   return true;
@@ -4194,6 +4209,7 @@ function mapRect() {
   return { x: (W - s) / 2, y: top, s };
 }
 function drawMapOverlay() {
+  if (LANDNOW) { drawLandMap(); return; }
   dim(0.9);
   const R = mapRect(), k = R.s / (2 * AW), X = x => R.x + (x + AW) * k, Y = y => R.y + (y + AW) * k;
   ctx.textAlign = 'center'; ctx.fillStyle = '#ffd24a'; ctx.font = `bold 22px ${SERIF_BIG}`;
@@ -4239,6 +4255,15 @@ function drawMapOverlay() {
     else { circle(x, y, 6, d.crown ? '#ffd24a' : TYPE_COLOR[d.elem], '#000', 1.5); }
   }
   for (const r of RIVALS) if (!ADV.world.rivals.includes(r.id) && seenAt(r.x, r.y)) circle(X(r.x), Y(r.y), 3, TYPE_COLOR[r.elem], '#000', 1);
+  if (!mapView.travel) for (const g of FARGATES) {           // the ten gates, named once you've seen or been sent to them
+    const wanted = MISSIONS.some(M => mOn(M) && !mReady(M) && M.land === g.land);
+    if (!seenAt(g.x, g.y) && !wanted && !farX().been[g.land]) continue;
+    ctx.fillStyle = '#ffd24a'; ctx.fillRect(X(g.x) - 4, Y(g.y) - 4, 8, 8); ctx.strokeStyle = '#000'; ctx.lineWidth = 1.2; ctx.strokeRect(X(g.x) - 4, Y(g.y) - 4, 8, 8);
+    if (wanted) { ctx.globalAlpha = 0.5 + 0.5 * Math.sin(elapsed * 5); circle(X(g.x), Y(g.y), 11, null, '#ffd24a', 2.5); ctx.globalAlpha = 1; }
+    ctx.font = `bold 9px ${SERIF}`; ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.7)'; ctx.textAlign = g.ox > 0 ? 'right' : g.ox < 0 ? 'left' : 'center';
+    const lx = X(g.x) + (g.ox > 0 ? -8 : g.ox < 0 ? 8 : 0), ly = Y(g.y) + (g.oy > 0 ? -8 : g.oy < 0 ? 16 : 3), nm = g.name.replace('The ', '');
+    ctx.strokeText(nm, lx, ly); ctx.fillStyle = '#ffe7a0'; ctx.fillText(nm, lx, ly); ctx.textAlign = 'center';
+  }
   if (!mapView.travel) for (const q of QUESTS) {
     if (helped(q.id) || !seenAt(q.x, q.y)) continue;
     circle(X(q.x), Y(q.y), 5.5, '#ffd24a', '#000', 1.2);
@@ -4268,7 +4293,7 @@ function drawMapOverlay() {
   ctx.globalAlpha = 1;
 }
 function mapTap(x, y) {
-  if (mapView.travel) {
+  if (mapView.travel && !LANDNOW) {
     const R = mapRect(), k = R.s / (2 * AW);
     let best = null, bd = 22;
     for (const w of WAYSTONES) {
@@ -4286,7 +4311,7 @@ function minimapHit(x, y) {
   const s = Math.min(110, W * 0.26);
   return x > W - s - 18 && y < s + 24;
 }
-function travelButton() { const b = bookButton(); return { x: b.x, y: b.y - b.r * 2 - 14, r: b.r }; }
+function travelButton() { const b = packShown() ? packButton() : bookButton(); return { x: b.x, y: b.y - b.r * 2 - 14, r: b.r }; }
 function travelHit(x, y) { if (mode !== 'adventure' || state !== 'play' || !WLD || !WLD.wayAt) return false; const b = travelButton(); return Math.hypot(x - b.x, y - b.y) < b.r + 6; }
 function drawTravelButton() {
   if (mode !== 'adventure' || state !== 'play' || !WLD || !WLD.wayAt) return;
@@ -5027,6 +5052,7 @@ function landSwap(L) {
     walls.length = 0; for (const w of L.g.walls) walls.push(w);
     segWalls = []; PATHS = L.g.paths; BRIDGES = L.g.bridges;
     activeSolids = L.g.solids; activeGrid = L.g.grid;
+    if (!L.g.peopled) { L.g.peopled = true; L.g.people = farPeopleFor(L); }
     const d = L.g.dock; Object.assign(boat, d ? { x: d.x, y: d.y, ang: d.ang } : { x: 1e6, y: 1e6, ang: 0 });
   } else if (homeKeep) {
     GX = GY = 0;
@@ -5053,7 +5079,7 @@ function goLand(L, x, y) {
   foes = foes.filter(f => !f.far && !f.roam && !f.serpent);
   clearCombat();
   player.onBoat = false; player.x = x; player.y = y; player.kx = player.ky = 0; player.invuln = Math.max(player.invuln, 1.5);
-  if (WLD) { WLD.hall = null; WLD.talk = null; WLD.wayAt = null; WLD.later = []; WLD.packT = 6; WLD.beastT = 5; }
+  if (WLD) { WLD.hall = null; WLD.talk = null; WLD.wayAt = null; WLD.later = []; WLD.packT = 6; WLD.beastT = 5; WLD.rested = false; WLD.guards = {}; WLD.follow = null; WLD.cry = 0; }
   cam.ox = cam.oy = 0; cam.x = x; cam.y = y;
   movePtr = null; movePos = null; moveStart = null;
   crewGather();
@@ -5063,7 +5089,8 @@ function farX() {
   const W = ADV.world;
   if (!W.far || typeof W.far !== 'object') W.far = {};
   const X = W.far;
-  for (const [k, v] of [['food', 0], ['rep', 0], ['crew', []], ['been', {}], ['m', {}], ['seen', {}], ['track', null]]) if (X[k] == null || typeof X[k] !== typeof v) X[k] = v;
+  for (const [k, v] of [['food', 0], ['rep', 0], ['crew', []], ['been', {}], ['m', {}], ['seen', {}]]) if (X[k] == null || typeof X[k] !== typeof v) X[k] = v;
+  if (typeof X.track !== 'string') X.track = null;
   return X;
 }
 // through a gate from home, and home again
@@ -5104,6 +5131,9 @@ function updateLand(dt) {
   }
   WLD.talk = null; WLD.wayAt = null;
   updateHalls(dt);
+  updateFolk();
+  updateCrew(dt);
+  if (state === 'play') { updateFarBase(); updateMissions(dt); updateFood(dt); if (!LANDNOW) return; }
   // the boat: the ferryman brings it back to the jetty if it's been left far off
   const d = L.g.dock;
   if (d && !player.onBoat && Math.hypot(player.x - d.pier.b.x, player.y - d.pier.b.y) < 90 && Math.hypot(boat.x - d.x, boat.y - d.y) > 260) {
@@ -5133,7 +5163,6 @@ function updateFarGates() {
   if (state !== 'play') return;
   for (const g of FARGATES) if (Math.hypot(player.x - g.out.x, player.y - g.out.y) < 100) { enterLand(landById(g.land)); return; }
 }
-function crewGather() {}
 
 // ── drawing the gates, the far lands' places and their things ──
 function drawArch(x, y, ox, oy, name, sub) {
@@ -5405,7 +5434,6 @@ function beastDown(f) {
   missionKill(f);
 }
 const FOOD_MAX = 99;
-function missionKill() {}
 
 // beasts roam the wilds of a far land, away from its town and its gate
 function landSafe(L, x, y) { return Math.hypot(x - L.base.x, y - L.base.y) < (L.town ? (L.town.kind === 'city' ? 900 : 620) : 380) || Math.hypot(x - L.arr.x, y - L.arr.y) < 420; }
@@ -5623,6 +5651,697 @@ function drawBeast(f) {
   ctx.restore();
 }
 
+// ── hired hands: fighters and medics who come with you ──
+// You pay once and they stay till they're hurt, till you faint, or till you send them home. Each one eats.
+const CREW = {
+  fighter: { name: 'Fighter', cost: 120, hp: 16, coat: '#8a5a3a', say: 'Stands between you and the beasts, and hits back.' },
+  medic:   { name: 'Medic', cost: 160, hp: 9, coat: '#f4f4f0', say: 'Keeps behind you and mends you and your fighters.' },
+};
+const CREW_MAX = 3, MEAL_SECS = 30, MEAL_COST = 4, HUNGER_SECS = 25;
+const CREW_NAMES = ['Brann', 'Ysolde', 'Tam', 'Greta', 'Odo', 'Wynn', 'Hale', 'Mirren', 'Jory', 'Sabine', 'Kell', 'Rhea', 'Bo', 'Linnet'];
+let crew = [];
+function crewLoad() {
+  crew = farX().crew.map((c, i) => ({ k: c.k, n: c.n, hp: c.hp, maxHp: CREW[c.k].hp, x: player.x, y: player.y, r: 11, cd: 1, life: 1, face: 1, walk: 0, src: c }));
+  crewGather();
+}
+function crewSlot(i) {
+  const n = crew.length, a = Math.atan2(-player.face.y, -player.face.x) + (i - (n - 1) / 2) * 0.75, d = crew[i].k === 'medic' ? 62 : 46;
+  return { x: player.x + Math.cos(a) * d, y: player.y + Math.sin(a) * d };
+}
+function crewGather() { crew.forEach((c, i) => { const s = crewSlot(i), p = freeSpot(s.x, s.y, c.r); c.x = p.x; c.y = p.y; }); }
+function crewHire(k) {
+  const X = farX(), C = CREW[k];
+  if (crew.length >= CREW_MAX || (ADV.world.tokens || 0) < C.cost) return false;
+  ADV.world.tokens -= C.cost;
+  const used = new Set(X.crew.map(c => c.n)), n = CREW_NAMES.filter(n => !used.has(n))[Math.floor(Math.random() * (CREW_NAMES.length - used.size))];
+  X.crew.push({ k, n, hp: C.hp }); advSave(); crewLoad();
+  SFX.summon();
+  return true;
+}
+function crewLeaves(c, why) {
+  const X = farX();
+  X.crew = X.crew.filter(s => s !== c.src); crew = crew.filter(o => o !== c);
+  burst(c.x, c.y, '#ccc', 14, 160);
+  if (why) tipMsg(why, '#ffb04a', 4);
+  advSave();
+}
+function crewHome(why) { for (const c of [...crew]) crewLeaves(c); if (why) tipMsg(why, '#ffb04a', 5); }
+function updateCrew(dt) {
+  if (!crew.length) return;
+  crew.forEach((c, i) => {
+    const s = crewSlot(i), px = c.x, py = c.y, dp = Math.hypot(player.x - c.x, player.y - c.y);
+    c.cd -= dt;
+    if (player.onBoat) { c.x = player.x - 10 + i * 10; c.y = player.y + 4; return; }
+    if (dp > 640 || landBlocks(c.x, c.y, 6)) { const p = freeSpot(s.x, s.y, c.r); c.x = p.x; c.y = p.y; return; }
+    let t = null;
+    if (c.k === 'fighter') {
+      t = nearestFoe(c.x, c.y, 300);
+      if (t && (t.gate || t.dummy || t.sub || ((t.world || t.rival) && !t.awake) || Math.hypot(t.x - player.x, t.y - player.y) > 430)) t = null;
+    }
+    if (t) {
+      const d = walkToward(c, t.x, t.y, 165, dt, c.r + t.r);
+      if (d <= c.r + t.r + 8 && c.cd <= 0) { c.cd = 0.9; c.swing = 0.25; damageFoe(t, 1.7, 'steel', true); burst(t.x, t.y, '#ddd', 4, 110); }
+    } else walkToward(c, s.x, s.y, dp > 150 ? 250 : 180, dt, 5);
+    if (c.k === 'medic' && c.cd <= 0) {
+      c.cd = 2.2;
+      // whoever's worst hurt nearby: you, or one of the others
+      let who = null, worst = 0.999;
+      if (player.hp / player.maxHp < worst && dp < 240) { who = player; worst = player.hp / player.maxHp; }
+      for (const o of crew) if (o.hp / o.maxHp < worst && Math.hypot(o.x - c.x, o.y - c.y) < 240) { who = o; worst = o.hp / o.maxHp; }
+      if (who) {
+        if (who === player) healPlayer(1.6); else { who.hp = Math.min(who.maxHp, who.hp + 2.5); floatText(who.x, who.y - 30, '+2.5', '#6f6', 13); }
+        fx.push({ kind: 'bolt', pts: [{ x: c.x, y: c.y - 10 }, { x: who.x, y: who.y - 10 }], life: 0.2, max: 0.2, color: '#9f9' });
+      }
+    }
+    pushOut(c, c.r);
+    c.walk += Math.hypot(c.x - px, c.y - py); if (Math.abs(c.x - px) > 0.05) c.face = c.x > px ? 1 : -1;
+    c.swing = Math.max(0, (c.swing || 0) - dt);
+    // whatever bites or shoots at them
+    for (const f of foes) {
+      if (f.dead || f.sub || f.gate || !f.melee || f.hitCd > 0 || f.stun > 0 || f.freeze > 0 || f.stone > 0) continue;
+      if (Math.hypot(f.x - c.x, f.y - c.y) < f.r + c.r + 5) { c.hp -= f.dmg; f.hitCd = 1; burst(c.x, c.y, '#f66', 5, 120); }
+    }
+    for (const sh of enemyShots) if (sh.life > 0 && Math.hypot(sh.x - c.x, sh.y - c.y) < sh.r + c.r) { c.hp -= sh.dmg; sh.life = 0; burst(c.x, c.y, '#f66', 5, 120); }
+  });
+  for (const c of [...crew]) if (c.hp <= 0 || c.life <= 0) crewLeaves(c, `${c.n} the ${c.k} is hurt, and heads for home`);
+  for (const c of crew) c.src.hp = c.hp;
+}
+function drawCrew(camX, camY) {
+  for (const c of crew) {
+    if (!inView(c.x, c.y, 60, camX, camY)) continue;
+    if (player.onBoat) { circle(c.x, c.y - 8, 6, '#f1d2b0'); circle(c.x, c.y - 12, 5, c.k === 'medic' ? '#f4f4f0' : '#7a7a86'); continue; }
+    const step = Math.sin(c.walk * 0.25) * 2, f = c.face, { x, y } = c;
+    circle(x + 3, y + 12, 10, 'rgba(0,0,0,0.3)');
+    ctx.fillStyle = '#4a3a2a'; ctx.fillRect(x - 5, y + 4, 4, 9 + step); ctx.fillRect(x + 1, y + 4, 4, 9 - step);
+    roundRect(x - 9, y - 10, 18, 18, 6); ctx.fillStyle = CREW[c.k].coat; ctx.fill();
+    circle(x, y - 15, 7, '#f1d2b0'); circle(x - 2.5 + f, y - 15, 1, '#3a2a2a'); circle(x + 2.5 + f, y - 15, 1, '#3a2a2a');
+    if (c.k === 'fighter') {
+      ctx.fillStyle = '#8a8a96'; ctx.beginPath(); ctx.arc(x, y - 17, 7.5, Math.PI, 0); ctx.fill(); ctx.fillRect(x - 8, y - 18, 16, 2.5);      // helmet
+      circle(x - f * 9, y - 1, 7, '#6a4a2c', '#c8a24a', 2);                                                                                  // shield
+      const a = c.swing > 0 ? -1.2 + (0.25 - c.swing) * 9 : -0.5;                                                                            // sword
+      ctx.strokeStyle = '#dfe4ea'; ctx.lineWidth = 3; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(x + f * 9, y - 2); ctx.lineTo(x + f * (9 + Math.cos(a) * 15), y - 2 + Math.sin(a) * 15); ctx.stroke();
+    } else {
+      ctx.fillStyle = '#f4f4f0'; ctx.fillRect(x - 7, y - 25, 14, 6); ctx.fillStyle = '#4caf50'; ctx.fillRect(x - 1.5, y - 25, 3, 6); ctx.fillRect(x - 3.5, y - 23.5, 7, 3);
+      ctx.fillStyle = '#e0505a'; ctx.fillRect(x - 1.5, y - 6, 3, 9); ctx.fillRect(x - 4.5, y - 3, 9, 3);
+    }
+    if (c.hp < c.maxHp - 0.01) { ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(x - 11, y - 34, 22, 5); ctx.fillStyle = '#5ad05a'; ctx.fillRect(x - 10, y - 33, 20 * clamp(c.hp / c.maxHp, 0, 1), 3); }
+  }
+}
+
+// ── food: everyone eats while you're out in a far land ──
+// A meal feeds one of you for half a minute. Towns and camps are safe: nobody eats there.
+const mealsPerSec = () => (1 + crew.length) / MEAL_SECS;
+const foodSecs = () => farX().food / mealsPerSec();
+const clock = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+function updateFood(dt) {
+  const L = LANDNOW, X = farX();
+  if (landSafe(L, player.x, player.y) && Math.hypot(player.x - L.arr.x, player.y - L.arr.y) > 420) { X.hunger = 0; return; }
+  if (X.food > 0) {
+    const before = foodSecs();
+    X.food = Math.max(0, X.food - mealsPerSec() * dt); X.hunger = 0;
+    const left = foodSecs();
+    if (before > 60 && left <= 60) tipMsg('Food for one more minute!', '#ffb04a', 4);
+    if (before > 0 && left <= 0) { tipMsg('The food’s all gone. You’ll faint if you don’t turn back!', '#ff7a5a', 5); SFX.hurt(); }
+    return;
+  }
+  X.hunger = (X.hunger || 0) + dt;
+  if (X.hunger >= HUNGER_SECS) farFaint();
+}
+// out of food: you faint, and wake at the gate you came in by
+function farFaint() {
+  const L = LANDNOW, X = farX(), g = L.gate;
+  X.hunger = 0;
+  missionsReset();
+  crewHome();
+  goLand(null, g.in.x, g.in.y);
+  player.face = { x: -g.ox, y: -g.oy }; player.hp = Math.max(1, Math.ceil(player.maxHp / 2));
+  ADV.check = { x: g.in.x, y: g.in.y }; advSave();
+  flash = 0.9; SFX.death();
+  showBanner('You fainted from hunger', 'Carried back to the gate. Take more food next time', 6);
+}
+// you fell in a far land: you wake where you last rested there, or back at the gate
+function farFell() {
+  const L = LANDNOW, c = ADV.check, here = c && c.land === L.id;
+  resetPlayer(); advStats();
+  missionsReset();
+  if (here) goLand(L, c.x, c.y); else goLand(null, L.gate.in.x, L.gate.in.y);
+  farX().hunger = 0;
+  state = 'play';
+  showBanner('You rise again', here ? `Carried back to ${L.town ? L.town.name : 'the camp'}` : 'Carried back through the gate', 3);
+}
+
+// ── cards: the choices folk offer you (the same look as Barnaby's stall) ──
+let farCard = null;
+function farCardEl() {
+  let el = document.getElementById('farcard');
+  if (el) return el;
+  el = document.createElement('div'); el.id = 'farcard';
+  el.style.cssText = 'position:fixed;inset:0;display:none;align-items:center;justify-content:center;z-index:30;background:rgba(5,3,10,0.55);touch-action:pan-y;user-select:none;-webkit-user-select:none;-webkit-tap-highlight-color:transparent';
+  for (const ev of ['touchstart', 'touchmove', 'pointerdown']) el.addEventListener(ev, e => e.stopPropagation(), { passive: true });
+  const st = document.createElement('style');
+  st.textContent = '#farcard [data-go]:active{filter:brightness(1.4)}';
+  document.head.appendChild(st);
+  el.addEventListener('click', e => {
+    const b = e.target.closest('[data-go]');
+    if (!b || b.dataset.off || !farCard) return;
+    const i = b.dataset.go.indexOf(':'), what = i < 0 ? b.dataset.go : b.dataset.go.slice(0, i), v = i < 0 ? '' : b.dataset.go.slice(i + 1);
+    if (what === 'close') { closeFarCard(); return; }
+    farCard.go(what, v);
+  });
+  document.body.appendChild(el);
+  return el;
+}
+const cardOpt = (go, title, say, off, right) => `<div data-go="${go}"${off ? ' data-off="1"' : ''} style="display:flex;align-items:center;gap:10px;text-align:left;padding:10px 12px;margin-top:8px;border-radius:10px;cursor:pointer;background:#241c34;border:1.5px solid ${off ? '#3a3248' : '#6a5a8a'};opacity:${off ? 0.45 : 1}">`
+  + `<div style="flex:1;min-width:0"><div style="color:#ffd24a;font-weight:bold;font-size:16px">${title}</div><div style="color:#ccc;font-size:13px;margin-top:2px">${say}</div></div>${right || ''}</div>`;
+const cardPrice = (price, short) => `<div style="background:${short ? '#3a3248' : '#ffd24a'};color:${short ? '#999' : '#2a1a00'};border-radius:9px;padding:7px 10px;font-weight:bold;font-size:14px;white-space:nowrap">${coinSvg(14)} ${price.toLocaleString()}</div>`;
+const cardNote = t => `<div style="color:#bbb;font-size:14px;margin:10px 0 2px;text-align:left;line-height:1.35">${t}</div>`;
+// show a card: `draw` returns { title, sub, body, buttons: [[go, label]] }; `go` handles its taps
+function openFarCard(draw, go) {
+  farCard = { draw, go: (w, v) => { go(w, v); if (farCard) paintFarCard(); } };
+  state = 'shop';
+  movePtr = null; movePos = null; moveStart = null; castPtr = null; finger = null; seq = [];
+  SFX.buff(); paintFarCard();
+}
+function paintFarCard() {
+  const el = farCardEl(), c = farCard.draw(), have = ADV.world.tokens || 0;
+  const btn = 'flex:1;padding:10px;border-radius:10px;font-weight:bold;cursor:pointer;background:#2a2238;color:#ccc;border:1px solid #5a5070';
+  const gold = 'flex:1;padding:10px;border-radius:10px;font-weight:bold;cursor:pointer;background:#ffd24a;color:#2a1a00;border:1px solid #c8901a';
+  el.innerHTML = `<div style="background:#1a1428;border:2px solid #ffd24a;border-radius:14px;padding:16px 16px 14px;width:min(88vw,380px);max-height:88vh;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;box-sizing:border-box;font-family:Georgia,serif;color:#eee;text-align:center;box-shadow:0 8px 30px rgba(0,0,0,0.6)">`
+    + `<div style="color:#ffd24a;font-weight:bold;font-size:20px">${c.title}</div>`
+    + (c.sub ? `<div style="color:#e8d0a0;font-size:14px;margin-top:3px">${c.sub}</div>` : '')
+    + (c.purse ? `<div style="color:#ffd24a;font-size:15px;margin-top:4px">${coinSvg(16)} ${have.toLocaleString()} tokens</div>` : '')
+    + c.body
+    + `<div style="display:flex;gap:10px;margin-top:14px">${(c.buttons || []).map(([go, label, hot]) => `<div data-go="${go}" style="${hot ? gold : btn}">${label}</div>`).join('')}<div data-go="close" style="${btn}">${c.closeLabel || 'Close'}</div></div></div>`;
+  el.style.display = 'flex';
+}
+function closeFarCard() {
+  farCardEl().style.display = 'none';
+  farCard = null;
+  if (state === 'shop') state = 'play';
+}
+
+// ── the keeper of a guild, an inn or a camp: food, and hands for hire ──
+function openOutfit(where) {
+  const camp = where === 'camp', name = where === 'guild' ? 'The Wayfarers’ Guild' : camp ? 'The rangers’ camp' : LANDNOW.town.hall.name;
+  openFarCard(() => {
+    const X = farX(), have = ADV.world.tokens || 0, room = FOOD_MAX - Math.floor(X.food);
+    let body = cardNote(`You carry <b style="color:#f0c890">${Math.floor(X.food)} meals</b>${X.food > 0 ? `: about ${clock(foodSecs())} out in the wilds for ${crew.length ? `the ${crew.length + 1} of you` : 'you alone'}` : ''}. Everyone eats a meal every half minute out there, and when the food runs out you faint.`);
+    for (const n of [10, 30]) body += cardOpt(`food:${n}`, `${n} meals`, room < n ? 'Your pack is full' : have < n * MEAL_COST ? `${n * MEAL_COST - have} more tokens` : `${clock(n / mealsPerSec())} more for ${crew.length ? 'you all' : 'you'}`, room < n || have < n * MEAL_COST, cardPrice(n * MEAL_COST, have < n * MEAL_COST));
+    if (!camp) {
+      body += cardNote(`Hired hands come with you till they’re hurt or you send them home. You have ${crew.length} of ${CREW_MAX}.`);
+      for (const k of Object.keys(CREW)) { const C = CREW[k], full = crew.length >= CREW_MAX; body += cardOpt(`hire:${k}`, `Hire a ${C.name.toLowerCase()}`, full ? 'You can lead no more' : have < C.cost ? `${C.cost - have} more tokens` : C.say, full || have < C.cost, cardPrice(C.cost, have < C.cost)); }
+      for (const c of crew) body += cardOpt(`home:${c.n}`, `${c.n} the ${c.k}`, `Health ${Math.ceil(c.hp)} of ${c.maxHp} · tap to send home`, false);
+    } else body += cardNote('No one here is for hire. Fighters and medics sign on at the guild in Hollowbrook and at the inns in the towns.');
+    return { title: name, purse: true, body };
+  }, (what, v) => {
+    const X = farX();
+    if (what === 'food') { const n = +v; if ((ADV.world.tokens || 0) >= n * MEAL_COST && X.food + n <= FOOD_MAX + 0.99) { ADV.world.tokens -= n * MEAL_COST; X.food += n; advSave(); SFX.discover(); } }
+    else if (what === 'hire') crewHire(v);
+    else if (what === 'home') { const c = crew.find(c => c.n === v); if (c) crewLeaves(c); }
+  });
+}
+// the coach: straight to any town or camp you've already reached on foot
+function openCoach() {
+  openFarCard(() => {
+    const X = farX();
+    let body = cardNote('Once you’ve reached a place on foot, the coach will take you straight there, and your hired hands with you.');
+    if (LANDNOW) body += cardOpt('go:home', 'Hollowbrook', 'Home', false);
+    for (const L of LANDS) if (X.been[L.id] >= 2 && L !== LANDNOW) body += cardOpt(`go:${L.id}`, L.town ? L.town.name : `The camp in ${L.name}`, `${L.town ? `The ${L.town.kind} in ${L.name}` : 'Wild country'} · ${TIER_WORD[L.tier].toLowerCase()}`, false);
+    if (!LANDS.some(L => X.been[L.id] >= 2 && L !== LANDNOW) && !LANDNOW) body += cardNote('<i>You haven’t reached anywhere yet. Walk out through one of the ten gates at the edge of the map.</i>');
+    return { title: 'The coach', body };
+  }, (what, v) => {
+    if (what !== 'go') return;
+    closeFarCard();
+    if (v === 'home') { goLand(null, HOME_COACH.x - 60, HOME_COACH.y + 50); ADV.check = { x: player.x, y: player.y }; showBanner('Hollowbrook', 'The coach sets you down on the green', 3); }
+    else { const L = landById(v), p = L.town ? L.town.coach : L.camp.coach; goLand(L, p.x - 60, p.y + 50); ADV.check = { x: player.x, y: player.y, land: L.id }; showBanner(L.town ? L.town.name : L.name, 'The coach sets you down', 3); }
+    advSave(); flash = 0.6; SFX.scroll();
+  });
+}
+
+// ── missions: folk in Hollowbrook and the far towns who want something done out there ──
+// kind: letter (take it to someone in a town) · advert (cry the news in a town's square) · fetch (bring a thing back
+// from a place) · find (find someone and see them safe to that land's town) · explore (visit places) ·
+// hunt (bring down a named beast) · count (bring down so many of a kind). All but the first two are reported
+// back to whoever asked. Each pays tokens and reputation.
+const MISSIONS = [
+  // Hollowbrook
+  { id: 'h1', at: 'home', who: 'Baker Hobb', coat: '#c8a070', hat: '#f4f0e0', kind: 'letter', land: 'mere', to: 'Marta the weaver', toCoat: '#a04a5a', pay: 120, rep: 10, title: 'A letter for Marta',
+    ask: 'My sister Marta weaves in Reedham, in the Mere Lands. Would you carry this letter to her?', done: 'From Hobb! Bless you for bringing it all this way.' },
+  { id: 'h2', at: 'home', who: 'Fletcher Wynn', coat: '#5a7a4a', hat: '#3a4a2a', kind: 'fetch', land: 'mere', site: 'heron', item: 'heron feathers', pay: 160, rep: 10, title: 'Heron feathers',
+    ask: 'The best arrows are fletched with heron feathers. Bring me a handful from Heron Pool, in the Mere Lands.', done: 'Long, grey and perfect. These will fly true.' },
+  { id: 'h3', at: 'home', who: 'Old Tessa', coat: '#7a5a8a', kind: 'find', land: 'wood', site: 'camp', name: 'Bram', pay: 200, rep: 15, title: 'My brother the woodcutter',
+    ask: 'My brother Bram cuts timber in the Elderwood and hasn’t been home in a week. Find him at the Woodcutters’ Camp and see him safe to Oakhollow.', found: 'Thornbacks all round the camp! I daren’t go alone. Lead on, I’ll follow.', done: 'Safe! Oh, thank you, wizard.' },
+  { id: 'h4', at: 'home', who: 'Finch the mapmaker', coat: '#4a6a9a', hat: '#2a3a5a', kind: 'explore', land: 'wood', sites: ['oak', 'ring', 'log'], pay: 200, rep: 15, title: 'Map the Elderwood',
+    ask: 'Nobody has drawn a true map of the Elderwood. Visit the Great Oak, the Fairy Ring and the Hollow Log, and tell me what you saw.', done: 'Wonderful! Now I can ink it all in.' },
+  { id: 'h5', at: 'home', who: 'Smith Garrick', coat: '#5a4a42', hat: '#2a2a2a', kind: 'fetch', land: 'fen', site: 'toad', item: 'a lump of bog iron', pay: 180, rep: 10, title: 'Bog iron',
+    ask: 'Bog iron makes the best blades. There’s a lump of it by the Toadstone, in the Blackfen.', done: 'Heavy as sin. That’ll make a fine blade.' },
+  { id: 'h6', at: 'home', who: 'Warden Ilsa', coat: '#3f6a5a', hat: '#1f3a32', kind: 'explore', land: 'fen', sites: ['beacon', 'chapel'], pay: 180, rep: 15, title: 'The beacon’s gone dark',
+    ask: 'The Bog Beacon has gone dark, and nobody has seen the Sunken Chapel in years. Go and look at both, in the Blackfen.', done: 'So they still stand. I’ll send men to relight the beacon.' },
+  { id: 'h7', at: 'home', who: 'Shepherd Coll', coat: '#8a7a5a', hat: '#d8b05a', kind: 'hunt', land: 'fen', site: 'hut', chief: { name: 'The Fen Mother', beast: 'bloat', calls: 'leech', scale: 2.1, hp: 9 }, pay: 300, rep: 20, title: 'The Fen Mother',
+    ask: 'A monstrous toad they call the Fen Mother has been taking my sheep. She lairs by the Witch’s Hut, in the Blackfen. Put an end to her.', done: 'My flock can graze in peace. You’ve my thanks, and my purse.' },
+  { id: 'h8', at: 'home', who: 'Steward Pell', coat: '#4a3a6a', hat: '#2a2040', kind: 'advert', land: 'coast', what: 'the Spell School of Hollowbrook', pay: 220, rep: 15, title: 'Cry the Spell School',
+    ask: 'The Spell School wants pupils from the cities. Go to Port Saltmere on the Salt Coast, stand by the well in the square, and cry the school’s name.', done: 'The whole square stops to listen. Three children ask where Hollowbrook is!' },
+  { id: 'h9', at: 'home', who: 'Clerk Odo', coat: '#6a6a7a', kind: 'fetch', land: 'crag', site: 'mine', item: 'the old ledger', pay: 260, rep: 15, title: 'The mine’s old ledger',
+    ask: 'The town’s old ledger was left down the Old Mine in the Stonecrags when it closed. I need it back.', done: 'Every page still here! The council will be glad.' },
+  // Reedham
+  { id: 'r1', at: 'mere', who: 'Fisher Mags', coat: '#4a6a8a', hat: '#2a3a4a', kind: 'count', land: 'mere', beast: 'leaper', n: 8, pay: 150, rep: 10, title: 'Leapers in the nets',
+    ask: 'Mire Leapers are tearing my nets to rags. Thin them out for me: eight would do it.', done: 'The nets will hold now. Here, you’ve earned this.' },
+  { id: 'r2', at: 'mere', who: 'Reeve Aldous', coat: '#7a4a3a', hat: '#4a2a1a', kind: 'letter', land: 'wood', to: 'Cooper Dann', toCoat: '#8a6a3a', pay: 180, rep: 10, title: 'An order for barrels',
+    ask: 'This order for barrels must reach Cooper Dann in Oakhollow, in the Elderwood.', done: 'Forty barrels for Reedham? I’d best get to work!' },
+  { id: 'r3', at: 'mere', who: 'Young Tib', coat: '#c86a8a', kind: 'explore', land: 'mere', sites: ['weir', 'lily'], pay: 150, rep: 10, title: 'The jammed weir',
+    ask: 'Grandad says the Old Weir is jammed and the lilies at Lilypad Reach are dying. Will you go and see?', done: 'I’ll tell Grandad! He’ll know what to do.' },
+  // Oakhollow
+  { id: 'o1', at: 'wood', who: 'Forester Hale', coat: '#3f6a34', hat: '#2a4a22', kind: 'hunt', land: 'wood', site: 'ring', chief: { name: 'Old Thornback', beast: 'boar', scale: 2, hp: 8 }, pay: 300, rep: 20, title: 'Old Thornback',
+    ask: 'Old Thornback, the biggest boar in the wood, has made the Fairy Ring his own. Drive him out for good.', done: 'The ring is ours again. The children can dance there at midsummer.' },
+  { id: 'o2', at: 'wood', who: 'Herbwife Senna', coat: '#6a9a5a', hat: '#e8a8c8', kind: 'fetch', land: 'fen', site: 'chapel', item: 'a black lotus', pay: 240, rep: 15, title: 'The black lotus',
+    ask: 'The black lotus grows only at the Sunken Chapel, in the Blackfen. One flower would cure half the village.', done: 'Still fresh! I’ll have the tincture ready by nightfall.' },
+  { id: 'o3', at: 'wood', who: 'Carter Bree', coat: '#8a6a4a', kind: 'letter', land: 'coast', to: 'Harbourmaster Quill', toCoat: '#2a3a5a', pay: 240, rep: 15, title: 'Timber for the port',
+    ask: 'The timber’s cut and ready to ship. Take this bill to Harbourmaster Quill at Port Saltmere, on the Salt Coast.', done: 'Elderwood oak! I’ll have a ship waiting.' },
+  // Port Saltmere
+  { id: 'p1', at: 'coast', who: 'Keeper Morwen', coat: '#2a3a5a', hat: '#1a2a3a', kind: 'explore', land: 'coast', sites: ['light'], pay: 260, rep: 15, title: 'The dark lighthouse',
+    ask: 'The Lighthouse on its island has gone dark. Take the boat from the jetty and see what’s wrong.', done: 'Gulls’ nests in the lamp! I’ll row out and clear them.' },
+  { id: 'p2', at: 'coast', who: 'Merchant Lazlo', coat: '#a05a8a', hat: '#5a2a4a', kind: 'fetch', land: 'coast', site: 'gull', item: 'the Gull’s strongbox', pay: 320, rep: 20, title: 'The Gull’s cargo',
+    ask: 'My ship the Gull broke up on the rocks. Her strongbox is still in the wreck, out on its island.', done: 'Not a coin missing. You’re an honest wizard!' },
+  { id: 'p3', at: 'coast', who: 'Chartmaker Ines', coat: '#4a7a6a', kind: 'explore', land: 'isle', sites: ['hermit', 'bell', 'cay'], pay: 500, rep: 30, title: 'Chart the Thousand Isles',
+    ask: 'No chart shows the Thousand Isles truly. Sail to the Hermit’s Isle, the Drowned Bell and Treasure Cay.', done: 'At last, a chart a captain can trust.' },
+  { id: 'p4', at: 'coast', who: 'Captain Rooke', coat: '#3a3a4a', hat: '#1a1a2a', kind: 'count', land: 'isle', beast: 'harpy', n: 6, pay: 420, rep: 25, title: 'Harpies',
+    ask: 'Storm Harpies took two of my crew off the Thousand Isles. Bring down six of them.', done: 'That’s for Jem and Old Tully. Drink on me tonight.' },
+  // Cragfoot
+  { id: 'c1', at: 'crag', who: 'Miner Dagny', coat: '#8a6a4a', hat: '#5a4a3a', kind: 'find', land: 'crag', site: 'echo', name: 'Nim', small: true, pay: 280, rep: 20, title: 'Lost in Echo Cave',
+    ask: 'My girl Nim went into Echo Cave after a lost goat and hasn’t come out. Bring her home to Cragfoot.', found: 'I found the goat, but then the bats came! Can we go home now?', done: 'Nim! Don’t you ever do that again. Wizard, thank you.' },
+  { id: 'c2', at: 'crag', who: 'Quarryman Holt', coat: '#6a6258', kind: 'hunt', land: 'crag', site: 'table', chief: { name: 'Grandfather Boulder', beast: 'roller', scale: 2.1, hp: 8 }, pay: 360, rep: 20, title: 'Grandfather Boulder',
+    ask: 'A Stone Roller as big as a house sits on the Giant’s Table and flattens anyone who climbs up. Break it.', done: 'Gravel! Good gravel, too. We’ll mend the road with it.' },
+  { id: 'c3', at: 'crag', who: 'Smith Ragna', coat: '#5a4a42', hat: '#a0402a', kind: 'fetch', land: 'ash', site: 'forge', item: 'a sack of black ore', pay: 520, rep: 30, title: 'Ore from the Black Forge',
+    ask: 'There’s ore at the Black Forge, in the Cinder Reach, that never rusts. Bring me a sack of it, if you dare.', done: 'Black as night and twice as hard. You’ve done what no one else would.' },
+  // Hearthwick
+  { id: 'f1', at: 'snow', who: 'Nurse Elva', coat: '#f4f4f0', kind: 'fetch', land: 'snow', site: 'sledge', item: 'the medicine chest', pay: 280, rep: 20, title: 'The lost sledge',
+    ask: 'The sledge carrying our medicine never arrived. It lies wrecked out in the snow. Find the chest.', done: 'Every bottle whole! The fever won’t take anyone this winter.' },
+  { id: 'f2', at: 'snow', who: 'Watchman Orin', coat: '#5a6a7a', hat: '#3a4a5a', kind: 'explore', land: 'snow', sites: ['peak', 'cave'], pay: 280, rep: 15, title: 'Signal fires',
+    ask: 'The fire on Signal Peak is out, and something howls in the Ice Cave. Go and look at both.', done: 'Then I’ll climb up and light it myself. Thank you.' },
+  { id: 'f3', at: 'snow', who: 'Trapper Sig', coat: '#8a7a6a', hat: '#e4eef4', kind: 'hunt', land: 'snow', site: 'tarn', chief: { name: 'The White Howler', beast: 'howler', scale: 2, hp: 9 }, pay: 380, rep: 25, title: 'The White Howler',
+    ask: 'The White Howler leads its pack from the Frozen Tarn. While it lives, no one is safe on the road.', done: 'The pack will scatter without it. The road’s open again.' },
+  { id: 'f4', at: 'snow', who: 'Postmistress Hild', coat: '#9a4a3a', kind: 'letter', land: 'star', to: 'Stationmaster Vega', toCoat: '#c8d0dc', pay: 420, rep: 20, title: 'A letter to Farlight',
+    ask: 'A letter for Farlight, on the Starfall Plain. Hand it to Stationmaster Vega.', done: 'Paper! A real letter. We haven’t had one in a year.' },
+  // Sandgate
+  { id: 'd1', at: 'dune', who: 'Vizier Tamsin', coat: '#c08a4a', hat: '#8a1a1a', kind: 'fetch', land: 'dune', site: 'well', item: 'a flask from the Mirage Well', pay: 300, rep: 20, title: 'Water that never spoils',
+    ask: 'Water from the Mirage Well never goes stale. Fill this flask there for me.', done: 'Cool as the day it was drawn. The caravans will bless you.' },
+  { id: 'd2', at: 'dune', who: 'Trader Omar', coat: '#4a7a9a', hat: '#f4f0e0', kind: 'find', land: 'dune', site: 'bones', name: 'Sefa', pay: 340, rep: 20, title: 'The caravan that never came',
+    ask: 'My partner Sefa’s caravan never came in. Look for her at the Caravan Bones, and bring her back to Sandgate.', found: 'Burrowers took the camels. I’ve been hiding for two days. Take me home!', done: 'Sefa! We’ll buy new camels. Wizard, name your price.' },
+  { id: 'd3', at: 'dune', who: 'Scholar Idris', coat: '#6a5a8a', hat: '#3a2a5a', kind: 'explore', land: 'dune', sites: ['temple', 'rocks'], pay: 300, rep: 15, title: 'The Buried Temple',
+    ask: 'They say the Buried Temple shows itself after a storm. Visit it, and Scorpion Rocks beyond.', done: 'So it’s true! I must write this down at once.' },
+  { id: 'd4', at: 'dune', who: 'Captain Zara', coat: '#8a1a1a', hat: '#c8a24a', kind: 'hunt', land: 'ash', site: 'gate', chief: { name: 'The Gatekeeper', beast: 'demon', scale: 1.9, hp: 7 }, pay: 700, rep: 40, title: 'The Demon’s Gate',
+    ask: 'Demons pour out of the Demon’s Gate, in the Cinder Reach. Kill the Gatekeeper that holds it open.', done: 'The gate is shut. All the cities owe you for this.' },
+  // Farlight
+  { id: 's1', at: 'star', who: 'Engineer Pax', coat: '#ffb04a', kind: 'fetch', land: 'star', site: 'saucer', item: 'beacon parts', pay: 520, rep: 30, title: 'Beacon parts',
+    ask: 'Our beacon is dead. The parts we need are in the Saucer Wreck. Bring them and we can call home.', done: 'These will do it. Stand back while I wire them in!' },
+  { id: 's2', at: 'star', who: 'Surveyor Lyra', coat: '#7af0e0', kind: 'explore', land: 'star', sites: ['crater', 'glass', 'array'], pay: 520, rep: 30, title: 'Survey the plain',
+    ask: 'Survey the Great Crater, the Glass Field and the Beacon Array for me.', done: 'Good readings, all three. Mission control will be pleased.' },
+  { id: 's3', at: 'star', who: 'Doctor Quon', coat: '#c88aff', kind: 'explore', land: 'ash', sites: ['vents', 'spire'], pay: 600, rep: 30, title: 'Readings from the Reach',
+    ask: 'I need readings from the Ember Vents and the Obsidian Spire, in the Cinder Reach.', done: 'Remarkable. The ground there is alive with power.' },
+  { id: 's4', at: 'star', who: 'Pilot Juno', coat: '#ff7ab0', kind: 'hunt', land: 'isle', site: 'kraken', chief: { name: 'The Kraken’s Daughter', beast: 'squid', scale: 2.2, hp: 9 }, pay: 700, rep: 40, title: 'What took the scout ship',
+    ask: 'Something huge pulled our scout craft down at Kraken Rock, in the Thousand Isles. Deal with it.', done: 'Then the sky lanes are safe again. You fly with us any time.' },
+];
+const missionById = id => MISSIONS.find(M => M.id === id);
+const mState = M => farX().m[M.id] || null;
+const mOn = M => { const s = mState(M); return !!s && s.s === 'on'; };
+const mDone = M => { const s = mState(M); return !!s && s.s === 'done'; };
+function mReady(M) {
+  const s = mState(M);
+  if (!s || s.s !== 'on') return false;
+  return M.kind === 'fetch' || M.kind === 'hunt' ? !!s.got : M.kind === 'find' ? !!s.safe : M.kind === 'explore' ? M.sites.every(id => (s.seen || []).includes(id)) : M.kind === 'count' ? (s.n || 0) >= M.n : false;
+}
+const landName = id => id === 'home' ? 'Hollowbrook' : landById(id).name;
+const baseName = id => id === 'home' ? 'Hollowbrook' : (L => L.town ? L.town.name : 'the camp')(landById(id));
+// where it is, said plainly
+function mWhere(M) {
+  const L = landById(M.land), sn = id => siteOf(M.land, id).name;
+  return M.kind === 'letter' ? `${M.to}, in ${L.town.name} (${L.name})` : M.kind === 'advert' ? `The square in ${L.town.name} (${L.name})`
+    : M.kind === 'explore' ? `${M.sites.map(sn).join(', ')} (${L.name})` : M.kind === 'count' ? `${M.n} ${BEASTS[M.beast].name}s (${L.name})` : `${sn(M.site)} (${L.name})`;
+}
+// what's left to do, in a line
+function mHint(M) {
+  const s = mState(M), L = landById(M.land), sn = id => siteOf(M.land, id).name;
+  if (!s || s.s !== 'on') return '';
+  if (mReady(M)) return `Go back to ${M.who} in ${baseName(M.at)}.`;
+  if (M.kind === 'letter') return `Take the letter to ${M.to} in ${L.town.name}.`;
+  if (M.kind === 'advert') return `Stand by the well in ${L.town.name} and cry the news.`;
+  if (M.kind === 'fetch') return `Find ${M.item} at ${sn(M.site)}, in ${L.name}.`;
+  if (M.kind === 'find') return s.got ? `See ${M.name} safe to ${baseName(M.land)}.` : `Find ${M.name} at ${sn(M.site)}, in ${L.name}.`;
+  if (M.kind === 'explore') { const left = M.sites.filter(id => !(s.seen || []).includes(id)); return `Still to visit in ${L.name}: ${left.map(sn).join(', ')}.`; }
+  if (M.kind === 'hunt') return `Bring down ${M.chief.name} at ${sn(M.site)}, in ${L.name}.`;
+  return `${BEASTS[M.beast].name}s in ${L.name}: ${s.n || 0} of ${M.n}.`;
+}
+function missionTake(M) { const X = farX(); X.m[M.id] = { s: 'on' }; X.track = M.id; advSave(); SFX.discover(); }
+function missionDone(M, x, y) {
+  const X = farX();
+  X.m[M.id] = { s: 'done' }; X.rep += M.rep;
+  if (X.track === M.id) X.track = (MISSIONS.find(o => mOn(o)) || {}).id || null;
+  giveTokens(x, y, M.pay, false);
+  SFX.discover(); ring(x, y, 80, '#ffd24a', 0.6);
+}
+// a mission's progress is lost only where it must be: someone you were leading goes back to where you found them
+function missionsReset() { const X = farX(); for (const M of MISSIONS) { const s = X.m[M.id]; if (s && s.s === 'on' && M.kind === 'find' && s.got && !s.safe) s.got = false; } if (WLD) WLD.guards = {}; }
+function missionKill(f) {
+  const X = farX();
+  for (const M of MISSIONS) {
+    const s = X.m[M.id];
+    if (!s || s.s !== 'on' || M.land !== f.far) continue;
+    if (M.kind === 'count' && f.beast === M.beast && (s.n || 0) < M.n) {
+      s.n = (s.n || 0) + 1; floatText(f.x, f.y - 64, `${s.n} of ${M.n}`, '#ffd24a', 15);
+      if (s.n >= M.n) tipMsg(`That’s ${M.n}. Go back to ${M.who} in ${baseName(M.at)}`, '#ffd24a', 5);
+      advSave();
+    }
+    if (M.kind === 'hunt' && f.chief === M.chief) { s.got = true; advSave(); showBanner(`${M.chief.name} is beaten!`, `Tell ${M.who} in ${baseName(M.at)}`, 4); }
+  }
+}
+
+// ── the people of the far lands, and the new faces in Hollowbrook ──
+// role: giver (has a mission) · to (a letter is for them) · keeper (food and hired hands) · lost (waits to be found)
+function farPeopleFor(L) {
+  const out = [], id = L ? L.id : 'home', ring = (c, r, k, n) => { const a = (k + 0.5) * TAU / Math.max(n, 3) + 0.6; return { x: c.x + Math.cos(a) * r, y: c.y + Math.sin(a) * r * 0.85 }; };
+  const givers = MISSIONS.filter(M => M.at === id), tos = MISSIONS.filter(M => M.kind === 'letter' && M.land === id);
+  if (L) {
+    const c = L.base, astro = !!(L.town && L.town.astro);
+    givers.forEach((M, k) => out.push({ ...freeSpot(...Object.values(ring(c, 165, k, givers.length)), 12), name: M.who, coat: M.coat, hat: M.hat, role: 'giver', m: M, astro }));
+    tos.forEach((M, k) => out.push({ ...freeSpot(c.x + (k ? -1 : 1) * 250, c.y + 190, 12), name: M.to, coat: M.toCoat, role: 'to', m: M, astro }));
+    const kp = L.town ? L.town.keeper : L.camp.keeper;
+    out.push({ x: kp.x, y: kp.y, name: L.town ? 'The innkeeper' : 'Ranger Ash', coat: L.town ? '#7a4a3a' : '#4a6a3a', hat: L.town ? null : '#2a3a1a', role: 'keeper', where: L.town ? 'inn' : 'camp' });
+    for (const M of MISSIONS) if (M.kind === 'find' && M.land === id) { const s = siteOf(id, M.site); out.push({ x: s.x + 46, y: s.y + 74, name: M.name, coat: '#9a7a5a', role: 'lost', m: M, small: M.small }); }
+  } else {
+    givers.forEach((M, k) => out.push({ x: HOME_SPOTS[k][0], y: HOME_SPOTS[k][1], name: M.who, coat: M.coat, hat: M.hat, role: 'giver', m: M }));
+    const h = hallOf('guild');
+    out.push({ x: h.x + h.w / 2, y: h.y + 66, name: 'Quartermaster Bryn', coat: '#8a3a4a', hat: '#4a1a2a', role: 'keeper', where: 'guild' });
+  }
+  return out;
+}
+let HOME_FOLK = null;
+const farFolk = () => LANDNOW ? LANDNOW.g.people : (HOME_FOLK = HOME_FOLK || farPeopleFor(null));
+// who you're standing by, and what they have to say (their words go in the box above the spell panel)
+function updateFolk() {
+  if (state !== 'play' || !worldOpen()) return;
+  const X = farX();
+  let near = null, nd = 96;
+  for (const p of farFolk()) {
+    if (p.role === 'lost' && (!mOn(p.m) || mState(p.m).got)) continue;
+    const d = Math.hypot(player.x - p.x, player.y - p.y);
+    p.face = player.x < p.x ? -1 : 1;
+    if (d < nd && (p.role !== 'keeper' || (WLD.hall && (WLD.hall.id === 'guild' || WLD.hall.id === 'inn')) || p.where === 'camp')) { nd = d; near = p; }
+  }
+  const coach = LANDNOW ? (LANDNOW.town ? LANDNOW.town.coach : LANDNOW.camp.coach) : HOME_COACH;
+  if (!near && Math.hypot(player.x - coach.x, player.y - (coach.y + 20)) < 86)
+    WLD.talk = { name: 'The coachman', at: { x: coach.x, y: coach.y - 14 }, line: LANDS.some(L => X.been[L.id] >= 2) || LANDNOW ? 'Where to? I’ll take you to any town or camp you’ve already reached on foot.' : 'I run to the far towns, once you’ve found the way there on foot. Ten gates, there are, round the edge of the map.', act: openCoach, actLabel: 'tap to travel ▸' };
+  if (!near) return;
+  const at = { x: near.x, y: near.y - 20 }, M = near.m;
+  if (near.role === 'keeper') WLD.talk = { name: near.name, at, line: near.where === 'camp' ? 'Food for the road? It’s wild country out there.' : 'Food for the road, and fighters and medics for hire.', act: () => openOutfit(near.where), actLabel: 'tap to trade ▸' };
+  else if (near.role === 'to') {
+    if (mOn(M)) WLD.talk = { name: near.name, at, line: 'Is that for me?', act: () => { missionDone(M, near.x, near.y); missionCard(M, 'paid'); }, actLabel: 'tap to hand over the letter ▸' };
+    else WLD.talk = { name: near.name, at, line: mDone(M) ? 'Thank you again for the letter.' : 'Good day to you, wizard.' };
+  } else if (near.role === 'lost') {
+    WLD.talk = { name: near.name, at, line: M.found };
+    const s = mState(M); s.got = true; advSave(); SFX.discover(); tipMsg(`${M.name} follows you. See them safe to ${baseName(M.land)}`, '#ffd24a', 5);
+    WLD.follow = { m: M, x: near.x, y: near.y, small: near.small, walk: 0 };
+  } else if (mDone(M)) WLD.talk = { name: near.name, at, line: 'Thank you again, wizard. I won’t forget it.' };
+  else if (mReady(M)) WLD.talk = { name: near.name, at, line: 'You’re back! Is it done?', act: () => { missionDone(M, near.x, near.y); missionCard(M, 'paid'); }, actLabel: 'tap to tell them ▸' };
+  else if (mOn(M)) WLD.talk = { name: near.name, at, line: mHint(M), act: () => missionCard(M, 'on'), actLabel: 'tap for more ▸' };
+  else WLD.talk = { name: near.name, at, line: M.ask, act: () => missionCard(M, 'ask'), actLabel: 'tap to answer ▸' };
+}
+function missionCard(M, how) {
+  openFarCard(() => {
+    const L = landById(M.land), g = L.gate, side = (g.oy > 0 ? 'south' : g.oy < 0 ? 'north' : g.ox > 0 ? 'east' : 'west');
+    const reward = `<div style="display:flex;justify-content:center;gap:14px;margin-top:10px;font-size:15px;color:#ffd24a;font-weight:bold"><span>${coinSvg(15)} ${M.pay}</span><span style="color:#9fd0ff">★ ${M.rep} reputation</span></div>`;
+    if (how === 'paid') return { title: 'Thank you!', sub: M.kind === 'letter' ? M.to : M.who, body: cardNote(`“${M.done}”`) + reward + cardNote(`<span style="color:#9fd0ff">Your reputation is now ${farX().rep}.</span>`), closeLabel: 'Good' };
+    const been = farX().been[M.land];
+    const way = `<b style="color:#e8d0a0">Where:</b> ${mWhere(M)}.<br><b style="color:#e8d0a0">The way there:</b> ${LANDNOW === L ? 'it’s in this land' : been >= 2 ? `the coach will take you to ${baseName(M.land)}` : `through the gate on the ${side} edge of the home map`}. ${TIER_WORD[L.tier]}.`;
+    if (how === 'on') return { title: M.title, sub: M.who, body: cardNote(`“${M.ask}”`) + cardNote(way) + cardNote(`<b style="color:#ffd24a">${mHint(M)}</b>`) + reward, buttons: [['drop', 'Give it up']] };
+    return { title: M.title, sub: `${M.who} asks:`, body: cardNote(`“${M.ask}”`) + cardNote(way) + reward, buttons: [['take', 'I’ll do it', true]], closeLabel: 'Not now' };
+  }, what => {
+    if (what === 'take') { missionTake(M); closeFarCard(); tipMsg(`Mission taken: ${M.title}`, '#ffd24a', 4); }
+    if (what === 'drop') { const X = farX(); delete X.m[M.id]; if (X.track === M.id) X.track = null; advSave(); closeFarCard(); }
+  });
+}
+// the pack: your food, your hired hands, your reputation and the missions you've taken
+function openPack() {
+  openFarCard(() => {
+    const X = farX(), on = MISSIONS.filter(mOn), done = MISSIONS.filter(mDone).length;
+    let body = `<div style="display:flex;justify-content:center;gap:14px;margin-top:8px;font-size:15px;font-weight:bold"><span style="color:#ffd24a">${coinSvg(15)} ${(ADV.world.tokens || 0).toLocaleString()}</span><span style="color:#9fd0ff">★ ${X.rep} reputation</span></div>`;
+    body += cardNote(`<b style="color:#f0c890">Food:</b> ${Math.floor(X.food)} meals${X.food > 0 ? ` (about ${clock(foodSecs())} in the wilds)` : ''}.<br><b style="color:#f0c890">Hired hands:</b> ${crew.length ? crew.map(c => `${c.n} the ${c.k}`).join(', ') : 'none'}.`);
+    body += cardNote(`<b style="color:#ffd24a">Missions</b> · ${done} of ${MISSIONS.length} done`);
+    if (!on.length) body += cardNote('<i>None taken. Folk with work for a wizard stand by the Wayfarers’ Guild in Hollowbrook, and in the squares of the far towns.</i>');
+    for (const M of on) body += cardOpt(`track:${M.id}`, `${X.track === M.id ? '➤ ' : ''}${M.title}`, `${mHint(M)}${X.track === M.id ? '' : ' <i>Tap to follow this one.</i>'}`, false, mReady(M) ? '<div style="color:#8fdf6a;font-weight:bold;font-size:20px">✓</div>' : '');
+    return { title: 'Your pack', body };
+  }, (what, v) => { if (what === 'track') { farX().track = v; advSave(); } });
+}
+
+// ── what your missions need of the land you're in: things to pick up, places to see, beasts to bring down ──
+function updateMissions(dt) {
+  const L = LANDNOW, X = farX();
+  WLD.guards = WLD.guards || {};
+  const guard = (M, s, n) => {     // the first time you come near, beasts are waiting
+    if (WLD.guards[M.id] || Math.hypot(player.x - s.x, player.y - s.y) > 520) return;
+    WLD.guards[M.id] = true;
+    for (let i = 0; i < n; i++) { const k = L.beasts[i % 3 === 2 ? 1 : 0], a = rnd(0, TAU), x = s.x + Math.cos(a) * rnd(90, 190), y = s.y + Math.sin(a) * rnd(90, 190); if (BEASTS[k].fly || BEASTS[k].swim || !landBlocks(x, y, 14)) foes.push(makeBeast(k, x, y)); }
+  };
+  for (const M of MISSIONS) {
+    const s = X.m[M.id];
+    if (!s || s.s !== 'on' || M.land !== L.id) continue;
+    if (M.kind === 'fetch' && !s.got) {
+      const at = siteOf(L.id, M.site); guard(M, at, 2 + L.tier);
+      if (Math.hypot(player.x - at.x, player.y - (at.y + 70)) < 44) { s.got = true; advSave(); SFX.discover(); burst(at.x, at.y + 70, '#ffd24a', 30, 240); showBanner(`You have ${M.item}`, `Take it back to ${M.who} in ${baseName(M.at)}`, 4); }
+    } else if (M.kind === 'find' && !s.got) guard(M, siteOf(L.id, M.site), 2 + L.tier);
+    else if (M.kind === 'find' && !s.safe && Math.hypot(player.x - L.base.x, player.y - L.base.y) < 300) {
+      s.safe = true; advSave(); WLD.follow = null; SFX.discover();
+      showBanner(`${M.name} is safe in ${baseName(L.id)}`, M.at === L.id ? `Tell ${M.who}, here in the square` : `Tell ${M.who} in ${baseName(M.at)}`, 4);
+    } else if (M.kind === 'explore') {
+      for (const id of M.sites) {
+        const at = siteOf(L.id, id);
+        if ((s.seen || []).includes(id) || Math.hypot(player.x - at.x, player.y - at.y) > 150) continue;
+        s.seen = [...(s.seen || []), id]; advSave(); SFX.discover(); ring(at.x, at.y, 110, '#ffd24a', 0.7);
+        const left = M.sites.length - s.seen.length;
+        showBanner(`Seen: ${at.name}`, left ? `${left} more to visit` : `Tell ${M.who} in ${baseName(M.at)}`, 3.5);
+      }
+    } else if (M.kind === 'hunt' && !s.got) {
+      const at = siteOf(L.id, M.site);
+      if (!WLD.guards[M.id] && Math.hypot(player.x - at.x, player.y - at.y) < 560) {
+        WLD.guards[M.id] = true;
+        const p = freeSpot(at.x, at.y + 120, 30);
+        foes.push(makeBeast(M.chief.beast, p.x, p.y, { scale: M.chief.scale, hp: M.chief.hp, dmg: 1.3, pay: 12, chief: M.chief }));
+        showBanner(M.chief.name, BEASTS[M.chief.beast].tip, 4);
+      }
+    } else if (M.kind === 'advert') {
+      const c = L.base;
+      if (Math.hypot(player.x - c.x, player.y - c.y) < 120) {
+        WLD.cry = (WLD.cry || 0) + dt;
+        if (WLD.cry > 0.2 && WLD.cry - dt <= 0.2) tipMsg(`You cry the name of ${M.what}…`, '#ffd24a', 3);
+        if (WLD.cry >= 3) { WLD.cry = 0; missionDone(M, player.x, player.y); missionCard(M, 'paid'); }
+      } else WLD.cry = 0;
+    }
+  }
+  // someone you've found walks behind you
+  const fo = WLD.follow;
+  if (fo && !mOn(fo.m)) WLD.follow = null;
+  else if (fo) {
+    const px = fo.x, py = fo.y, d = Math.hypot(player.x - fo.x, player.y - fo.y);
+    if (d > 600 || landBlocks(fo.x, fo.y, 6)) { const p = freeSpot(player.x - player.face.x * 50, player.y - player.face.y * 50, 10); fo.x = p.x; fo.y = p.y; }
+    else if (d > 60) walkToward(fo, player.x, player.y, 190, dt, 50);
+    if (player.onBoat) { fo.x = player.x + 12; fo.y = player.y - 2; }
+    fo.walk += Math.hypot(fo.x - px, fo.y - py); fo.r = 10;
+  } else {
+    // (walking back in with someone already found)
+    const M = MISSIONS.find(M => M.kind === 'find' && M.land === L.id && mOn(M) && mState(M).got && !mState(M).safe);
+    if (M) WLD.follow = { m: M, x: player.x - 40, y: player.y, small: M.small, walk: 0 };
+  }
+}
+
+// ── drawing the folk, the things to fetch, and where to go next ──
+function drawFar(camX, camY) {
+  if (!ADV || !worldOpen()) return;
+  const mark = (x, y, ch, col) => { const b = Math.sin(elapsed * 4 + x) * 3; ctx.textAlign = 'center'; ctx.font = `bold 22px ${SERIF}`; ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(0,0,0,0.7)'; ctx.strokeText(ch, x, y + b); ctx.fillStyle = col; ctx.fillText(ch, x, y + b); };
+  const tag = (x, y, t, c) => { ctx.textAlign = 'center'; ctx.font = `bold 10px ${SERIF}`; ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.7)'; ctx.strokeText(t, x, y); ctx.fillStyle = c; ctx.fillText(t, x, y); };
+  for (const p of farFolk()) {
+    if (!inView(p.x, p.y, 80, camX, camY)) continue;
+    const M = p.m;
+    if (p.role === 'lost') { if (!mOn(M) || mState(M).got) continue; drawPerson(p.x, p.y, p.coat, null, { sad: true, small: p.small }); mark(p.x, p.y - 44, '!', '#ffd24a'); tag(p.x, p.y - 30, p.name, '#ffe7a0'); continue; }
+    if (p.role === 'keeper' && p.where !== 'camp' && !(WLD && WLD.hall && Math.abs(WLD.hall.x + WLD.hall.w / 2 - p.x) < 2)) continue;   // (indoors: seen once you're inside)
+    drawPerson(p.x, p.y, p.coat, p.hat, { astro: p.astro, face: p.face });
+    if (Math.hypot(player.x - p.x, player.y - p.y) < 260) tag(p.x, p.y - (p.astro ? 34 : 32), p.name, p.role === 'keeper' ? '#ffd24a' : '#ffe7a0');
+    if (p.role === 'giver') { if (mReady(M)) mark(p.x, p.y - 44, '?', '#8fdf6a'); else if (mOn(M)) mark(p.x, p.y - 44, '?', '#9a9aa8'); else if (!mDone(M)) mark(p.x, p.y - 44, '!', '#ffd24a'); }
+    if (p.role === 'to' && mOn(M)) mark(p.x, p.y - 44, '?', '#8fdf6a');
+  }
+  if (LANDNOW) {
+    const L = LANDNOW;
+    for (const M of MISSIONS) {
+      if (!mOn(M) || M.land !== L.id) continue;
+      const s = mState(M);
+      if (M.kind === 'fetch' && !s.got) {
+        const at = siteOf(L.id, M.site), x = at.x, y = at.y + 70;
+        if (!inView(x, y, 80, camX, camY)) continue;
+        const g = ctx.createRadialGradient(x, y - 6, 2, x, y - 6, 46); g.addColorStop(0, 'rgba(255,230,120,0.6)'); g.addColorStop(1, 'rgba(255,230,120,0)'); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y - 6, 46, 0, TAU); ctx.fill();
+        ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.beginPath(); ctx.ellipse(x + 3, y + 8, 14, 5, 0, 0, TAU); ctx.fill();
+        ctx.fillStyle = '#9a7448'; roundRect(x - 12, y - 10, 24, 18, 5); ctx.fill(); ctx.strokeStyle = '#5a3c20'; ctx.lineWidth = 2; ctx.stroke(); ctx.fillStyle = '#c8a24a'; ctx.fillRect(x - 12, y - 3, 24, 3);
+        drawShapeBit({ shape: 'star', x, y: y - 24 + Math.sin(elapsed * 3) * 3, r: 6, color: '#ffd24a', rot: elapsed }, 1);
+      } else if (M.kind === 'explore') {
+        for (const id of M.sites) { if ((s.seen || []).includes(id)) continue; const at = siteOf(L.id, id); if (inView(at.x, at.y, 200, camX, camY)) { ctx.globalAlpha = 0.5 + 0.4 * Math.sin(elapsed * 3); circle(at.x, at.y + 20, 120, null, '#ffd24a', 3); ctx.globalAlpha = 1; } }
+      } else if (M.kind === 'advert' && WLD && WLD.cry > 0) { const c = L.base; ctx.globalAlpha = 0.8; circle(c.x, c.y, 40 + WLD.cry * 60, null, '#ffd24a', 4); ctx.globalAlpha = 1; }
+    }
+    const fo = WLD && WLD.follow;
+    if (fo && inView(fo.x, fo.y, 60, camX, camY) && !player.onBoat) { drawPerson(fo.x, fo.y, '#9a7a5a', null, { small: fo.small }); tag(fo.x, fo.y - 30, fo.m.name, '#ffe7a0'); }
+  }
+  drawCrew(camX, camY);
+}
+// where the mission you're following wants you next: { x, y, label } in the land you're in (or the way out of it)
+function farGoal() {
+  if (!ADV || !worldOpen()) return null;
+  const X = farX(), M = missionById(X.track);
+  if (!M || !mOn(M)) return null;
+  const here = LANDNOW ? LANDNOW.id : 'home', s = mState(M);
+  let land = M.land, at = null, label = '';
+  const folk = (id, pred) => { const list = id === 'home' ? (HOME_FOLK = HOME_FOLK || farPeopleFor(null)) : (landById(id).g || {}).people; return (list || []).find(pred) || null; };
+  if (mReady(M)) { land = M.at; at = folk(M.at, p => p.role === 'giver' && p.m === M); label = M.who; if (!at && land !== 'home') at = landById(land).base; }
+  else if (M.kind === 'letter') { at = folk(M.land, p => p.role === 'to' && p.m === M) || landById(M.land).base; label = M.to; }
+  else if (M.kind === 'advert') { at = landById(M.land).base; label = 'The square'; }
+  else if (M.kind === 'find' && s.got) { at = landById(M.land).base; label = baseName(M.land); }
+  else if (M.kind === 'explore') { const left = M.sites.filter(id => !(s.seen || []).includes(id)).map(id => siteOf(M.land, id)); at = left.sort((a, b) => Math.hypot(a.x - player.x, a.y - player.y) - Math.hypot(b.x - player.x, b.y - player.y))[0]; label = at ? at.name : ''; }
+  else if (M.kind === 'count') { if (here === land) return null; }
+  else { at = siteOf(M.land, M.site); label = at.name; }
+  if (land === here) return at ? { x: at.x, y: at.y, label } : null;
+  if (LANDNOW) return { x: LANDNOW.out.x, y: LANDNOW.out.y, label: 'The way home' };
+  const g = landById(land).gate;
+  return { x: g.x, y: g.y, label: `Gate to ${landById(land).name}` };
+}
+function drawFarArrow() {
+  if (mode !== 'adventure' || state !== 'play') return;
+  const G = farGoal();
+  if (!G) return;
+  const sx = W / 2 + (G.x - cam.x) * cam.z, sy = playerScreenY() + (G.y - cam.y) * cam.z, top = 150, bot = panelTop - 46;
+  const d = Math.hypot(G.x - player.x, G.y - player.y);
+  if (sx > 20 && sx < W - 20 && sy > top && sy < bot) {
+    if (d < 120) return;
+    const b = Math.sin(elapsed * 5) * 4;
+    ctx.fillStyle = '#ffd24a'; ctx.strokeStyle = 'rgba(0,0,0,0.6)'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(sx, sy - 58 + b); ctx.lineTo(sx - 9, sy - 74 + b); ctx.lineTo(sx + 9, sy - 74 + b); ctx.closePath(); ctx.fill(); ctx.stroke();
+    return;
+  }
+  const px = W / 2, py = playerScreenY(), a = Math.atan2(sy - py, sx - px);
+  let t = Infinity;
+  if (Math.cos(a) > 0) t = Math.min(t, (W - 26 - px) / Math.cos(a)); else if (Math.cos(a) < 0) t = Math.min(t, (26 - px) / Math.cos(a));
+  if (Math.sin(a) > 0) t = Math.min(t, (bot - py) / Math.sin(a)); else if (Math.sin(a) < 0) t = Math.min(t, (top - py) / Math.sin(a));
+  const x = px + Math.cos(a) * t, y = py + Math.sin(a) * t;
+  ctx.save(); ctx.translate(x, y); ctx.rotate(a);
+  ctx.fillStyle = '#ffd24a'; ctx.strokeStyle = 'rgba(0,0,0,0.65)'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(14, 0); ctx.lineTo(-8, -10); ctx.lineTo(-3, 0); ctx.lineTo(-8, 10); ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.restore();
+  ctx.font = `bold 11px ${SERIF}`; ctx.textAlign = x < 90 ? 'left' : x > W - 90 ? 'right' : 'center';
+  const tx = x < 90 ? x + 16 : x > W - 90 ? x - 16 : x, ty = y < top + 20 ? y + 24 : y > bot - 20 ? y - 16 : y - 14;
+  ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.75)'; ctx.strokeText(G.label, tx, ty); ctx.fillStyle = '#ffe7a0'; ctx.fillText(G.label, tx, ty);
+}
+// the pack button, above the spell book
+function packButton() { const b = bookButton(); return { x: b.x, y: b.y - b.r * 2 - 14, r: b.r }; }
+function packShown() { return mode === 'adventure' && state === 'play' && !!ADV && worldOpen() && !LAB; }
+function packHit(x, y) { if (!packShown()) return false; const b = packButton(); return Math.hypot(x - b.x, y - b.y) < b.r + 6; }
+function drawPackButton() {
+  if (!packShown()) return;
+  const b = packButton(), n = MISSIONS.filter(mReady).length;
+  circle(b.x, b.y, b.r, 'rgba(16,14,30,0.88)', 'rgba(240,200,144,0.9)', 2);
+  ctx.textAlign = 'center'; ctx.fillStyle = '#f0c890'; ctx.font = `bold 10px ${SERIF}`; ctx.fillText('PACK', b.x, b.y);
+  ctx.font = `8px ${SERIF}`; ctx.fillStyle = '#c8b090'; ctx.fillText(`★ ${farX().rep}`, b.x, b.y + 10);
+  if (n) { circle(b.x + b.r * 0.72, b.y - b.r * 0.72, 8, '#8fdf6a', '#1a3a1a', 1.5); ctx.fillStyle = '#12300f'; ctx.font = `bold 10px ${SERIF}`; ctx.fillText(String(n), b.x + b.r * 0.72, b.y - b.r * 0.72 + 3.5); }
+}
+// a line under your spells: food, hired hands, and how long till you faint
+function drawFarHud() {
+  if (mode !== 'adventure' || !ADV || !worldOpen() || LAB) return;
+  const X = farX();
+  if (!LANDNOW && X.food <= 0 && !crew.length) return;
+  ctx.textAlign = 'left'; ctx.font = `bold 13px ${SERIF}`;
+  let x = 14; const y = 108;
+  // a loaf
+  ctx.fillStyle = '#c8904a'; ctx.beginPath(); ctx.ellipse(x + 8, y - 4, 8, 5.5, 0, 0, TAU); ctx.fill(); ctx.strokeStyle = '#8a5a2a'; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.moveTo(x + 4, y - 7); ctx.lineTo(x + 6, y - 3); ctx.moveTo(x + 8, y - 8); ctx.lineTo(x + 10, y - 4); ctx.stroke();
+  x += 21;
+  const starving = LANDNOW && X.food <= 0, low = LANDNOW && foodSecs() < 60;
+  const txt = starving ? (X.hunger > 0 ? `No food! You faint in ${Math.max(0, Math.ceil(HUNGER_SECS - X.hunger))}` : 'No food!') : LANDNOW ? `${Math.floor(X.food)} · ${clock(foodSecs())}` : `${Math.floor(X.food)} meals`;
+  ctx.fillStyle = starving ? (Math.sin(elapsed * 8) > 0 ? '#ff5a4a' : '#ffb0a0') : low ? '#ffb04a' : '#f0c890';
+  ctx.fillText(txt, x, y); x += ctx.measureText(txt).width + 14;
+  if (crew.length) { ctx.fillStyle = '#c8d0dc'; ctx.fillText(`Crew ${crew.length}`, x, y); }
+}
+
+// ── resting in a far town or camp, and the maps of the far lands ──
+function updateFarBase() {
+  const L = LANDNOW, X = farX(), d = Math.hypot(player.x - L.base.x, player.y - L.base.y), name = L.town ? L.town.name : `the camp in ${L.name}`;
+  if (d < (L.town ? 300 : 190) && !WLD.rested) {
+    WLD.rested = true;
+    const first = !(X.been[L.id] >= 2);
+    X.been[L.id] = 2;
+    if (first) { X.rep += 5; SFX.discover(); showBanner(L.town ? L.town.name : 'The rangers’ camp', 'You’ll rise here if you fall, and the coach now runs here · ★ +5 reputation', 5); }
+    if (player.hp < player.maxHp || player.mana < player.maxMana) { healPlayer(player.maxHp); player.mana = player.maxMana; floatText(player.x, player.y - 40, 'Rested', '#8fd0ff', 15); }
+    for (const c of crew) c.hp = c.maxHp;
+    ADV.check = { x: L.base.x + 40, y: L.base.y + 80, land: L.id }; advSave();
+  } else if (d > (L.town ? 480 : 340)) WLD.rested = false;
+}
+// inside an inn or the guild: a counter along the back, barrels, sacks and a table
+function drawInnInside(h) {
+  const T = HALL_T, x0 = h.x + T, y0 = h.y + T, w = h.w - 2 * T, hh = h.h - 2 * T, cx = h.x + h.w / 2;
+  ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.fillRect(cx - 70, y0 + 62, 144, 20);
+  ctx.fillStyle = '#7a4a2a'; ctx.fillRect(cx - 72, y0 + 56, 144, 20); ctx.fillStyle = '#9a6a3a'; ctx.fillRect(cx - 72, y0 + 56, 144, 6);
+  ctx.strokeStyle = '#4e3218'; ctx.lineWidth = 2; ctx.strokeRect(cx - 72, y0 + 56, 144, 20);
+  for (let i = 0; i < 3; i++) { const bx = x0 + 18 + i * 26; circle(bx, y0 + 18, 11, '#8a5a30', '#4e3218', 2); circle(bx, y0 + 18, 5, null, '#4e3218', 1.5); }
+  for (let i = 0; i < 2; i++) { const sx = x0 + w - 24 - i * 28; ctx.fillStyle = '#c8b078'; ctx.beginPath(); ctx.ellipse(sx, y0 + 20, 12, 14, 0, 0, TAU); ctx.fill(); ctx.strokeStyle = '#8a7240'; ctx.lineWidth = 1.5; ctx.stroke(); ctx.fillStyle = '#8a7240'; ctx.fillRect(sx - 5, y0 + 7, 10, 3); }
+  // loaves on the counter, and a board of notices by the door
+  for (let i = 0; i < 3; i++) { ctx.fillStyle = '#c8904a'; ctx.beginPath(); ctx.ellipse(cx - 50 + i * 15, y0 + 63, 6, 4, 0, 0, TAU); ctx.fill(); }
+  ctx.fillStyle = '#6b4a2e'; ctx.fillRect(x0 + 8, y0 + hh - 60, 8, 44); ctx.fillStyle = '#f4ead0'; for (let i = 0; i < 3; i++) ctx.fillRect(x0 + 9, y0 + hh - 56 + i * 13, 6, 9);
+  ctx.fillStyle = '#7a5232'; ctx.beginPath(); ctx.ellipse(x0 + w - 46, y0 + hh - 40, 26, 17, 0, 0, TAU); ctx.fill(); ctx.strokeStyle = '#4e3218'; ctx.lineWidth = 2; ctx.stroke();
+  circle(x0 + w - 52, y0 + hh - 42, 4, '#f4ead0'); circle(x0 + w - 38, y0 + hh - 38, 3.5, '#c8a24a');
+}
+// the map of a far land: what you've seen of it, its town, its named places and the way home
+function drawLandMap() {
+  dim(0.9);
+  const L = LANDNOW, R = mapRect(), span = Math.min(2 * AW, L.size * 2.9), k = R.s / span, X = x => R.x + (x - L.gx + span / 2) * k, Y = y => R.y + (y - L.gy + span / 2) * k;
+  ctx.textAlign = 'center'; ctx.fillStyle = '#ffd24a'; ctx.font = `bold 22px ${SERIF_BIG}`;
+  ctx.fillText(L.name.toUpperCase(), W / 2, 46);
+  const src = v => (v + AW - span / 2) / MAP_PX;
+  ctx.imageSmoothingEnabled = true;
+  ctx.drawImage(mapCanvas(), src(0), src(0), span / MAP_PX, span / MAP_PX, R.x, R.y, R.s, R.s);
+  const seen = WLD ? WLD.seen : null;
+  if (!mapView.fog) {
+    const fc = mapView.fog = document.createElement('canvas'); fc.width = fc.height = FN;
+    const g = fc.getContext('2d'), img = g.createImageData(FN, FN);
+    for (let i = 0; i < FN * FN; i++) img.data.set([16, 14, 24, seen && seen[i] ? 0 : 230], i * 4);
+    g.putImageData(img, 0, 0);
+  }
+  ctx.drawImage(mapView.fog, src(0) * MAP_PX / FOG, src(0) * MAP_PX / FOG, span / FOG, span / FOG, R.x, R.y, R.s, R.s);
+  ctx.strokeStyle = 'rgba(255,210,74,0.6)'; ctx.lineWidth = 2; ctx.strokeRect(R.x, R.y, R.s, R.s);
+  const seenAt = (x, y) => { const i = Math.floor((x - GX + AW) / FOG), j = Math.floor((y - GY + AW) / FOG); return !seen || !!seen[j * FN + i]; };
+  const label = (x, y, txt, c) => { ctx.font = `bold 10px ${SERIF}`; ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.7)'; ctx.textAlign = 'center'; ctx.strokeText(txt, X(x), Y(y)); ctx.fillStyle = c; ctx.fillText(txt, X(x), Y(y)); };
+  const goals = MISSIONS.filter(M => mOn(M) && M.land === L.id);
+  for (const s of L.sites) {
+    const wanted = goals.some(M => !mReady(M) && (M.site === s.id || (M.sites || []).includes(s.id) && !((mState(M).seen || []).includes(s.id))));
+    if (!seenAt(s.x, s.y) && !wanted) continue;
+    if (wanted) { ctx.globalAlpha = 0.5 + 0.5 * Math.sin(elapsed * 5); circle(X(s.x), Y(s.y), 10, null, '#ffd24a', 2.5); ctx.globalAlpha = 1; }
+    circle(X(s.x), Y(s.y), 4, wanted ? '#ffd24a' : '#d8c8a0', '#000', 1.2); label(s.x, s.y - 14 / k, s.name, '#ffe7a0');
+  }
+  ctx.fillStyle = '#ff8a5a'; ctx.fillRect(X(L.base.x) - 5, Y(L.base.y) - 5, 10, 10); ctx.strokeStyle = '#000'; ctx.lineWidth = 1.2; ctx.strokeRect(X(L.base.x) - 5, Y(L.base.y) - 5, 10, 10);
+  label(L.base.x, L.base.y - 18 / k, L.town ? L.town.name : 'Camp', '#ffd0b0');
+  circle(X(L.arch.x), Y(L.arch.y), 5, '#ffd24a', '#000', 1.5); label(L.arch.x, L.arch.y - 14 / k, 'The way home', '#ffe7a0');
+  if (boat.x < 9e5) { ctx.fillStyle = '#c08a50'; ctx.beginPath(); ctx.ellipse(X(boat.x), Y(boat.y), 5, 3, boat.ang || 0, 0, TAU); ctx.fill(); }
+  const pulse = 4 + Math.sin(elapsed * 6) * 1.5;
+  circle(X(player.x), Y(player.y), pulse + 3, 'rgba(255,255,255,0.3)'); circle(X(player.x), Y(player.y), 4, '#fff', '#000', 1.5);
+  const by = R.y + R.s + 22, X2 = farX();
+  ctx.textAlign = 'center'; ctx.font = `13px ${SERIF}`; ctx.fillStyle = '#ccc';
+  ctx.fillText(`${L.about} · ${TIER_WORD[L.tier].toLowerCase()} · ${L.town ? `the ${L.town.kind} of ${L.town.name}` : 'wild country'}`, W / 2, by);
+  ctx.fillStyle = '#f0c890'; ctx.font = `12px ${SERIF}`;
+  ctx.fillText(`Food ${Math.floor(X2.food)} meals${X2.food > 0 ? ` (${clock(foodSecs())})` : ''} · Beasts here: ${L.beasts.map(b => BEASTS[b].name).join(', ')}`, W / 2, by + 18);
+  ctx.font = `bold 15px ${SERIF}`; ctx.fillStyle = '#ccc'; ctx.globalAlpha = 0.7 + Math.sin(elapsed * 3) * 0.3;
+  ctx.fillText('[ tap to close ]', W / 2, by + 44); ctx.globalAlpha = 1;
+}
+// on the little map: the gates at home; the town, the named places and the way home in a far land
+function drawFarMinimap(mx, my) {
+  if (!worldOpen()) return;
+  const sq = (x, y, c) => { ctx.fillStyle = c; ctx.fillRect(mx(x) - 3, my(y) - 3, 6, 6); ctx.strokeStyle = '#000'; ctx.lineWidth = 0.8; ctx.strokeRect(mx(x) - 3, my(y) - 3, 6, 6); };
+  if (!LANDNOW) { for (const g of FARGATES) sq(g.x, g.y, '#ffd24a'); for (const p of farFolk()) if (p.role === 'giver' && !mDone(p.m) && (!mOn(p.m) || mReady(p.m))) circle(mx(p.x), my(p.y), 2.2, mReady(p.m) ? '#8fdf6a' : '#ffd24a'); return; }
+  const L = LANDNOW;
+  sq(L.arch.x, L.arch.y, '#ffd24a'); sq(L.base.x, L.base.y, '#ff8a5a');
+  for (const s of L.sites) circle(mx(s.x), my(s.y), 2.5, '#d8c8a0', '#000', 0.8);
+  for (const f of foes) if (f.chief && !f.dead) circle(mx(f.x), my(f.y), 3.5, TYPE_COLOR[f.elem], '#000', 1);
+}
+
 // ── battle arena terrain ──
 // Two teams fight on an oval with their bases at its two ends; three fight on
 // a round field, each base a third of the way round from the others.
@@ -5816,6 +6535,8 @@ function startGame(fresh) {
   discovered = new Set(ADV.known);
   const c = ADV.check || { x: 0, y: 40 };
   player.x = c.x; player.y = c.y; player.face = { x: 0, y: -1 };
+  if (c.land && landById(c.land) && worldOpen()) goLand(landById(c.land), c.x, c.y);
+  crewLoad();
   bossesDown = 0; kills = 0; score = 0; elapsed = 0; tally = {}; masterHunter = false; spawnTimer = 2;
   banner = null; castMsg = null; reveal = null; wonShown = false; lore = null;
   seq = []; curNode = null;
@@ -5847,6 +6568,7 @@ function respawn() {
   }
   // back at the last place you rested; a fight you lost starts over
   const school = WLD && WLD.duel ? hallOf('school') : null;
+  if (LANDNOW) { farFell(); return; }
   if (school) { leaveSchool(true); WLD.hall = null; }
   endArena(false);
   resetPlayer();
@@ -7119,6 +7841,7 @@ function foeTarget(f) {
     const d = Math.hypot(a.x - f.x, a.y - f.y);
     if (d < bd) { bd = d; best = a; }
   }
+  for (const c of crew) if (c.k === 'fighter') { const d = Math.hypot(c.x - f.x, c.y - f.y); if (d < bd && d < 300) { bd = d; best = c; } }
   return best || player;
 }
 
@@ -10921,6 +11644,7 @@ canvas.addEventListener('pointerdown', e => {
   if (tapOverlay(x, y)) return;
   if (talkHit(x, y)) return;
   if (bookHit(x, y)) { openBook(); return; }
+  if (packHit(x, y)) { openPack(); return; }
   if (travelHit(x, y)) { openMap(true); return; }
   if (minimapHit(x, y)) { openMap(false); return; }
   if (ordersOpen && mixHit(x, y)) { mixPtr = e.pointerId; setMixAt(x, y); try { canvas.setPointerCapture(e.pointerId); } catch (_) {} return; }
@@ -11021,7 +11745,7 @@ window.addEventListener('keydown', e => {
     else if (confirm) tapOverlay();
     return;
   }
-  if (state === 'shop') { if (e.code === 'Escape') closeShop(); return; }
+  if (state === 'shop') { if (e.code === 'Escape') { if (farCard) closeFarCard(); else closeShop(); } return; }
   if (state !== 'play') { if (confirm) tapOverlay(); return; }
   const el = KEY_TO_EL[e.code];
   if (el && castPtr === null && seq.length < MAX_SEQ) {
@@ -14331,7 +15055,7 @@ function drawWorld() {
     if (f.gate) continue;
     f.boss ? drawBoss(f) : f.adv ? drawAdvFoe(f) : f.unit && !(f.hex > 0) ? drawUnit(f) : drawFoe(f);
   }
-  if (mode === 'adventure') drawFolk(camX, camY);
+  if (mode === 'adventure') { drawFolk(camX, camY); drawFar(camX, camY); }
   for (const u of friends) if (!u.dead && !u.proxyOf && inView(u.x, u.y, 120, camX, camY)) drawUnit(u);
   for (const sh of bshots) {
     if (sh.arrow) {
@@ -14428,6 +15152,7 @@ function drawHUD() {
     bx += ctx.measureText(t).width + 12;
   }
 
+  drawFarHud();
   drawMinimap();
   drawBuildButtons();
   if (banner) {
@@ -14901,6 +15626,7 @@ function drawMinimap() {
   }
   for (const f of foes) if (f.titan && !f.dead) circle(mx(f.x), my(f.y), 3.5, TYPE_COLOR[f.elem], '#000', 1);
   circle(mx(boat.x), my(boat.y), 2, '#b07a40');
+  drawFarMinimap(mx, my);
   ctx.restore();
   ctx.strokeStyle = 'rgba(199,125,255,0.5)'; ctx.lineWidth = 1; ctx.strokeRect(x, y, s, s);
   circle(x + s / 2, y + s / 2, 2.5, '#fff');
@@ -16210,8 +16936,10 @@ function render() {
   drawFollowButton();
   drawOrderButton();
   drawBookButton();
+  drawPackButton();
   drawTravelButton();
   drawThreatArrows();
+  drawFarArrow();
   drawTalk();
   drawSoundTilt();
   drawEclipseClock(true); // an eclipse near or on: in front

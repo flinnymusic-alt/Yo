@@ -40,6 +40,12 @@ The file is organised in sections that start with `// ── name ──` commen
   - **The Wide World:** hills, rivers, a boat, sea serpents, rivals, roaming packs, waystones and a map.
   - **Hollowbrook:** the Spell School duels, the Scribe's House with the spell book, the Healing House, and teachers.
   - **Elsewhere in the world:** about 30 folk who need help, tokens and minion coins, and Barnaby's spell stall.
+- **Expeditions** (`far lands`; the plan for what comes next is in `spacewizard/REALM_PLAN.md`):
+  - **Ten gates** in the mountains round the edge of the home map, each opening on a land of its own: three with a city, four with a township, three wild. The ground grid holds one land at a time (`landSwap`); far lands sit at coordinates of their own, a long way from home.
+  - **Twenty new beasts** (`BEASTS`), two to a land, each paying a bounty in tokens.
+  - **Hired fighters and medics** (`crew`), and **food** that runs down out in a far land: with none left you faint and wake at the gate.
+  - **34 missions** (`MISSIONS`) from folk by the Wayfarers' Guild in Hollowbrook and in the far towns. They pay tokens and reputation.
+  - **The coach** takes you to any town or camp you've reached on foot. The **PACK** button shows food, hired hands, reputation and missions.
 - **Brush Lab**: a tester for casting with a brush (on the title screen).
 - **How to Play**: a quick start with moving pictures.
 - **Looks**: Wizard or Space. Sound is synthesised, so there are no asset files.
@@ -65,6 +71,14 @@ const { chromium } = require(require('child_process').execSync('npm root -g').to
 
 Check on a phone-sized screen (390×844) as well as a wide one. For Play with Friends, test with two browser pages.
 
+Ready-made scripts are in `spacewizard/tests/` (run each with `node spacewizard/tests/<name>.js`):
+
+- `load.js` and `smoke.js`: the page loads; a battle and an adventure run on a phone and a wide screen.
+- `lands.js`: every gate can be walked to; every far land builds and its places can be reached.
+- `beasts.js`: beasts turn up in every land, fight without errors and pay a bounty.
+- `missions.js`: all 34 missions can be taken, done and paid; hunger, hired hands, the coach, falling and loading a save.
+- `shot.js <name> "<js>" [wide]`: take a picture after running some JavaScript in the page.
+
 ## Publishing a change
 
 1. Commit on your branch, then push with `git push -u origin <branch>`.
@@ -87,6 +101,7 @@ Check on a phone-sized screen (390×844) as well as a wide one. For Play with Fr
 
 Run `git log --oneline -- pentagram.html scribe.html` for the full history. The latest Space Wizard work was:
 
+- Expeditions: ten gates to far lands, new beasts and bounties, hired hands, food, 34 missions, reputation, the coach
 - Scribing in battle: write glyphs with a brush instead of using the pentagram
 - The Scribing Dojo page and the Brush Lab
 - Online play that no longer falls behind on slow links
