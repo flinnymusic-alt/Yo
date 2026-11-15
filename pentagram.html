@@ -553,6 +553,8 @@ const L_OPEN = 0, L_WATER = 1, L_ROCK = 2, L_BRIDGE = 3, L_GAP = 4, L_ICE = 5;
 const land = new Uint8Array(LN * LN);
 const BC = 100, BN = 2 * AW / BC;
 const biome = new Uint8Array(BN * BN);
+// The grid holds one land at a time: home, or a far land beyond a gate. (GX, GY) is the middle of the one it holds now.
+let GX = 0, GY = 0;
 // each area's ground colour
 const BIOME = [
   '#5a8743', // 0 meadow
@@ -583,10 +585,10 @@ const ZONE_BIOME = { fire: 6, water: 7, earth: 8, air: 9, spirit: 10 };
 // painting: set every cell whose centre passes a test
 const LAND = { g: land, c: LC, n: LN }, BIO = { g: biome, c: BC, n: BN };
 function paint(T, x0, y0, x1, y1, v, test) {
-  const i0 = Math.max(0, Math.floor((x0 + AW) / T.c)), i1 = Math.min(T.n - 1, Math.floor((x1 + AW) / T.c));
-  const j0 = Math.max(0, Math.floor((y0 + AW) / T.c)), j1 = Math.min(T.n - 1, Math.floor((y1 + AW) / T.c));
+  const i0 = Math.max(0, Math.floor((x0 - GX + AW) / T.c)), i1 = Math.min(T.n - 1, Math.floor((x1 - GX + AW) / T.c));
+  const j0 = Math.max(0, Math.floor((y0 - GY + AW) / T.c)), j1 = Math.min(T.n - 1, Math.floor((y1 - GY + AW) / T.c));
   for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
-    const cx = -AW + (i + 0.5) * T.c, cy = -AW + (j + 0.5) * T.c;
+    const cx = GX - AW + (i + 0.5) * T.c, cy = GY - AW + (j + 0.5) * T.c;
     if (test(cx, cy)) T.g[j * T.n + i] = v;
   }
 }
@@ -620,7 +622,7 @@ function blob(x, y, r, wob, seed, n = 48, ry = r) {
 
 // ── what's where, and whether you can stand there ──
 function landAt(x, y) {
-  const i = Math.floor((x + AW) / LC), j = Math.floor((y + AW) / LC);
+  const i = Math.floor((x - GX + AW) / LC), j = Math.floor((y - GY + AW) / LC);
   return i < 0 || j < 0 || i >= LN || j >= LN ? L_ROCK : land[j * LN + i];
 }
 const footOk = t => t === L_OPEN || t === L_BRIDGE || t === L_ICE;
@@ -631,7 +633,7 @@ function landBlocks(x, y, r) {
   const q = r * 0.7;
   return !footOk(landAt(x + q, y)) || !footOk(landAt(x - q, y)) || !footOk(landAt(x, y + q)) || !footOk(landAt(x, y - q));
 }
-const biomeAt = (x, y) => { const i = clamp(Math.floor((x + AW) / BC), 0, BN - 1), j = clamp(Math.floor((y + AW) / BC), 0, BN - 1); return biome[j * BN + i]; };
+const biomeAt = (x, y) => { const i = clamp(Math.floor((x - GX + AW) / BC), 0, BN - 1), j = clamp(Math.floor((y - GY + AW) / BC), 0, BN - 1); return biome[j * BN + i]; };
 
 // walls that aren't square to the map: gates, barriers, palisades (a thick segment each)
 let segWalls = [];
@@ -758,7 +760,7 @@ function buildChunk(ci, cj) {
   if (!depthField) makeDepth();
   // 1) the ground's colour, blended between areas, with brushstrokes over it
   g.imageSmoothingEnabled = true;
-  g.drawImage(biomeCanvas(), (x0 + AW) / BC - 1, (y0 + AW) / BC - 1, CHUNK / BC + 2, CHUNK / BC + 2, -BC, -BC, CHUNK + 2 * BC, CHUNK + 2 * BC);
+  g.drawImage(biomeCanvas(), (x0 - GX + AW) / BC - 1, (y0 - GY + AW) / BC - 1, CHUNK / BC + 2, CHUNK / BC + 2, -BC, -BC, CHUNK + 2 * BC, CHUNK + 2 * BC);
   g.globalCompositeOperation = 'soft-light';
   g.drawImage(detailCanvas(), 0, 0);
   g.globalCompositeOperation = 'source-over';
@@ -774,12 +776,12 @@ function buildChunk(ci, cj) {
     }
   }
   // 3) the cells: water (with its banks), rock (with shadow), chasms and ice
-  const i0 = Math.floor((x0 + AW) / LC) - 2, i1 = Math.floor((x0 + CHUNK + AW) / LC) + 2;
-  const j0 = Math.floor((y0 + AW) / LC) - 2, j1 = Math.floor((y0 + CHUNK + AW) / LC) + 2;
+  const i0 = Math.floor((x0 - GX + AW) / LC) - 2, i1 = Math.floor((x0 - GX + CHUNK + AW) / LC) + 2;
+  const j0 = Math.floor((y0 - GY + AW) / LC) - 2, j1 = Math.floor((y0 - GY + CHUNK + AW) / LC) + 2;
   const each = (types, fn) => {
     for (let j = Math.max(0, j0); j <= Math.min(LN - 1, j1); j++) for (let i = Math.max(0, i0); i <= Math.min(LN - 1, i1); i++) {
       const k = j * LN + i;
-      if (types.includes(land[k])) fn(-AW + (i + 0.5) * LC, -AW + (j + 0.5) * LC, k, i, j);
+      if (types.includes(land[k])) fn(GX - AW + (i + 0.5) * LC, GY - AW + (j + 0.5) * LC, k, i, j);
     }
   };
   const dot = (x, y, r, c) => { g.fillStyle = c; g.beginPath(); g.arc(x, y, r, 0, TAU); g.fill(); };
@@ -855,7 +857,7 @@ function drawLand(camX, camY) {
     for (let i = 0; i < chunks.size - CHUNK_KEEP; i++) chunks.delete(old[i][0]);
   }
   // sun glinting and ripples on the water in view
-  const g0 = Math.floor((camX + AW) / LC), g1 = Math.floor((camX + VW + AW) / LC), h0 = Math.floor((camY + AW) / LC), h1 = Math.floor((camY + VH + AW) / LC);
+  const g0 = Math.floor((camX - GX + AW) / LC), g1 = Math.floor((camX - GX + VW + AW) / LC), h0 = Math.floor((camY - GY + AW) / LC), h1 = Math.floor((camY - GY + VH + AW) / LC);
   ctx.fillStyle = '#ffffff';
   for (let j = Math.max(0, h0); j <= Math.min(LN - 1, h1); j += 2) for (let i = Math.max(0, g0); i <= Math.min(LN - 1, g1); i += 2) {
     const k = j * LN + i;
@@ -863,7 +865,7 @@ function drawLand(camX, camY) {
     const h = hash2(i, j), glint = Math.sin(elapsed * 2.2 + h * 40);
     if (h > 0.35 || glint < 0.5) continue;
     ctx.globalAlpha = (glint - 0.5) * 1.6;
-    ctx.beginPath(); ctx.ellipse(-AW + i * LC + h * 40 + Math.sin(elapsed * 0.5 + h * 9) * 6, -AW + j * LC + 10, 7, 1.6, 0, 0, TAU); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(GX - AW + i * LC + h * 40 + Math.sin(elapsed * 0.5 + h * 9) * 6, GY - AW + j * LC + 10, 7, 1.6, 0, 0, TAU); ctx.fill();
   }
   ctx.globalAlpha = 1;
 }
@@ -878,7 +880,7 @@ function mapCanvas() {
   const g = mapCv.getContext('2d'), img = g.createImageData(n, n);
   const rgb = BIOME.map(h => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)]);
   for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
-    const x = -AW + (i + 0.5) * MAP_PX, y = -AW + (j + 0.5) * MAP_PX, t = landAt(x, y);
+    const x = GX - AW + (i + 0.5) * MAP_PX, y = GY - AW + (j + 0.5) * MAP_PX, t = landAt(x, y);
     const c = t === L_WATER || t === L_BRIDGE ? [58, 130, 180] : t === L_ROCK ? [112, 106, 96] : t === L_GAP ? [20, 16, 24] : t === L_ICE ? [210, 236, 246] : rgb[biomeAt(x, y)];
     img.data.set([c[0], c[1], c[2], 255], (j * n + i) * 4);
   }
@@ -886,7 +888,7 @@ function mapCanvas() {
   g.lineCap = g.lineJoin = 'round';
   for (const p of PATHS) {
     g.strokeStyle = 'rgba(214,190,140,0.9)'; g.lineWidth = Math.max(1, p.w / MAP_PX);
-    g.beginPath(); p.pts.forEach((q, i) => { const x = (q.x + AW) / MAP_PX, y = (q.y + AW) / MAP_PX; i ? g.lineTo(x, y) : g.moveTo(x, y); }); g.stroke();
+    g.beginPath(); p.pts.forEach((q, i) => { const x = (q.x - GX + AW) / MAP_PX, y = (q.y - GY + AW) / MAP_PX; i ? g.lineTo(x, y) : g.moveTo(x, y); }); g.stroke();
   }
   return mapCv;
 }
@@ -1317,6 +1319,48 @@ let RAMPS = [];                                 // each ramp's foot, top and wid
   }
   // the castles' courtyards
   for (const c of RUINS) paint(BIO, c.x - c.h, c.y - c.h, c.x + c.h, c.y + c.h, B_COURT, () => true);
+})();
+// ── the ten gates in the mountains round the world's edge ──
+// Each opens on a far land of its own (made further down: see "far lands"). A road runs out to each from the
+// nearest road you already know, with a signpost where it leaves.
+const FARGATES = [
+  { land: 'mere',  name: 'The Mere Lands',     x: 5600,  y: 7640,  ox: 0,  oy: 1,  road: [[6300, 4200], [6500, 5600], [5900, 6900]], sign: '↓' },
+  { land: 'wood',  name: 'The Elderwood',      x: -3000, y: 7640,  ox: 0,  oy: 1,  road: [[-5500, 5300], [-4600, 6300], [-3600, 7100]], sign: '↘' },
+  { land: 'fen',   name: 'The Blackfen',       x: -7640, y: 4200,  ox: -1, oy: 0,  road: [[-6600, 4600], [-7100, 4350]], sign: '←' },
+  { land: 'coast', name: 'The Salt Coast',     x: 7640,  y: 4600,  ox: 1,  oy: 0,  road: [[5350, 3900], [6300, 4200], [7000, 4500]], sign: '→' },
+  { land: 'crag',  name: 'The Stonecrags',     x: -3600, y: -7640, ox: 0,  oy: -1, road: [[-2350, -4400], [-2900, -5600], [-3500, -6700]], sign: '↑' },
+  { land: 'snow',  name: 'The Frostfells',     x: 3400,  y: -7640, ox: 0,  oy: -1, road: [[3200, -6950]], sign: '↑' },
+  { land: 'dune',  name: 'The Sunken Dunes',   x: -7640, y: 600,   ox: -1, oy: 0,  road: [[-7000, 1200], [-7300, 800]], sign: '←' },
+  { land: 'ash',   name: 'The Cinder Reach',   x: 7640,  y: -3600, ox: 1,  oy: 0,  road: [[5650, -3300], [6600, -3500]], sign: '→' },
+  { land: 'star',  name: 'The Starfall Plain', x: 7640,  y: 900,   ox: 1,  oy: 0,  road: [[6300, 700], [7000, 850]], sign: '→' },
+  { land: 'isle',  name: 'The Thousand Isles', x: -7640, y: -5600, ox: -1, oy: 0,  road: [[-2900, -3600], [-4200, -4600], [-5600, -5300], [-6900, -5550]], sign: '←' },
+];
+// a road: a trodden path on the ground, with a bridge wherever it meets water
+function layRoad(name, w, raw, wander = 0, seed = 0) {
+  const pts = spline(raw, 60, wander, seed);
+  PATHS.push({ name, pts, w, x0: Math.min(...pts.map(p => p.x)), x1: Math.max(...pts.map(p => p.x)), y0: Math.min(...pts.map(p => p.y)), y1: Math.max(...pts.map(p => p.y)) });
+  let wet = null;
+  for (let i = 0; i <= pts.length; i++) {
+    const p = pts[i], w2 = p && landAt(p.x, p.y) === L_WATER;
+    if (w2 && !wet) wet = pts[Math.max(0, i - 1)];
+    if (!w2 && wet) {
+      const a = wet, b = p || pts[pts.length - 1], ux = b.x - a.x, uy = b.y - a.y, l = Math.hypot(ux, uy) || 1;
+      const A = { x: a.x - ux / l * 30, y: a.y - uy / l * 30 }, B = { x: b.x + ux / l * 30, y: b.y + uy / l * 30 };
+      paintLine(LAND, [A, B], 28, L_BRIDGE);
+      BRIDGES.push({ a: A, b: B, w: Math.max(52, w), kind: 'wood' });
+      wet = null;
+    }
+  }
+  return pts;
+}
+(function makeFarGates() {
+  for (const g of FARGATES) {
+    g.in = { x: g.x - g.ox * 240, y: g.y - g.oy * 240 };      // where you stand when you come home through it
+    g.out = { x: g.x + g.ox * 250, y: g.y + g.oy * 250 };     // walk this far beyond the arch and you're through
+    paintLine(LAND, [{ x: g.x - g.ox * 900, y: g.y - g.oy * 900 }, { x: g.x + g.ox * 345, y: g.y + g.oy * 345 }], 90, L_OPEN);
+    layRoad(g.name + ' road', 50, [...g.road.map(([x, y]) => ({ x, y })), { x: g.x + g.ox * 300, y: g.y + g.oy * 300 }]);
+    SIGNS.push({ x: g.road[0][0] + 50, y: g.road[0][1] + 40, lines: [`${g.sign} The gate to ${g.name}`] });
+  }
 })();
 // the point on a plateau's rim in a direction from its middle
 function ringAt(h, a) {
@@ -2549,7 +2593,7 @@ function phoenixRise(f) {
 }
 
 // ── sea serpents: they surface round your boat, spit, bite and dive ──
-const deepAt = (x, y) => { const i = Math.floor((x + AW) / LC), j = Math.floor((y + AW) / LC); return land[j * LN + i] === L_WATER ? depthField[j * LN + i] : 0; };
+const deepAt = (x, y) => { const i = Math.floor((x - GX + AW) / LC), j = Math.floor((y - GY + AW) / LC); return i >= 0 && j >= 0 && i < LN && j < LN && land[j * LN + i] === L_WATER ? depthField[j * LN + i] : 0; };
 function serpentSpot(x, y, lo, hi) {
   for (let tries = 0; tries < 24; tries++) {
     const a = rnd(0, TAU), d = rnd(lo, hi), px = x + Math.cos(a) * d, py = y + Math.sin(a) * d;
@@ -2710,6 +2754,7 @@ function updateWorld(dt) {
   WLD.later = WLD.later.filter(q => q.t > 0);
   for (const q of due) q.fn();
   if (!worldOpen()) return;
+  if (LANDNOW) { updateLand(dt); return; }                  // (beyond a gate: that land's own goings-on)
   const inS = insideSanctum(player.x, player.y);
   if (!inS && !WLD.welcomed && !ADV.world.welcomed) {
     WLD.welcomed = ADV.world.welcomed = true; advSave();
@@ -2783,6 +2828,8 @@ function updateWorld(dt) {
     WLD.talk = { name: STALL.name, at: { x: STALL.x + 26, y: STALL.y - 70 }, line: 'Tokens for spells! Tell me what kind of spell you’re after, and I’ll find you one you don’t know yet.', shop: true };
   updateHalls(dt);
   updateQuests(dt);
+  updateFarGates();
+  if (LANDNOW) return;
   // crystals in chests
   for (const c of CHESTS) {
     if (ADV.world.chests.includes(c.id) || Math.hypot(player.x - c.x, player.y - c.y) > 42 || state !== 'play') continue;
@@ -4683,6 +4730,534 @@ function tornado() {
   zones.push({ type: 'tornado', x: player.x + a.x * 70, y: player.y + a.y * 70, vx: a.x * 75, vy: a.y * 75, r: 240, life: 5, max: 5, tick: 0 });
 }
 
+// ── far lands: beyond each of the ten gates lies a land of its own ──
+// The ground grid holds one land at a time. Walking out through a gate sets home's ground aside and paints the
+// far land into the grid, at coordinates of its own a long way off, so nothing of home is anywhere near.
+// Three lands hold a city, four a township and three are wild; each has four named places to be sent to.
+BIOME.push('#e3ebee', '#d8c388', '#4b5a45', '#8a78a8', '#a09078', '#2e4a2a');
+const B_SNOW = 20, B_DUNE = 21, B_FEN = 22, B_ALIEN = 23, B_CRAG = 24, B_OLDWOOD = 25;
+// at: [forward, sideways] as a share of the land's size, forward from the gate you came in by (-1 is the gate's edge)
+const LANDS = [
+  { id: 'mere', tier: 1, size: 2600, seed: 11, about: 'Lakes and reed beds',
+    town: { name: 'Reedham', kind: 'township', at: [0.1, 0.05], inn: 'Heron Inn', roof: '#5a7a9a' },
+    sites: [{ id: 'heron', name: 'Heron Pool', at: [-0.25, -0.5], look: 'pool' }, { id: 'weir', name: 'The Old Weir', at: [0.58, -0.3], look: 'ruin' },
+            { id: 'lily', name: 'Lilypad Reach', at: [0.5, 0.45], look: 'pool' }, { id: 'lantern', name: 'The Marsh Lantern', at: [-0.3, 0.55], look: 'tower' }] },
+  { id: 'wood', tier: 1, size: 3000, seed: 23, about: 'Deep old forest',
+    town: { name: 'Oakhollow', kind: 'township', at: [0, -0.15], inn: 'Acorn Inn', roof: '#6a8a5a' },
+    sites: [{ id: 'oak', name: 'The Great Oak', at: [0.58, 0.1], look: 'tree' }, { id: 'ring', name: 'The Fairy Ring', at: [0.3, -0.6], look: 'ring' },
+            { id: 'camp', name: 'The Woodcutters’ Camp', at: [-0.35, 0.5], look: 'camp' }, { id: 'log', name: 'The Hollow Log', at: [0.42, 0.58], look: 'log' }] },
+  { id: 'fen', tier: 1, size: 2400, seed: 37, about: 'Black bog and mist', camp: [-0.62, 0],
+    sites: [{ id: 'chapel', name: 'The Sunken Chapel', at: [0.5, -0.3], look: 'ruin' }, { id: 'hut', name: 'The Witch’s Hut', at: [0.55, 0.4], look: 'hut' },
+            { id: 'beacon', name: 'The Bog Beacon', at: [0, -0.6], look: 'tower' }, { id: 'toad', name: 'The Toadstone', at: [-0.05, 0.55], look: 'stone' }] },
+  { id: 'coast', tier: 2, size: 4200, seed: 41, about: 'A wide sea and its islands', sea: true,
+    town: { name: 'Port Saltmere', kind: 'city', at: [-0.04, 0], inn: 'Mermaid’s Rest', roof: '#4a7a9a' },
+    sites: [{ id: 'light', name: 'The Lighthouse', at: [0.62, -0.3], look: 'tower', isle: 330 }, { id: 'gull', name: 'The Wreck of the Gull', at: [0.6, 0.35], look: 'wreck', isle: 300 },
+            { id: 'cove', name: 'Smugglers’ Cove', at: [-0.2, -0.62], look: 'cave' }, { id: 'pans', name: 'The Salt Pans', at: [-0.3, 0.6], look: 'pool' }] },
+  { id: 'crag', tier: 2, size: 3400, seed: 53, about: 'A maze of stone canyons',
+    town: { name: 'Cragfoot', kind: 'township', at: [-0.15, 0], inn: 'Miner’s Lamp', roof: '#8a6a4a' },
+    links: [['echo', 'stair'], ['stair', 'mine']],
+    sites: [{ id: 'echo', name: 'Echo Cave', at: [0.35, -0.55], look: 'cave' }, { id: 'stair', name: 'The Eagle Stair', at: [0.7, 0], look: 'tower' },
+            { id: 'mine', name: 'The Old Mine', at: [0.2, 0.6], look: 'cave' }, { id: 'table', name: 'The Giant’s Table', at: [-0.45, -0.5], look: 'stone' }] },
+  { id: 'snow', tier: 2, size: 3600, seed: 67, about: 'Snowfields and frozen tarns',
+    town: { name: 'Hearthwick', kind: 'township', at: [-0.1, 0.2], inn: 'Warm Hearth', roof: '#9a4a3a' },
+    sites: [{ id: 'tarn', name: 'The Frozen Tarn', at: [0.5, 0.4], look: 'stone' }, { id: 'cave', name: 'The Ice Cave', at: [0.3, -0.6], look: 'cave' },
+            { id: 'peak', name: 'Signal Peak', at: [0.7, -0.1], look: 'tower' }, { id: 'sledge', name: 'The Lost Sledge', at: [-0.3, -0.55], look: 'wreck' }] },
+  { id: 'dune', tier: 2, size: 4400, seed: 71, about: 'Sand, mesas and far-off wells',
+    town: { name: 'Sandgate', kind: 'city', at: [0.05, -0.1], inn: 'Camel’s Rest', roof: '#c08a4a' },
+    sites: [{ id: 'temple', name: 'The Buried Temple', at: [0.6, -0.35], look: 'ruin' }, { id: 'rocks', name: 'Scorpion Rocks', at: [0.25, 0.6], look: 'stone' },
+            { id: 'well', name: 'The Mirage Well', at: [0.65, 0.3], look: 'pool' }, { id: 'bones', name: 'The Caravan Bones', at: [-0.35, -0.55], look: 'wreck' }] },
+  { id: 'ash', tier: 3, size: 3600, seed: 83, about: 'Burnt ground, split by chasms', camp: [-0.62, 0],
+    sites: [{ id: 'forge', name: 'The Black Forge', at: [0.3, -0.55], look: 'ruin' }, { id: 'spire', name: 'The Obsidian Spire', at: [0.68, 0], look: 'tower' },
+            { id: 'vents', name: 'The Ember Vents', at: [0.05, 0.6], look: 'crater' }, { id: 'gate', name: 'The Demon’s Gate', at: [0.52, 0.5], look: 'ring' }] },
+  { id: 'star', tier: 3, size: 4600, seed: 97, about: 'Craters, crystal and fallen ships',
+    town: { name: 'Farlight', kind: 'city', at: [0, 0.15], inn: 'Star Dock', roof: '#6a7a9a', astro: true },
+    sites: [{ id: 'crater', name: 'The Great Crater', at: [0.55, -0.4], look: 'crater' }, { id: 'saucer', name: 'The Saucer Wreck', at: [0.65, 0.3], look: 'wreck' },
+            { id: 'array', name: 'The Beacon Array', at: [-0.2, -0.6], look: 'tower' }, { id: 'glass', name: 'The Glass Field', at: [0.2, 0.65], look: 'stone' }] },
+  { id: 'isle', tier: 3, size: 4800, seed: 101, about: 'Open sea, a thousand islands', sea: true, camp: [-0.74, 0],
+    sites: [{ id: 'kraken', name: 'Kraken Rock', at: [0.6, 0], look: 'stone', isle: 300 }, { id: 'hermit', name: 'The Hermit’s Isle', at: [0.05, -0.58], look: 'hut', isle: 330 },
+            { id: 'bell', name: 'The Drowned Bell', at: [0.15, 0.55], look: 'tower', isle: 300 }, { id: 'cay', name: 'Treasure Cay', at: [-0.3, 0.42], look: 'wreck', isle: 280 }] },
+];
+LANDS.forEach((L, i) => {
+  const g = L.gate = FARGATES.find(g => g.land === L.id);
+  L.name = g.name; L.gx = 40000 * (i + 1); L.gy = 0;
+  const S = L.size;
+  L.P = (f, r) => ({ x: L.gx + (g.ox * f - g.oy * r) * S, y: L.gy + (g.oy * f + g.ox * r) * S });
+  // the arch you come in by, just outside the land's rim; `arr` is where you arrive, `out` takes you home
+  const A = L.arch = { x: L.gx - g.ox * (S * 1.16 + 150), y: L.gy - g.oy * (S * 1.16 + 150) };
+  L.arr = { x: A.x + g.ox * 230, y: A.y + g.oy * 230 };
+  L.out = { x: A.x - g.ox * 250, y: A.y - g.oy * 250 };
+  for (const s of L.sites) Object.assign(s, L.P(s.at[0], s.at[1]), { land: L.id });
+  if (L.town) { L.town.c = L.P(L.town.at[0], L.town.at[1]); L.base = L.town.c; }
+  else L.base = L.P(L.camp[0], L.camp[1]);
+});
+const landById = id => LANDS.find(L => L.id === id);
+const siteOf = (land, id) => landById(land).sites.find(s => s.id === id);
+const TIER_WORD = ['', 'A short trip', 'A longer journey', 'A long, hard road'];
+
+// each kind of country: its ground colours, what grows there, and how its ground is shaped
+const THEMES = {
+  mere:  { base: B_MEADOW, plant: 55, townBio: B_VILLAGE, bio: (n, m) => n < 0.3 ? B_MARSH : n > 0.68 ? B_FLOWER : m > 0.6 ? B_TALL : B_MEADOW,
+           tree: (b, k) => k < 0.34 ? 'tree' : k < 0.42 ? 'rock' : null },
+  wood:  { base: B_FOREST, plant: 300, gap: 58, townBio: B_VILLAGE, bio: (n, m) => n > 0.6 ? B_OLDWOOD : m > 0.72 ? B_DEEP : B_FOREST,
+           tree: (b, k) => k < 0.93 ? 'tree' : 'rock' },
+  fen:   { base: B_FEN, plant: 70, townBio: B_MARSH, bio: (n, m) => n > 0.62 ? B_MARSH : m > 0.75 ? B_DEEP : B_FEN,
+           tree: (b, k) => k < 0.36 ? 'deadtree' : k < 0.5 ? 'tree' : k < 0.58 ? 'rock' : null },
+  coast: { base: B_MEADOW, plant: 45, townBio: B_VILLAGE, bio: (n, m) => n > 0.66 ? B_HEATH : m > 0.7 ? B_FLOWER : n < 0.3 ? B_TALL : B_MEADOW,
+           tree: (b, k) => b === B_SAND ? (k < 0.3 ? 'palm' : null) : k < 0.3 ? 'tree' : k < 0.42 ? 'rock' : null },
+  crag:  { base: B_CRAG, plant: 60, closed: true, townBio: B_COURT, bio: (n, m) => n > 0.6 ? ZONE_BIOME.earth : m > 0.75 ? B_HEATH : B_CRAG,
+           tree: (b, k) => k < 0.16 ? 'pine' : k < 0.6 ? 'rock' : null },
+  snow:  { base: B_SNOW, plant: 60, townBio: B_COURT, bio: (n, m) => n < 0.33 ? B_FROST : B_SNOW,
+           tree: (b, k) => k < 0.45 ? 'pine' : k < 0.65 ? 'rock' : null },
+  dune:  { base: B_DUNE, plant: 40, townBio: B_COURT, bio: (n, m) => n > 0.62 ? B_SAND : B_DUNE,
+           tree: (b, k) => b === B_TALL ? (k < 0.6 ? 'palm' : null) : k < 0.2 ? 'cactus' : k < 0.36 ? 'rock' : null },
+  ash:   { base: ZONE_BIOME.fire, plant: 60, townBio: B_SCORCH, bio: (n, m) => n > 0.58 ? B_SCORCH : ZONE_BIOME.fire,
+           tree: (b, k) => k < 0.3 ? 'deadtree' : k < 0.6 ? 'rock' : null },
+  star:  { base: B_PLAIN, plant: 40, townBio: B_COURT, bio: (n, m) => n > 0.55 ? B_ALIEN : m > 0.8 ? B_HEATH : B_PLAIN,
+           tree: (b, k) => b === B_SCORCH ? null : k < 0.28 ? 'crystal' : k < 0.4 ? 'rock' : null },
+  isle:  { base: B_SAND, plant: 70, closed: true, townBio: B_SAND, bio: (n, m) => B_SAND,
+           tree: (b, k) => b === B_SAND ? (k < 0.25 ? 'palm' : null) : k < 0.4 ? 'palm' : k < 0.55 ? 'rock' : k < 0.75 ? 'tree' : null },
+};
+const FAR_R = { tree: 13, pine: 12, deadtree: 10, rock: 9, palm: 10, cactus: 9, crystal: 11 };
+
+// paint cells along a line, but only those that are one of `from` (so a road opens rock without draining a lake)
+function paintLineIf(pts, r, v, from) {
+  for (let i = 1; i < pts.length; i++) {
+    const a = pts[i - 1], b = pts[i];
+    paint(LAND, Math.min(a.x, b.x) - r, Math.min(a.y, b.y) - r, Math.max(a.x, b.x) + r, Math.max(a.y, b.y) + r, v, (cx, cy) => from.includes(landAt(cx, cy)) && segDist(cx, cy, a, b) <= r);
+  }
+}
+// the four walls of a hall, with its doorway on the south side
+function hallWalls(h, into) {
+  const T = HALL_T, d0 = h.x + (h.w - h.doorW) / 2, d1 = d0 + h.doorW, add = (x, y, w, hh) => into.push({ x, y, w, h: hh, hall: h });
+  add(h.x, h.y, h.w, T);
+  add(h.x, h.y + h.h - T, d0 - h.x, T); add(d1, h.y + h.h - T, h.x + h.w - d1, T);
+  add(h.x, h.y, T, h.h); add(h.x + h.w - T, h.y, T, h.h);
+}
+// make a land (once), straight into the ground grid: call only with the grid already standing for it
+function buildLand(L) {
+  const R = mulberry32(L.seed * 7919), S = L.size, T = THEMES[L.id], P = L.P, g = L.gate, o = { x: g.ox, y: g.oy };
+  const G = L.g = { walls: [], solids: [], paths: [], bridges: [], people: [], craters: [] };
+  PATHS = G.paths; BRIDGES = G.bridges;
+  land.fill(L_ROCK); biome.fill(T.base);
+  if (!T.closed) paintPoly(LAND, blob(L.gx, L.gy, S, 0.16, L.seed * 1.7, 72), L_OPEN);
+  for (let j = 0; j < BN; j++) for (let i = 0; i < BN; i++) {
+    const x = GX - AW + (i + 0.5) * BC, y = GY - AW + (j + 0.5) * BC;
+    if (Math.abs(x - L.gx) > S * 1.6 || Math.abs(y - L.gy) > S * 1.6) continue;
+    biome[j * BN + i] = T.bio(vnoise(x / 1700 + L.seed, y / 1700 + 3), vnoise(x / 700 + 5, y / 700 + L.seed));
+  }
+  // places to keep clear of water, rock and trees
+  const baseR = L.town ? (L.town.kind === 'city' ? 800 : 500) : 260;
+  const keep = [{ x: L.base.x, y: L.base.y, r: baseR }, ...L.sites.map(s => ({ x: s.x, y: s.y, r: 240 })), { x: L.arr.x, y: L.arr.y, r: 300 }, { ...P(-0.8, 0), r: 300 }];
+  const clearOf = (p, r) => keep.every(k => Math.hypot(p.x - k.x, p.y - k.y) > r + k.r);
+  const rf = (a, b) => a + R() * (b - a);
+  const blobs = (n, lo, hi, v, pad, bio, bioPad) => {
+    for (let k = 0, tries = 0; k < n && tries < n * 40; tries++) {
+      const p = P(rf(-0.8, 0.85), rf(-0.85, 0.85)), r = rf(lo, hi);
+      if (!clearOf(p, r + pad)) continue;
+      if (bio != null) paintPoly(BIO, blob(p.x, p.y, r + bioPad, 0.2, k + 3, 24), bio);
+      paintPoly(LAND, blob(p.x, p.y, r, 0.25, k + L.seed, 28), v);
+      k++;
+    }
+  };
+  const lines = (n, lo, hi, w, v, wander) => {
+    for (let k = 0; k < n; k++) {
+      const a = P(rf(-0.7, 0.8), rf(-0.8, 0.8)), ang = rf(0, TAU), len = rf(lo, hi);
+      paintLine(LAND, spline([a, { x: a.x + Math.cos(ang) * len / 2, y: a.y + Math.sin(ang) * len / 2 }, { x: a.x + Math.cos(ang) * len, y: a.y + Math.sin(ang) * len }], 50, wander, k), w, v);
+    }
+  };
+  // the sea: everything beyond a wobbly shoreline (f0 is how far forward the shore lies)
+  const sea = f0 => paint(LAND, L.gx - S * 1.5, L.gy - S * 1.5, L.gx + S * 1.5, L.gy + S * 1.5, L_WATER, (x, y) => {
+    const dx = (x - L.gx) / S, dy = (y - L.gy) / S, f = dx * o.x + dy * o.y, r = -dx * o.y + dy * o.x;
+    if (Math.hypot(dx, dy) > 1.42) return false;
+    const shore = f0 + 0.09 * (vnoise(r * 3 + L.seed, 5) - 0.5) * 2;
+    if (f > shore - 0.07 && f <= shore) biome[clamp(Math.floor((y - GY + AW) / BC), 0, BN - 1) * BN + clamp(Math.floor((x - GX + AW) / BC), 0, BN - 1)] = B_SAND;
+    return f > shore;
+  });
+  const island = (p, r, grass) => { paintPoly(LAND, blob(p.x, p.y, r, 0.2, p.x / 997, 32), L_OPEN); paintDisc(BIO, p.x, p.y, r + 80, B_SAND); if (grass) paintDisc(BIO, p.x, p.y, r * 0.6, grass); };
+  if (L.id === 'mere') blobs(11, 220, 520, L_WATER, 110, B_SAND, 90);
+  else if (L.id === 'wood') paintLine(LAND, spline([P(0.95, -0.7), P(0.45, -0.25), P(0.1, 0.3), P(-0.45, 0.9)], 60, 260, 3), 46, L_WATER);
+  else if (L.id === 'fen') blobs(90, 50, 150, L_WATER, 50, B_MARSH, 60);
+  else if (L.id === 'coast') { sea(0.22); for (let k = 0; k < 5; k++) { const p = P(rf(0.4, 1.1), rf(-1, 1)); if (clearOf(p, 420)) island(p, rf(120, 220), B_TALL); } }
+  else if (L.id === 'snow') { lines(7, 900, 1700, 110, L_ROCK, 300); blobs(6, 200, 380, L_ICE, 80); }
+  else if (L.id === 'dune') { blobs(13, 180, 420, L_ROCK, 100); blobs(3, 110, 150, L_WATER, 150, B_TALL, 170); }
+  else if (L.id === 'ash') { blobs(10, 120, 260, L_ROCK, 80); lines(8, 800, 1500, 34, L_GAP, 240); }
+  else if (L.id === 'star') {
+    for (let k = 0, tries = 0; k < 9 && tries < 300; tries++) {
+      const p = P(rf(-0.7, 0.8), rf(-0.8, 0.8)), r = rf(220, 360);
+      if (!clearOf(p, r + 60)) continue;
+      paintDisc(BIO, p.x, p.y, r, B_SCORCH); G.craters.push({ x: p.x, y: p.y, r }); keep.push({ x: p.x, y: p.y, r: r - 60 }); k++;
+    }
+  } else if (L.id === 'isle') {
+    paintDisc(LAND, L.gx, L.gy, S * 1.12, L_WATER);
+    island(L.base, S * 0.17, B_TALL);
+    for (let k = 0, tries = 0; k < 9 && tries < 300; tries++) { const p = P(rf(-0.6, 0.9), rf(-0.95, 0.95)), r = rf(150, 300); if (Math.hypot(p.x - L.gx, p.y - L.gy) < S * 0.98 && clearOf(p, r + 260)) { island(p, r, B_TALL); keep.push({ x: p.x, y: p.y, r: r + 200 }); k++; } }
+  }
+  // the named places, each in a clearing (or on an island of its own); the base; the pass in from the gate
+  for (const s of L.sites) {
+    if (s.isle) island(s, s.isle, B_TALL); else paintDisc(LAND, s.x, s.y, T.closed ? 300 : 210, L_OPEN);
+    if (s.look === 'pool') paintPoly(LAND, blob(s.x, s.y - 190, 130, 0.2, s.x, 20), L_WATER);
+    if (L.id === 'snow' && s.id === 'tarn') paintPoly(LAND, blob(s.x, s.y - 260, 230, 0.2, 9, 24), L_ICE);
+    if (L.id === 'wood' || L.id === 'fen') paintDisc(BIO, s.x, s.y, 240, L.id === 'wood' ? B_FLOWER : B_MARSH);
+    if (s.look === 'crater') paintDisc(BIO, s.x, s.y, 260, B_SCORCH);
+  }
+  paintDisc(LAND, L.base.x, L.base.y, baseR * (T.closed ? 1.05 : 0.9), L_OPEN);
+  paintDisc(BIO, L.base.x, L.base.y, baseR * 0.85, T.townBio);
+  paintLine(LAND, [P(-0.72, 0), { x: L.arch.x - o.x * 345, y: L.arch.y - o.y * 345 }], 90, L_OPEN);
+  // roads: gate to base, base to each place you can walk to, and any links between places
+  const road = (name, a, b, w) => {
+    const raw = [a, { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, b], pts = spline(raw, 60, T.closed ? 500 : 160, G.paths.length + L.seed);
+    paintLineIf(pts, T.closed ? 105 : 62, L_OPEN, [L_ROCK, L_GAP]);
+    if (T.closed) for (let i = 4; i < pts.length - 4; i += 5) if (R() < 0.3) {      // pockets off the canyon
+      const ang = rf(0, TAU), len = rf(260, 620), q = { x: pts[i].x + Math.cos(ang) * len, y: pts[i].y + Math.sin(ang) * len };
+      if (Math.hypot(q.x - L.gx, q.y - L.gy) < S * 1.05) { paintLineIf([pts[i], q], 80, L_OPEN, [L_ROCK]); paintLineIf([q, q], rf(110, 190), L_OPEN, [L_ROCK]); }
+    }
+    PATHS.push({ name, pts, w, x0: Math.min(...pts.map(p => p.x)), x1: Math.max(...pts.map(p => p.x)), y0: Math.min(...pts.map(p => p.y)), y1: Math.max(...pts.map(p => p.y)) });
+    let wet = null;
+    for (let i = 0; i <= pts.length; i++) {
+      const p = pts[i], w2 = p && landAt(p.x, p.y) === L_WATER;
+      if (w2 && !wet) wet = pts[Math.max(0, i - 1)];
+      if (!w2 && wet) {
+        const A = wet, B = p || pts[pts.length - 1], ux = B.x - A.x, uy = B.y - A.y, l = Math.hypot(ux, uy) || 1;
+        const a2 = { x: A.x - ux / l * 30, y: A.y - uy / l * 30 }, b2 = { x: B.x + ux / l * 30, y: B.y + uy / l * 30 };
+        paintLine(LAND, [a2, b2], 28, L_BRIDGE); BRIDGES.push({ a: a2, b: b2, w: 58, kind: 'wood' });
+        wet = null;
+      }
+    }
+  };
+  if (L.id !== 'isle') {
+    road('Gate road', { x: L.arch.x - o.x * 300, y: L.arch.y - o.y * 300 }, L.base, 56);
+    for (const s of L.sites) if (!s.isle) road(s.name, L.base, s, 46);
+    for (const [a, b] of L.links || []) road('track', siteOf(L.id, a), siteOf(L.id, b), 42);
+  } else road('Gate road', { x: L.arch.x - o.x * 300, y: L.arch.y - o.y * 300 }, L.base, 56);
+  // a jetty and a boat, where there's a sea to sail
+  if (L.sea) {
+    const p0 = L.base, ang = Math.atan2(o.y, o.x) + (L.id === 'coast' ? 0.5 : 0), ux = Math.cos(ang), uy = Math.sin(ang);
+    let s = 0;
+    while (s < 2500 && landAt(p0.x + ux * s, p0.y + uy * s) !== L_WATER) s += 10;
+    const Sh = { x: p0.x + ux * s, y: p0.y + uy * s }, a = { x: Sh.x - ux * 50, y: Sh.y - uy * 50 }, b = { x: Sh.x + ux * 190, y: Sh.y + uy * 190 };
+    paintLine(LAND, [a, b], 22, L_BRIDGE); BRIDGES.push({ a, b, w: 46, kind: 'pier' });
+    G.dock = { x: Sh.x + ux * 165 - uy * 62, y: Sh.y + uy * 165 + ux * 62, ang, pier: { a, b } };
+    road('Jetty path', L.base, a, 44);
+    keep.push({ x: Sh.x, y: Sh.y, r: 120 });
+  }
+  // the town or the camp
+  if (L.town) buildTown(L, G, R); else buildCamp(L, G);
+  // each place's own landmark stands in the way like a rock would
+  for (const s of L.sites) if (s.look !== 'pool' && s.look !== 'ring' && s.look !== 'crater') G.solids.push({ x: s.x, y: s.y, r: s.look === 'tower' || s.look === 'tree' ? 24 : 30, kind: 'site', far: true, site: s });
+  for (const c of G.craters) for (let i = 0; i < 16; i++) { if (i % 8 === 0) continue; const a = i * TAU / 16; G.solids.push({ x: c.x + Math.cos(a) * c.r, y: c.y + Math.sin(a) * c.r, r: 12, kind: 'rock', ash: true }); }
+  // what grows there
+  const cells = new Map(), key = (x, y) => Math.floor(x / 64) + ',' + Math.floor(y / 64), gap = T.gap || 62;
+  const spaced = (x, y) => { const cx = Math.floor(x / 64), cy = Math.floor(y / 64); for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) for (const p of cells.get((cx + i) + ',' + (cy + j)) || []) if (Math.hypot(p.x - x, p.y - y) < gap) return false; return true; };
+  const nearRoad = (x, y, pad) => PATHS.some(p => x > p.x0 - pad - p.w && x < p.x1 + pad + p.w && y > p.y0 - pad - p.w && y < p.y1 + pad + p.w && p.pts.some((q, i) => i && segDist(x, y, p.pts[i - 1], q) < p.w / 2 + pad));
+  const box = S * 1.25, tries = Math.round(T.plant * (2 * box) * (2 * box) / 1e6);
+  for (let i = 0; i < tries; i++) {
+    const x = L.gx + (R() * 2 - 1) * box, y = L.gy + (R() * 2 - 1) * box, k = R(), v = R(), sz = R();
+    if (landBlocks(x, y, 22)) continue;
+    const kind = T.tree(biomeAt(x, y), k);
+    if (!kind || !clearOf({ x, y }, -30) || nearRoad(x, y, 28) || !spaced(x, y)) continue;
+    const s = kind === 'tree' ? 0.75 + sz * (L.id === 'wood' ? 0.85 : 0.6) : kind === 'pine' ? 0.75 + sz * 0.5 : 0.8 + sz * 0.7;
+    const d = { x, y, r: FAR_R[kind] * s, kind, s, v };
+    if (L.id === 'snow') d.snow = true; if (L.id === 'ash' || L.id === 'star') d.ash = true;
+    if (kind === 'cactus' || kind === 'crystal') d.far = true;
+    G.solids.push(d);
+    const c = key(x, y); if (!cells.has(c)) cells.set(c, []); cells.get(c).push(d);
+  }
+  // reeds and lily pads by the water
+  for (let n = 0, made = 0; n < 6000 && made < 260; n++) {
+    const x = L.gx + (R() * 2 - 1) * box, y = L.gy + (R() * 2 - 1) * box, t = landAt(x, y), v = R(), w = R();
+    if (L.sea || L.id === 'snow') break;
+    if (t === L_WATER) { if ([[LC, 0], [-LC, 0], [0, LC], [0, -LC]].some(([dx, dy]) => landAt(x + dx * 2, y + dy * 2) === L_OPEN) && w < 0.7) { DECOR.push({ x, y, kind: 'lily', v }); made++; } }
+    else if (t === L_OPEN && [[LC, 0], [-LC, 0], [0, LC], [0, -LC]].some(([dx, dy]) => landAt(x + dx, y + dy) === L_WATER)) { DECOR.push({ x, y, kind: 'reed', v }); made++; }
+  }
+  G.land = land.slice(); G.biome = biome.slice(); G.grid = buildGrid(G.solids);
+}
+// a town: an inn at the top of its square, houses in a ring (two rings and watch towers for a city), a well, a coach post
+function buildTown(L, G, R) {
+  const t = L.town, c = t.c, city = t.kind === 'city';
+  const h = t.hall = { id: 'inn', land: L.id, name: 'The ' + t.inn, x: c.x - 140, y: c.y - 540, w: 280, h: 200, doorW: 70, roof: t.roof, floor: 'wood' };
+  HALLS.push(h); hallWalls(h, G.walls);
+  const roofs = ['#9a4a3a', '#6a8a5a', '#7a5a8a', '#a05a4a', '#5a7a9a', '#9a6a3a', '#8a6a4a', '#8a4a5a'];
+  const blocked = (x, y, w, hh) => {
+    if (x - w / 2 < h.x + h.w + 30 && x + w / 2 > h.x - 30 && y - hh / 2 < h.y + h.h + 70 && y + hh / 2 > h.y - 30) return true;
+    for (const [dx, dy] of [[0, 0], [-w / 2, -hh / 2], [w / 2, -hh / 2], [-w / 2, hh / 2], [w / 2, hh / 2]]) if (!footOk(landAt(x + dx, y + dy))) return true;
+    if (G.walls.some(o => o.house && x - w / 2 < o.x + o.w + 34 && x + w / 2 > o.x - 34 && y - hh / 2 < o.y + o.h + 44 && y + hh / 2 > o.y - 44)) return true;
+    return PATHS.some(p => p.pts.some(q => q.x > x - w / 2 - 44 && q.x < x + w / 2 + 44 && q.y > y - hh / 2 - 44 && q.y < y + hh / 2 + 56));
+  };
+  // houses wherever there's room on a ring round the square, between the roads
+  const ring = (rad, n, want) => {
+    for (let i = 0, made = 0; i < n && made < want; i++) {
+      const a = 0.2 + i * TAU / n, w = 118 + Math.floor(R() * 4) * 10, hh = 92 + Math.floor(R() * 3) * 8, x = c.x + Math.cos(a) * rad, y = c.y + Math.sin(a) * rad * 0.92;
+      if (blocked(x, y, w, hh)) continue;
+      G.walls.push({ x: x - w / 2, y: y - hh / 2, w, h: hh, house: { roof: roofs[Math.floor(R() * roofs.length)] } }); made++;
+    }
+  };
+  ring(330, 40, 7);
+  if (city) {
+    ring(600, 60, 13);
+    for (let i = 0; i < 8; i++) { const a = i * TAU / 8 + 0.39, x = c.x + Math.cos(a) * 790, y = c.y + Math.sin(a) * 790; if (!landBlocks(x, y, 40)) G.solids.push({ x, y, r: 30, kind: 'tower', stone: '#8a8478' }); }
+  }
+  G.solids.push({ x: c.x, y: c.y, r: 18, kind: 'well' });
+  t.coach = { x: c.x + 190, y: c.y + 120 };
+  G.solids.push({ x: t.coach.x, y: t.coach.y, r: 24, kind: 'coach', far: true });
+  t.keeper = { x: h.x + h.w / 2, y: h.y + 66 };
+}
+// a camp in wild country: a fire, two tents, a ranger and a coach post
+function buildCamp(L, G) {
+  const c = L.base;
+  DECOR.push({ x: c.x, y: c.y + 36, kind: 'campfire' });
+  G.solids.push({ x: c.x - 86, y: c.y - 50, r: 24, kind: 'tent', color: '#5a7a4a' }, { x: c.x + 90, y: c.y - 44, r: 24, kind: 'tent', color: '#8a6a3a' });
+  L.camp = { c, coach: { x: c.x + 160, y: c.y + 70 }, keeper: { x: c.x, y: c.y - 30 } };
+  G.solids.push({ x: L.camp.coach.x, y: L.camp.coach.y, r: 24, kind: 'coach', far: true });
+}
+
+// ── stepping between lands ──
+let LANDNOW = null;      // the far land you're in (null at home)
+let homeKeep = null;     // home's ground, walls, roads and boat while you're away
+function landSwap(L) {
+  if (LANDNOW === L) return;
+  if (!LANDNOW && L) homeKeep = { land: land.slice(), biome: biome.slice(), walls: walls.slice(), segWalls, paths: PATHS, bridges: BRIDGES, boat: { x: boat.x, y: boat.y, ang: boat.ang } };
+  if (L) {
+    GX = L.gx; GY = L.gy;
+    if (!L.g) buildLand(L); else { land.set(L.g.land); biome.set(L.g.biome); }
+    walls.length = 0; for (const w of L.g.walls) walls.push(w);
+    segWalls = []; PATHS = L.g.paths; BRIDGES = L.g.bridges;
+    activeSolids = L.g.solids; activeGrid = L.g.grid;
+    const d = L.g.dock; Object.assign(boat, d ? { x: d.x, y: d.y, ang: d.ang } : { x: 1e6, y: 1e6, ang: 0 });
+  } else if (homeKeep) {
+    GX = GY = 0;
+    land.set(homeKeep.land); biome.set(homeKeep.biome);
+    walls.length = 0; for (const w of homeKeep.walls) walls.push(w);
+    segWalls = homeKeep.segWalls; PATHS = homeKeep.paths; BRIDGES = homeKeep.bridges;
+    activeSolids = solids; activeGrid = solidGrid;
+    Object.assign(boat, homeKeep.boat);
+    homeKeep = null;
+  }
+  LANDNOW = L;
+  chunks.clear(); makeDepth(); mapCv = null; biomeCv = null;
+}
+// go to a spot in a land (null is home): the ground is swapped, the fight you were in is left behind
+function goLand(L, x, y) {
+  if (LANDNOW && WLD) LANDNOW.seenArr = WLD.seen;
+  const was = LANDNOW;
+  landSwap(L);
+  if (WLD && was !== L) {
+    if (!was) WLD.homeSeen = WLD.seen;
+    if (L) { if (!L.seenArr) { L.seenArr = new Uint8Array(FN * FN); const s = (farX().seen || {})[L.id] || ''; for (let i = 0; i < s.length && i < FN * FN; i++) L.seenArr[i] = s[i] === '1' ? 1 : 0; } WLD.seen = L.seenArr; }
+    else if (WLD.homeSeen) WLD.seen = WLD.homeSeen;
+  }
+  foes = foes.filter(f => !f.far && !f.roam && !f.serpent);
+  clearCombat();
+  player.onBoat = false; player.x = x; player.y = y; player.kx = player.ky = 0; player.invuln = Math.max(player.invuln, 1.5);
+  if (WLD) { WLD.hall = null; WLD.talk = null; WLD.wayAt = null; WLD.later = []; WLD.packT = 6; WLD.beastT = 5; }
+  cam.ox = cam.oy = 0; cam.x = x; cam.y = y;
+  movePtr = null; movePos = null; moveStart = null;
+  crewGather();
+}
+// what's kept of your travels (saved with the adventure)
+function farX() {
+  const W = ADV.world;
+  if (!W.far || typeof W.far !== 'object') W.far = {};
+  const X = W.far;
+  for (const [k, v] of [['food', 0], ['rep', 0], ['crew', []], ['been', {}], ['m', {}], ['seen', {}], ['track', null]]) if (X[k] == null || typeof X[k] !== typeof v) X[k] = v;
+  return X;
+}
+// through a gate from home, and home again
+function enterLand(L) {
+  const X = farX(), first = !X.been[L.id];
+  goLand(L, L.arr.x, L.arr.y);
+  player.face = { x: L.gate.ox, y: L.gate.oy };
+  X.been[L.id] = X.been[L.id] || 1;
+  ADV.check = { x: L.gate.in.x, y: L.gate.in.y }; advSave();
+  flash = 0.7; SFX.scroll();
+  showBanner(L.name.toUpperCase(), `${L.about} · ${L.town ? `the ${L.town.kind} of ${L.town.name}` : 'wild country'}`, 5);
+  if (first && X.food <= 0) afterGame(5.5, () => tipMsg('You’ve no food with you. You’ll faint when hunger gets the better of you!', '#ffb04a', 6));
+}
+function leaveLand() {
+  const L = LANDNOW, g = L.gate;
+  goLand(null, g.in.x, g.in.y);
+  player.face = { x: -g.ox, y: -g.oy };
+  ADV.check = { x: g.in.x, y: g.in.y }; advSave();
+  flash = 0.7; SFX.scroll();
+  showBanner('Home again', `You come back through the gate from ${L.name}`, 3);
+}
+// (the ground swap alone, when the game starts over or a battle begins)
+function landHome() { if (LANDNOW) { if (WLD && WLD.homeSeen) WLD.seen = WLD.homeSeen; landSwap(null); } }
+
+// ── each frame, in a far land ──
+function updateLand(dt) {
+  const L = LANDNOW, X = farX();
+  // the map uncovers as you go
+  WLD.fogT -= dt;
+  if (WLD.fogT <= 0) {
+    WLD.fogT = 0.5;
+    const ci = Math.floor((player.x - GX + AW) / FOG), cj = Math.floor((player.y - GY + AW) / FOG);
+    for (let j = cj - 2; j <= cj + 2; j++) for (let i = ci - 2; i <= ci + 2; i++) {
+      if (i < 0 || j < 0 || i >= FN || j >= FN || WLD.seen[j * FN + i]) continue;
+      if (Math.hypot(GX - AW + (i + 0.5) * FOG - player.x, GY - AW + (j + 0.5) * FOG - player.y) > 950) continue;
+      WLD.seen[j * FN + i] = 1; WLD.fogDirty = true;
+    }
+  }
+  WLD.talk = null; WLD.wayAt = null;
+  updateHalls(dt);
+  // the boat: the ferryman brings it back to the jetty if it's been left far off
+  const d = L.g.dock;
+  if (d && !player.onBoat && Math.hypot(player.x - d.pier.b.x, player.y - d.pier.b.y) < 90 && Math.hypot(boat.x - d.x, boat.y - d.y) > 260) {
+    Object.assign(boat, { x: d.x, y: d.y, ang: d.ang });
+    tipMsg('The ferryman brings your boat back to the jetty', '#bfe6ff', 3);
+  }
+  if (state !== 'play') return;
+  // out through the arch: home again
+  if (Math.hypot(player.x - L.out.x, player.y - L.out.y) < 100) { leaveLand(); return; }
+  // sea serpents rise round your boat on open water
+  if (L.sea) {
+    WLD.serpT -= dt;
+    if (WLD.serpT <= 0) {
+      WLD.serpT = rnd(8, 14);
+      if (player.onBoat && deepAt(player.x, player.y) >= 3 && foes.filter(f => f.serpent && !f.dead).length < 2) {
+        const p = serpentSpot(player.x, player.y, 260, 420);
+        if (p) { foes.push(makeSerpent(p.x, p.y)); tipMsg('Something stirs under the water…', '#8fd0ff', 2.5); }
+      }
+    }
+  }
+  for (const f of foes) if ((f.far || f.serpent) && !f.boss && !f.dead && Math.hypot(f.x - player.x, f.y - player.y) > 1700) f.dead = true;
+  if (WLD.fogDirty) { WLD.fogDirty = false; X.seen[L.id] = Array.from(WLD.seen).join(''); advSave(); }
+}
+// at home: walk out through a gate in the mountains and you're in its land
+function updateFarGates() {
+  if (state !== 'play') return;
+  for (const g of FARGATES) if (Math.hypot(player.x - g.out.x, player.y - g.out.y) < 100) { enterLand(landById(g.land)); return; }
+}
+function crewGather() {}
+
+// ── drawing the gates, the far lands' places and their things ──
+function drawArch(x, y, ox, oy, name, sub) {
+  // two stone pillars either side of the way, a lintel between them, and the land's name on a board
+  const px = -oy, py = ox, w = 96;
+  for (const s of [-1, 1]) {
+    const cx = x + px * w * s, cy = y + py * w * s;
+    circle(cx + 5, cy + 9, 26, 'rgba(0,0,0,0.32)');
+    circle(cx, cy, 24, '#7a7468', '#4e483e', 3);
+    circle(cx - 5, cy - 6, 9, '#989082');
+    circle(cx, cy, 8, '#ffd24a'); circle(cx, cy, 13 + Math.sin(elapsed * 3 + s) * 2, null, 'rgba(255,210,74,0.5)', 2);
+  }
+  ctx.strokeStyle = 'rgba(255,210,74,0.35)'; ctx.lineWidth = 5; ctx.setLineDash([10, 12]); ctx.lineDashOffset = -elapsed * 22;
+  ctx.beginPath(); ctx.moveTo(x - px * (w - 24), y - py * (w - 24)); ctx.lineTo(x + px * (w - 24), y + py * (w - 24)); ctx.stroke(); ctx.setLineDash([]);
+  ctx.textAlign = 'center'; ctx.font = `bold 15px ${SERIF}`;
+  const tw = Math.max(ctx.measureText(name).width, sub ? ctx.measureText(sub).width * 0.8 : 0) + 22, by = y - 74;
+  roundRect(x - tw / 2, by - 17, tw, sub ? 40 : 24, 5); ctx.fillStyle = '#6a4a2c'; ctx.fill(); ctx.strokeStyle = '#3e2414'; ctx.lineWidth = 2; ctx.stroke();
+  ctx.fillStyle = '#fff3d0'; ctx.fillText(name, x, by);
+  if (sub) { ctx.font = `12px ${SERIF}`; ctx.fillStyle = '#e8d0a0'; ctx.fillText(sub, x, by + 16); }
+}
+function drawSite(s) {
+  const { x, y } = s, t = elapsed;
+  ctx.fillStyle = 'rgba(0,0,0,0.28)'; ctx.beginPath(); ctx.ellipse(x + 5, y + 12, 34, 12, 0, 0, TAU); ctx.fill();
+  if (s.look === 'tower') {
+    ctx.fillStyle = '#8a8478'; ctx.fillRect(x - 17, y - 70, 34, 82); ctx.fillStyle = '#a49c8c'; ctx.fillRect(x - 17, y - 70, 12, 82);
+    ctx.fillStyle = '#6a6458'; ctx.fillRect(x - 21, y - 78, 42, 10); for (let i = -2; i <= 2; i++) ctx.fillRect(x + i * 9 - 3, y - 86, 6, 8);
+    ctx.fillStyle = '#2a2018'; roundRect(x - 6, y - 8, 12, 20, 5); ctx.fill();
+    const g = ctx.createRadialGradient(x, y - 92, 1, x, y - 92, 26); g.addColorStop(0, 'rgba(255,230,150,0.9)'); g.addColorStop(1, 'rgba(255,230,150,0)'); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y - 92, 26 + Math.sin(t * 5) * 2, 0, TAU); ctx.fill();
+  } else if (s.look === 'ruin') {
+    ctx.fillStyle = '#7d766a';
+    for (const [dx, hh] of [[-34, 46], [-12, 64], [12, 30], [34, 52]]) { ctx.fillRect(x + dx - 8, y - hh + 10, 16, hh); ctx.fillStyle = '#958d7e'; ctx.fillRect(x + dx - 8, y - hh + 10, 5, hh); ctx.fillStyle = '#7d766a'; }
+    ctx.fillStyle = '#6a6458'; ctx.fillRect(x - 44, y - 58, 44, 9);
+    ctx.fillStyle = 'rgba(80,120,60,0.6)'; circle(x - 30, y - 30, 6, 'rgba(80,120,60,0.6)'); circle(x + 30, y - 8, 7, 'rgba(80,120,60,0.6)');
+  } else if (s.look === 'tree') {
+    ctx.fillStyle = '#5a3c20'; ctx.fillRect(x - 13, y - 40, 26, 52);
+    for (const [dx, dy, r] of [[0, -78, 46], [-38, -58, 34], [38, -60, 36], [-18, -100, 30], [22, -104, 28]]) circle(x + dx + Math.sin(t * 1.3 + dx) * 2, y + dy, r, '#2d5a30');
+    for (const [dx, dy, r] of [[-4, -84, 34], [-40, -64, 24], [34, -66, 26], [8, -108, 20]]) circle(x + dx + Math.sin(t * 1.3 + dx) * 2.5, y + dy, r, '#4a8a3c');
+    circle(x - 14, y - 96, 12, '#86bc5a');
+  } else if (s.look === 'hut') {
+    ctx.fillStyle = '#6a4a2c'; ctx.fillRect(x - 30, y - 24, 60, 36);
+    ctx.fillStyle = '#4a6a3a'; ctx.beginPath(); ctx.moveTo(x - 40, y - 22); ctx.lineTo(x, y - 62); ctx.lineTo(x + 40, y - 22); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#2a1a10'; roundRect(x - 7, y - 10, 14, 22, 4); ctx.fill();
+    ctx.fillStyle = `rgba(190,255,120,${0.5 + 0.3 * Math.sin(t * 2)})`; ctx.fillRect(x + 13, y - 14, 10, 9);
+  } else if (s.look === 'cave') {
+    ctx.fillStyle = '#6a645b'; ctx.beginPath(); ctx.moveTo(x - 52, y + 12); ctx.quadraticCurveTo(x - 40, y - 62, x, y - 58); ctx.quadraticCurveTo(x + 44, y - 60, x + 52, y + 12); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#857d70'; ctx.beginPath(); ctx.moveTo(x - 40, y - 8); ctx.quadraticCurveTo(x - 30, y - 50, x - 4, y - 50); ctx.lineTo(x - 22, y - 8); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#0d0a12'; ctx.beginPath(); ctx.moveTo(x - 20, y + 12); ctx.quadraticCurveTo(x - 18, y - 28, x, y - 28); ctx.quadraticCurveTo(x + 18, y - 28, x + 20, y + 12); ctx.closePath(); ctx.fill();
+  } else if (s.look === 'wreck') {
+    ctx.save(); ctx.translate(x, y); ctx.rotate(-0.25);
+    ctx.fillStyle = '#6b4a2e'; ctx.beginPath(); ctx.moveTo(-50, 6); ctx.quadraticCurveTo(-30, 26, 40, 14); ctx.lineTo(52, -6); ctx.lineTo(-44, -10); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = '#3e2a16'; ctx.lineWidth = 3; for (let i = -3; i <= 3; i++) { ctx.beginPath(); ctx.moveTo(i * 13, -9); ctx.lineTo(i * 13 + 3, 16); ctx.stroke(); }
+    ctx.strokeStyle = '#4e3218'; ctx.lineWidth = 5; ctx.beginPath(); ctx.moveTo(4, -6); ctx.lineTo(18, -62); ctx.stroke();
+    ctx.fillStyle = 'rgba(230,220,200,0.7)'; ctx.beginPath(); ctx.moveTo(18, -60); ctx.lineTo(44, -34 + Math.sin(t * 2) * 3); ctx.lineTo(14, -30); ctx.closePath(); ctx.fill();
+    ctx.restore();
+  } else if (s.look === 'stone') {
+    ctx.fillStyle = '#7a7468'; ctx.beginPath(); ctx.moveTo(x - 28, y + 12); ctx.lineTo(x - 22, y - 50); ctx.lineTo(x + 6, y - 64); ctx.lineTo(x + 26, y - 40); ctx.lineTo(x + 30, y + 12); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#989082'; ctx.beginPath(); ctx.moveTo(x - 22, y - 50); ctx.lineTo(x + 6, y - 64); ctx.lineTo(x - 4, y - 10); ctx.lineTo(x - 26, y + 6); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = `rgba(160,230,255,${0.5 + 0.3 * Math.sin(t * 2.4)})`; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.arc(x + 4, y - 28, 9, 0, TAU); ctx.moveTo(x + 4, y - 37); ctx.lineTo(x + 4, y - 19); ctx.stroke();
+  } else if (s.look === 'camp') {
+    for (const [dx, col] of [[-36, '#8a6a3a'], [34, '#5a7a4a']]) { ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(x + dx - 26, y + 10); ctx.lineTo(x + dx, y - 34); ctx.lineTo(x + dx + 26, y + 10); ctx.closePath(); ctx.fill(); ctx.fillStyle = '#2a1a10'; ctx.beginPath(); ctx.moveTo(x + dx - 7, y + 10); ctx.lineTo(x + dx, y - 12); ctx.lineTo(x + dx + 7, y + 10); ctx.closePath(); ctx.fill(); }
+    ctx.fillStyle = '#6b4a2e'; for (let i = 0; i < 3; i++) ctx.fillRect(x - 12 + i * 4, y + 16 + i * 5, 26, 6);
+  } else if (s.look === 'log') {
+    ctx.fillStyle = '#6b4a2e'; roundRect(x - 54, y - 22, 108, 34, 16); ctx.fill();
+    ctx.fillStyle = '#8a6238'; roundRect(x - 54, y - 22, 108, 12, 6); ctx.fill();
+    circle(x + 44, y - 5, 15, '#2a1a10', '#4e3218', 3); circle(x - 30, y - 18, 7, 'rgba(80,130,60,0.8)');
+  } else if (s.look === 'ring') {
+    for (let i = 0; i < 9; i++) { const a = i * TAU / 9 + 0.2, mx = x + Math.cos(a) * 44, my = y + Math.sin(a) * 30; ctx.fillStyle = '#e8e0d0'; ctx.fillRect(mx - 2, my - 6, 4, 9); circle(mx, my - 8, 6.5, s.land === 'ash' ? '#b03a2a' : '#d85a6a'); circle(mx - 2, my - 10, 1.6, '#fff'); }
+    ctx.strokeStyle = `rgba(${s.land === 'ash' ? '255,120,60' : '200,160,255'},${0.35 + 0.25 * Math.sin(t * 2)})`; ctx.lineWidth = 3; ctx.beginPath(); ctx.ellipse(x, y, 44, 30, 0, 0, TAU); ctx.stroke();
+  } else if (s.look === 'crater') {
+    ctx.fillStyle = 'rgba(20,14,12,0.6)'; ctx.beginPath(); ctx.ellipse(x, y, 70, 44, 0, 0, TAU); ctx.fill();
+    const g = ctx.createRadialGradient(x, y, 4, x, y, 50); g.addColorStop(0, `rgba(255,150,60,${0.55 + 0.25 * Math.sin(t * 3)})`); g.addColorStop(1, 'rgba(255,90,40,0)'); ctx.fillStyle = g; ctx.beginPath(); ctx.ellipse(x, y, 54, 34, 0, 0, TAU); ctx.fill();
+    if (Math.random() < 0.2) particles.push({ x: x + rnd(-30, 30), y: y + rnd(-16, 16), vx: rnd(-8, 8), vy: -50, r: rnd(3, 6), life: 1.4, decay: 0.8, color: 'rgba(120,110,105,0.5)' });
+  } else if (s.look === 'pool') {
+    ctx.strokeStyle = `rgba(190,240,255,${0.4 + 0.3 * Math.sin(t * 2)})`; ctx.lineWidth = 2; ctx.beginPath(); ctx.ellipse(x, y - 190, 60 + Math.sin(t) * 6, 36 + Math.sin(t) * 4, 0, 0, TAU); ctx.stroke();
+    ctx.fillStyle = '#6b4a2e'; ctx.fillRect(x - 2.5, y - 30, 5, 42); roundRect(x - 26, y - 44, 52, 18, 3); ctx.fillStyle = '#9a7448'; ctx.fill(); ctx.strokeStyle = '#5a3c20'; ctx.lineWidth = 2; ctx.stroke();
+  }
+  if (Math.hypot(player.x - x, player.y - y) < 420) {
+    ctx.textAlign = 'center'; ctx.font = `bold 13px ${SERIF}`; ctx.lineWidth = 3.5; ctx.strokeStyle = 'rgba(0,0,0,0.7)';
+    const ly = y - (s.look === 'tree' ? 142 : s.look === 'tower' ? 110 : 80);
+    ctx.strokeText(s.name, x, ly); ctx.fillStyle = '#ffe7a0'; ctx.fillText(s.name, x, ly);
+  }
+}
+function drawCoach(x, y) {
+  ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.beginPath(); ctx.ellipse(x + 5, y + 14, 40, 10, 0, 0, TAU); ctx.fill();
+  ctx.fillStyle = '#7a4a2a'; roundRect(x - 30, y - 22, 60, 28, 6); ctx.fill(); ctx.strokeStyle = '#3e2414'; ctx.lineWidth = 2.5; ctx.stroke();
+  ctx.fillStyle = '#c8a24a'; ctx.fillRect(x - 30, y - 8, 60, 4);
+  ctx.fillStyle = '#2a2a3a'; ctx.fillRect(x - 20, y - 18, 14, 9); ctx.fillRect(x + 6, y - 18, 14, 9);
+  for (const dx of [-20, 20]) { circle(x + dx, y + 8, 10, '#4e3218', '#2a1a10', 2.5); circle(x + dx, y + 8, 3, '#c8a24a'); }
+  ctx.fillStyle = '#6b4a2e'; ctx.fillRect(x + 40, y - 46, 5, 58); roundRect(x + 24, y - 58, 38, 16, 3); ctx.fillStyle = '#9a7448'; ctx.fill(); ctx.strokeStyle = '#5a3c20'; ctx.lineWidth = 2; ctx.stroke();
+  ctx.fillStyle = '#fff3d0'; ctx.font = `bold 9px ${SERIF}`; ctx.textAlign = 'center'; ctx.fillText('COACH', x + 43, y - 46);
+}
+// far-land things that stand in the way: cacti, crystals, coaches and the named places
+function drawFarSolid(d) {
+  if (d.kind === 'site') { drawSite(d.site); return true; }
+  if (d.kind === 'coach') { drawCoach(d.x, d.y); return true; }
+  if (d.kind === 'cactus') {
+    const h = 26 * d.s;
+    ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.beginPath(); ctx.ellipse(d.x + 4, d.y + 6, 12 * d.s, 5, 0, 0, TAU); ctx.fill();
+    ctx.strokeStyle = '#3f7a44'; ctx.lineCap = 'round'; ctx.lineWidth = 9 * d.s;
+    ctx.beginPath(); ctx.moveTo(d.x, d.y + 4); ctx.lineTo(d.x, d.y - h); ctx.stroke();
+    ctx.lineWidth = 6 * d.s; ctx.beginPath(); ctx.moveTo(d.x, d.y - h * 0.45); ctx.lineTo(d.x - 11 * d.s, d.y - h * 0.5); ctx.lineTo(d.x - 11 * d.s, d.y - h * 0.85); ctx.moveTo(d.x, d.y - h * 0.3); ctx.lineTo(d.x + 11 * d.s, d.y - h * 0.36); ctx.lineTo(d.x + 11 * d.s, d.y - h * 0.7); ctx.stroke();
+    ctx.strokeStyle = 'rgba(160,220,150,0.5)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(d.x - 2, d.y); ctx.lineTo(d.x - 2, d.y - h); ctx.stroke();
+    if (d.v < 0.3) circle(d.x, d.y - h - 3, 3.2, '#ff7ab0');
+    return true;
+  }
+  if (d.kind === 'crystal') {
+    const col = d.v < 0.5 ? ['#7af0e0', '#c8fff6'] : ['#c88aff', '#f0d8ff'], gl = 0.5 + 0.3 * Math.sin(elapsed * 2 + d.x);
+    const g = ctx.createRadialGradient(d.x, d.y - 12, 2, d.x, d.y - 12, 34 * d.s); g.addColorStop(0, col[0] + '55'); g.addColorStop(1, col[0] + '00'); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(d.x, d.y - 12, 34 * d.s, 0, TAU); ctx.fill();
+    ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.beginPath(); ctx.ellipse(d.x + 4, d.y + 6, 14 * d.s, 5, 0, 0, TAU); ctx.fill();
+    for (const [dx, hh, w] of [[-8, 20, 7], [0, 34, 9], [9, 24, 7]]) {
+      ctx.fillStyle = col[0]; ctx.beginPath(); ctx.moveTo(d.x + (dx - w) * d.s, d.y + 4); ctx.lineTo(d.x + dx * d.s, d.y - hh * d.s); ctx.lineTo(d.x + (dx + w) * d.s, d.y + 4); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = col[1]; ctx.globalAlpha = gl; ctx.beginPath(); ctx.moveTo(d.x + (dx - w) * d.s, d.y + 4); ctx.lineTo(d.x + dx * d.s, d.y - hh * d.s); ctx.lineTo(d.x + (dx - w * 0.2) * d.s, d.y + 4); ctx.closePath(); ctx.fill(); ctx.globalAlpha = 1;
+    }
+    return true;
+  }
+  return false;
+}
+// the gates (home's ten, or the one you came in by), drawn on the ground before anything stands on it
+function drawFarGround(camX, camY) {
+  if (!ADV) return;
+  if (!LANDNOW) {
+    if (!worldOpen()) return;
+    for (const g of FARGATES) if (inView(g.x, g.y, 260, camX, camY)) { const L = landById(g.land); drawArch(g.x, g.y, g.ox, g.oy, L.name, `${TIER_WORD[L.tier]} · ${L.town ? L.town.name : 'wild country'}`); }
+    return;
+  }
+  const L = LANDNOW;
+  if (inView(L.arch.x, L.arch.y, 260, camX, camY)) drawArch(L.arch.x, L.arch.y, L.gate.ox, L.gate.oy, 'The way home', 'to the world you know');
+  for (const s of L.sites) if ((s.look === 'pool' || s.look === 'ring' || s.look === 'crater') && inView(s.x, s.y, 300, camX, camY)) drawSite(s);
+}
+
 // ── battle arena terrain ──
 // Two teams fight on an oval with their bases at its two ends; three fight on
 // a round field, each base a third of the way round from the others.
@@ -4745,6 +5320,7 @@ let arenaSolids = battleSolids, arenaGrid = battleGrid; // the current field's
 
 let activeSolids = solids, activeGrid = solidGrid;
 function setMode(m) {
+  landHome();
   mode = m;
   activeSolids = m === 'battle' ? arenaSolids : solids;
   activeGrid = m === 'battle' ? arenaGrid : solidGrid;
@@ -6790,8 +7366,8 @@ function heroTimers(dt) {
 
 // Walk (or sail) one step, sliding along obstacles.
 function movePlayer(dx, dy, step) {
-  let nx = clamp(player.x + dx * step, -boundX(), boundX());
-  let ny = clamp(player.y + dy * step, -boundY(), boundY());
+  let nx = clamp(player.x + dx * step, GX - boundX(), GX + boundX());
+  let ny = clamp(player.y + dy * step, GY - boundY(), GY + boundY());
   if (mode === 'battle') { const c = clampArena({ x: nx, y: ny }, PLAYER_R); nx = c.x; ny = c.y; }
   if (player.onBoat) {
     // the boat stays on water; steering into land steps you ashore
@@ -11583,6 +12159,12 @@ const TUFTS = {
   15: { c: ['#4a7a34', '#8ab85a'], d: 0.55, l: 1, f: 0.26 },                        // flower meadow
   16: { c: ['#8aa0a0', '#e0ecee'], d: 0.35, l: 0.8, f: 0.02, fc: ['#ffffff'] },     // frost
   17: { c: ['#22401f', '#3a6030'], d: 0.3, l: 1.2, f: 0.01 },                       // deep forest
+  20: { c: ['#a8bcc4', '#f4fafc'], d: 0.22, l: 0.7, f: 0 },                         // (the far lands:) snow
+  21: { c: ['#b09a5a', '#e0cc90'], d: 0.12, l: 0.7, f: 0 },                         // dunes
+  22: { c: ['#33452f', '#5e7a4a'], d: 0.6, l: 1.5, f: 0.02, fc: ['#d8e8a0'] },      // fen
+  23: { c: ['#5a4a82', '#b49ad8'], d: 0.45, l: 1.1, f: 0.08, fc: ['#7af0e0', '#f0a0ff'] }, // star-touched plain
+  24: { c: ['#7a6c56', '#b0a084'], d: 0.15, l: 0.7, f: 0 },                         // canyon floor
+  25: { c: ['#1f3a1c', '#3f6a34'], d: 0.4, l: 1.3, f: 0.03, fc: ['#ffe9a0'] },      // old wood
 };
 function drawTufts(camX, camY) {
   const C = 44, w = windAt(), t = elapsed;
@@ -11842,6 +12424,7 @@ function drawCastles(camX, camY) {
 function drawSolids(camX, camY) {
   for (const d of activeSolids) {
     if (!inView(d.x, d.y, d.kind === 'ship' ? 200 : 60, camX, camY)) continue;
+    if (d.far && drawFarSolid(d)) continue;
     if (mode !== 'battle' && drawWorldSolid(d)) continue;
     if (d.kind === 'tree') {
       // a round, fluffy tree that leans and breathes with the wind
@@ -13303,6 +13886,7 @@ function drawWorld() {
   drawShrine();
   if (mode !== 'battle') {
     drawSanctum(camX, camY);
+    drawFarGround(camX, camY);
     drawGrass(camX, camY);
     drawDecor(camX, camY);
     drawCastles(camX, camY);
@@ -13936,7 +14520,7 @@ function drawMinimap() {
   ctx.beginPath(); ctx.rect(x, y, s, s); ctx.clip();
   ctx.fillStyle = '#1a1814'; ctx.fillRect(x, y, s, s);
   ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(mapCanvas(), (player.x - span / 2 + AW) / MAP_PX, (player.y - span / 2 + AW) / MAP_PX, span / MAP_PX, span / MAP_PX, x, y, s, s);
+  ctx.drawImage(mapCanvas(), (player.x - GX - span / 2 + AW) / MAP_PX, (player.y - GY - span / 2 + AW) / MAP_PX, span / MAP_PX, span / MAP_PX, x, y, s, s);
   ctx.imageSmoothingEnabled = true;
   for (const e of ZONE_ELEMS) {
     const Z = ADV.zones[e];
