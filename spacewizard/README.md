@@ -45,6 +45,7 @@ The file is organised in sections that start with `// ── name ──` commen
   - **Twenty new beasts** (`BEASTS`), two to a land, each paying a bounty in tokens.
   - **Hired fighters and medics** (`crew`), and **food** that runs down out in a far land: with none left you faint and wake at the gate.
   - **34 missions** (`MISSIONS`) from folk by the Wayfarers' Guild in Hollowbrook and in the far towns. They pay tokens and reputation.
+  - **Posts in Hollowbrook** (`running your town`): reputation lets you be mayor (the Town Hall) and dojo master (the Dojo); 40 holds one post, 120 both. A season passes each time you come home after 90 seconds or more in the far lands (`townSeason`). The council's proposals are in `TOWN_WORKS`, the dojo master's decisions in `DOJO_ASKS`. The town is described in words, and works of art are only described, never scored.
   - **The coach** takes you to any town or camp you've reached on foot. The **PACK** button shows food, hired hands, reputation and missions.
 - **Brush Lab**: a tester for casting with a brush (on the title screen).
 - **How to Play**: a quick start with moving pictures.
@@ -77,6 +78,7 @@ Ready-made scripts are in `spacewizard/tests/` (run each with `node spacewizard/
 - `lands.js`: every gate can be walked to; every far land builds and its places can be reached.
 - `beasts.js`: beasts turn up in every land, fight without errors and pay a bounty.
 - `missions.js`: all 34 missions can be taken, done and paid; hunger, hired hands, the coach, falling and loading a save.
+- `town.js`: the posts, the seasons, the council and dojo cards, and a badly run town against a well run one.
 - `shot.js <name> "<js>" [wide]`: take a picture after running some JavaScript in the page.
 
 ## Publishing a change
@@ -101,6 +103,7 @@ Ready-made scripts are in `spacewizard/tests/` (run each with `node spacewizard/
 
 Run `git log --oneline -- pentagram.html scribe.html` for the full history. The latest Space Wizard work was:
 
+- Running the town: mayor and dojo master, council meetings, seasons
 - Expeditions: ten gates to far lands, new beasts and bounties, hired hands, food, 34 missions, reputation, the coach
 - Scribing in battle: write glyphs with a brush instead of using the pentagram
 - The Scribing Dojo page and the Brush Lab

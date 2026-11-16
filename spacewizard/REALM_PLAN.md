@@ -14,7 +14,18 @@ The owner's plan for Space Wizard's long game, in three stages. Stage 1 is built
 - **Missions:** 34 of them, from folk in Hollowbrook and the far towns: letters, fetching, finding people, exploring, hunting named beasts, crying the news.
 - **Reputation:** each mission pays it. Stage 2 spends it.
 
-## Stage 2: running your town (to build)
+## Stage 2: running your town (mayor and dojo master built; university, arts and animal catchers to build)
+
+Built so far, as the owner chose:
+
+- **Posts by reputation:** 40 holds one post, 120 holds two. Ask at the Town Hall or the Dojo in Hollowbrook.
+- **Seasons:** the town moves on each time you come home after a good while in the far lands. Income arrives, the council meets, and your choices take effect.
+- **Mayor:** each season the council puts four things before you: something useful (food, weapons, medicine, the town's running), a place of prayer, a work of art, and a townsperson's own venture to allow or refuse. The chest must cover the cost, and upkeep may not outrun income.
+- **Dojo master:** each season, one decision a master would really face, and a purse to spend on recruits, technique or the old code.
+- **What it changes:** food buildings make meals cheaper; weapons and the dojo's technique make hired fighters hit harder; medicine makes medics mend more; the town's spirit lifts all of them. A dojo with no discipline loses fighters to brawls, and your hired fighters run when hurt. A town with no places of prayer gets thefts, then killings and burnt buildings.
+- **Words, not scores:** the town's spirit and its people are described in words. Works of art are only described; the owner wants no objective score shown, with language clear enough to judge by.
+
+The full notes for this stage:
 
 Reputation buys you posts in Hollowbrook. A little reputation holds one post; more holds several. Doing a post well earns more reputation. **Each post's cards are the decisions that person would really face**, and each post has a budget that must balance.
 
