@@ -1056,6 +1056,8 @@ const HALLS = [
   { id: 'scribe', name: 'The Scribe’s House', x: -560, y: 3965, w: 260, h: 190, doorW: 64, roof: '#7a5a3a', floor: 'wood' },
   { id: 'healer', name: 'The Healing House', x: 680, y: 4610, w: 240, h: 170, doorW: 64, roof: '#d8cfc0', floor: 'tile' },
   { id: 'guild', name: 'The Wayfarers’ Guild', x: -470, y: 3660, w: 300, h: 210, doorW: 80, roof: '#8a3a4a', floor: 'wood' },
+  { id: 'townhall', name: 'The Town Hall', x: -860, y: 3640, w: 320, h: 230, doorW: 84, roof: '#3a4a7a', floor: 'stone' },
+  { id: 'dojo', name: 'The Dojo', x: 870, y: 3720, w: 300, h: 220, doorW: 80, roof: '#3a3a3a', floor: 'wood' },
 ];
 const HALL_T = 14;                                   // how thick their walls are
 // where the folk with work for a wayfarer stand (down the road from the guild), and the coach post on the green
@@ -3521,6 +3523,7 @@ function drawHallInside(h) {
     ctx.fillStyle = open ? '#1a1410' : '#5a3a20'; ctx.fillRect(cx - 34, h.y + 2, 68, T + 6);
     ELEM_CYCLE.forEach((e, i) => { const bx = x0 + 40 + i * (w - 80) / 4; ctx.fillStyle = TYPE_COLOR[e]; ctx.beginPath(); ctx.moveTo(bx - 12, y0); ctx.lineTo(bx + 12, y0); ctx.lineTo(bx + 12, y0 + 30); ctx.lineTo(bx, y0 + 22); ctx.lineTo(bx - 12, y0 + 30); ctx.fill(); });
   } else if (h.id === 'guild' || h.id === 'inn') drawInnInside(h);
+  else if (h.id === 'townhall' || h.id === 'dojo') drawTownInside(h);
   else if (h.id === 'scribe') {
     // shelves of books, a rug, candles, and the scribe's desk
     for (let i = 0; i < 2; i++) { const sx = x0 + 10 + i * (w - 70); ctx.fillStyle = '#5a3a20'; ctx.fillRect(sx, y0 + 4, 50, 16); for (let k = 0; k < 7; k++) { ctx.fillStyle = ['#a03a3a', '#3a6a9a', '#5a8a3a', '#9a7a3a', '#6a4a8a'][k % 5]; ctx.fillRect(sx + 3 + k * 6.6, y0 + 6, 5, 12); } }
@@ -5083,6 +5086,7 @@ function goLand(L, x, y) {
   cam.ox = cam.oy = 0; cam.x = x; cam.y = y;
   movePtr = null; movePos = null; moveStart = null;
   crewGather();
+  if (!L && was && townX().away >= SEASON_AWAY) townSeason();
 }
 // what's kept of your travels (saved with the adventure)
 function farX() {
@@ -5133,7 +5137,7 @@ function updateLand(dt) {
   updateHalls(dt);
   updateFolk();
   updateCrew(dt);
-  if (state === 'play') { updateFarBase(); updateMissions(dt); updateFood(dt); if (!LANDNOW) return; }
+  if (state === 'play') { townX().away += dt; updateFarBase(); updateMissions(dt); updateFood(dt); if (!LANDNOW) return; }
   // the boat: the ferryman brings it back to the jetty if it's been left far off
   const d = L.g.dock;
   if (d && !player.onBoat && Math.hypot(player.x - d.pier.b.x, player.y - d.pier.b.y) < 90 && Math.hypot(boat.x - d.x, boat.y - d.y) > 260) {
@@ -5671,8 +5675,8 @@ function crewSlot(i) {
 function crewGather() { crew.forEach((c, i) => { const s = crewSlot(i), p = freeSpot(s.x, s.y, c.r); c.x = p.x; c.y = p.y; }); }
 function crewHire(k) {
   const X = farX(), C = CREW[k];
-  if (crew.length >= CREW_MAX || (ADV.world.tokens || 0) < C.cost) return false;
-  ADV.world.tokens -= C.cost;
+  if (crew.length >= crewMax() || (ADV.world.tokens || 0) < hireCost(k)) return false;
+  ADV.world.tokens -= hireCost(k);
   const used = new Set(X.crew.map(c => c.n)), n = CREW_NAMES.filter(n => !used.has(n))[Math.floor(Math.random() * (CREW_NAMES.length - used.size))];
   X.crew.push({ k, n, hp: C.hp }); advSave(); crewLoad();
   SFX.summon();
@@ -5700,7 +5704,7 @@ function updateCrew(dt) {
     }
     if (t) {
       const d = walkToward(c, t.x, t.y, 165, dt, c.r + t.r);
-      if (d <= c.r + t.r + 8 && c.cd <= 0) { c.cd = 0.9; c.swing = 0.25; damageFoe(t, 1.7, 'steel', true); burst(t.x, t.y, '#ddd', 4, 110); }
+      if (d <= c.r + t.r + 8 && c.cd <= 0) { c.cd = 0.9; c.swing = 0.25; damageFoe(t, 1.7 * crewMight('fighter'), 'steel', true); burst(t.x, t.y, '#ddd', 4, 110); }
     } else walkToward(c, s.x, s.y, dp > 150 ? 250 : 180, dt, 5);
     if (c.k === 'medic' && c.cd <= 0) {
       c.cd = 2.2;
@@ -5709,7 +5713,8 @@ function updateCrew(dt) {
       if (player.hp / player.maxHp < worst && dp < 240) { who = player; worst = player.hp / player.maxHp; }
       for (const o of crew) if (o.hp / o.maxHp < worst && Math.hypot(o.x - c.x, o.y - c.y) < 240) { who = o; worst = o.hp / o.maxHp; }
       if (who) {
-        if (who === player) healPlayer(1.6); else { who.hp = Math.min(who.maxHp, who.hp + 2.5); floatText(who.x, who.y - 30, '+2.5', '#6f6', 13); }
+        const m = crewMight('medic');
+        if (who === player) healPlayer(1.6 * m); else { who.hp = Math.min(who.maxHp, who.hp + 2.5 * m); floatText(who.x, who.y - 30, '+' + fmt(2.5 * m), '#6f6', 13); }
         fx.push({ kind: 'bolt', pts: [{ x: c.x, y: c.y - 10 }, { x: who.x, y: who.y - 10 }], life: 0.2, max: 0.2, color: '#9f9' });
       }
     }
@@ -5724,6 +5729,7 @@ function updateCrew(dt) {
     for (const sh of enemyShots) if (sh.life > 0 && Math.hypot(sh.x - c.x, sh.y - c.y) < sh.r + c.r) { c.hp -= sh.dmg; sh.life = 0; burst(c.x, c.y, '#f66', 5, 120); }
   });
   for (const c of [...crew]) if (c.hp <= 0 || c.life <= 0) crewLeaves(c, `${c.n} the ${c.k} is hurt, and heads for home`);
+  if (townX().dojo.code < 40) for (const c of [...crew]) if (c.k === 'fighter' && c.hp < c.maxHp * 0.4) crewLeaves(c, `${c.n} loses heart and runs. The dojo taught him to fight, not why`);
   for (const c of crew) c.src.hp = c.hp;
 }
 function drawCrew(camX, camY) {
@@ -5846,16 +5852,16 @@ function openOutfit(where) {
   openFarCard(() => {
     const X = farX(), have = ADV.world.tokens || 0, room = FOOD_MAX - Math.floor(X.food);
     let body = cardNote(`You carry <b style="color:#f0c890">${Math.floor(X.food)} meals</b>${X.food > 0 ? `: about ${clock(foodSecs())} out in the wilds for ${crew.length ? `the ${crew.length + 1} of you` : 'you alone'}` : ''}. Everyone eats a meal every half minute out there, and when the food runs out you faint.`);
-    for (const n of [10, 30]) body += cardOpt(`food:${n}`, `${n} meals`, room < n ? 'Your pack is full' : have < n * MEAL_COST ? `${n * MEAL_COST - have} more tokens` : `${clock(n / mealsPerSec())} more for ${crew.length ? 'you all' : 'you'}`, room < n || have < n * MEAL_COST, cardPrice(n * MEAL_COST, have < n * MEAL_COST));
+    for (const n of [10, 30]) body += cardOpt(`food:${n}`, `${n} meals`, room < n ? 'Your pack is full' : have < n * mealCost() ? `${n * mealCost() - have} more tokens` : `${clock(n / mealsPerSec())} more for ${crew.length ? 'you all' : 'you'}`, room < n || have < n * mealCost(), cardPrice(n * mealCost(), have < n * mealCost()));
     if (!camp) {
-      body += cardNote(`Hired hands come with you till they’re hurt or you send them home. You have ${crew.length} of ${CREW_MAX}.`);
-      for (const k of Object.keys(CREW)) { const C = CREW[k], full = crew.length >= CREW_MAX; body += cardOpt(`hire:${k}`, `Hire a ${C.name.toLowerCase()}`, full ? 'You can lead no more' : have < C.cost ? `${C.cost - have} more tokens` : C.say, full || have < C.cost, cardPrice(C.cost, have < C.cost)); }
+      body += cardNote(`Hired hands come with you till they’re hurt or you send them home. You have ${crew.length} of ${crewMax()}.`);
+      for (const k of Object.keys(CREW)) { const C = { ...CREW[k], cost: hireCost(k) }, full = crew.length >= crewMax(); body += cardOpt(`hire:${k}`, `Hire a ${C.name.toLowerCase()}`, full ? 'You can lead no more' : have < C.cost ? `${C.cost - have} more tokens` : C.say, full || have < C.cost, cardPrice(C.cost, have < C.cost)); }
       for (const c of crew) body += cardOpt(`home:${c.n}`, `${c.n} the ${c.k}`, `Health ${Math.ceil(c.hp)} of ${c.maxHp} · tap to send home`, false);
     } else body += cardNote('No one here is for hire. Fighters and medics sign on at the guild in Hollowbrook and at the inns in the towns.');
     return { title: name, purse: true, body };
   }, (what, v) => {
     const X = farX();
-    if (what === 'food') { const n = +v; if ((ADV.world.tokens || 0) >= n * MEAL_COST && X.food + n <= FOOD_MAX + 0.99) { ADV.world.tokens -= n * MEAL_COST; X.food += n; advSave(); SFX.discover(); } }
+    if (what === 'food') { const n = +v; if ((ADV.world.tokens || 0) >= n * mealCost() && X.food + n <= FOOD_MAX + 0.99) { ADV.world.tokens -= n * mealCost(); X.food += n; advSave(); SFX.discover(); } }
     else if (what === 'hire') crewHire(v);
     else if (what === 'home') { const c = crew.find(c => c.n === v); if (c) crewLeaves(c); }
   });
@@ -6031,6 +6037,9 @@ function farPeopleFor(L) {
     givers.forEach((M, k) => out.push({ x: HOME_SPOTS[k][0], y: HOME_SPOTS[k][1], name: M.who, coat: M.coat, hat: M.hat, role: 'giver', m: M }));
     const h = hallOf('guild');
     out.push({ x: h.x + h.w / 2, y: h.y + 66, name: 'Quartermaster Bryn', coat: '#8a3a4a', hat: '#4a1a2a', role: 'keeper', where: 'guild' });
+    const th = hallOf('townhall'), dj = hallOf('dojo');
+    out.push({ x: th.x + th.w / 2, y: th.y + 50, name: POSTS.mayor.keeper, coat: '#3a4a7a', hat: '#1a2a4a', role: 'keeper', where: 'townhall' });
+    out.push({ x: dj.x + dj.w / 2, y: dj.y + 50, name: POSTS.dojo.keeper, coat: '#e8e0d0', hat: null, role: 'keeper', where: 'dojo' });
   }
   return out;
 }
@@ -6045,14 +6054,16 @@ function updateFolk() {
     if (p.role === 'lost' && (!mOn(p.m) || mState(p.m).got)) continue;
     const d = Math.hypot(player.x - p.x, player.y - p.y);
     p.face = player.x < p.x ? -1 : 1;
-    if (d < nd && (p.role !== 'keeper' || (WLD.hall && (WLD.hall.id === 'guild' || WLD.hall.id === 'inn')) || p.where === 'camp')) { nd = d; near = p; }
+    if (d < nd && (p.role !== 'keeper' || WLD.hall || p.where === 'camp')) { nd = d; near = p; }
   }
   const coach = LANDNOW ? (LANDNOW.town ? LANDNOW.town.coach : LANDNOW.camp.coach) : HOME_COACH;
   if (!near && Math.hypot(player.x - coach.x, player.y - (coach.y + 20)) < 86)
     WLD.talk = { name: 'The coachman', at: { x: coach.x, y: coach.y - 14 }, line: LANDS.some(L => X.been[L.id] >= 2) || LANDNOW ? 'Where to? I’ll take you to any town or camp you’ve already reached on foot.' : 'I run to the far towns, once you’ve found the way there on foot. Ten gates, there are, round the edge of the map.', act: openCoach, actLabel: 'tap to travel ▸' };
   if (!near) return;
   const at = { x: near.x, y: near.y - 20 }, M = near.m;
-  if (near.role === 'keeper') WLD.talk = { name: near.name, at, line: near.where === 'camp' ? 'Food for the road? It’s wild country out there.' : 'Food for the road, and fighters and medics for hire.', act: () => openOutfit(near.where), actLabel: 'tap to trade ▸' };
+  if (near.where === 'townhall') WLD.talk = { name: near.name, at, line: hasPost('mayor') ? (townX().offers.length ? 'The council is sitting, Mayor. There are proposals before you.' : 'Nothing more is before the council this season, Mayor.') : 'This is where Hollowbrook is governed. The mayor’s chair goes to whoever the town trusts most.', act: openTownHall, actLabel: hasPost('mayor') ? 'tap to sit with the council ▸' : 'tap to ask ▸' };
+  else if (near.where === 'dojo') WLD.talk = { name: near.name, at, line: hasPost('dojo') ? 'Master. The students are waiting for your word.' : 'Here Hollowbrook’s fighters are trained. Whoever leads them decides what they become.', act: openDojo, actLabel: hasPost('dojo') ? 'tap to lead the dojo ▸' : 'tap to ask ▸' };
+  else if (near.role === 'keeper') WLD.talk = { name: near.name, at, line: near.where === 'camp' ? 'Food for the road? It’s wild country out there.' : 'Food for the road, and fighters and medics for hire.', act: () => openOutfit(near.where), actLabel: 'tap to trade ▸' };
   else if (near.role === 'to') {
     if (mOn(M)) WLD.talk = { name: near.name, at, line: 'Is that for me?', act: () => { missionDone(M, near.x, near.y); missionCard(M, 'paid'); }, actLabel: 'tap to hand over the letter ▸' };
     else WLD.talk = { name: near.name, at, line: mDone(M) ? 'Thank you again for the letter.' : 'Good day to you, wizard.' };
@@ -6085,6 +6096,9 @@ function openPack() {
     const X = farX(), on = MISSIONS.filter(mOn), done = MISSIONS.filter(mDone).length;
     let body = `<div style="display:flex;justify-content:center;gap:14px;margin-top:8px;font-size:15px;font-weight:bold"><span style="color:#ffd24a">${coinSvg(15)} ${(ADV.world.tokens || 0).toLocaleString()}</span><span style="color:#9fd0ff">★ ${X.rep} reputation</span></div>`;
     body += cardNote(`<b style="color:#f0c890">Food:</b> ${Math.floor(X.food)} meals${X.food > 0 ? ` (about ${clock(foodSecs())} in the wilds)` : ''}.<br><b style="color:#f0c890">Hired hands:</b> ${crew.length ? crew.map(c => `${c.n} the ${c.k}`).join(', ') : 'none'}.`);
+    const T = townX();
+    if (T.posts.length) body += cardNote(`<b style="color:#ffd24a">Hollowbrook</b> · you are ${T.posts.map(p => POSTS[p].name.toLowerCase()).join(' and ')} · season ${T.season}<br>Its spirit is ${spiritWord(T.spirit)}; the townsfolk are ${cohesionWord(T.cohesion)}.${T.unread ? ' <b style="color:#8fdf6a">There is news: go to ' + (T.posts.includes('mayor') ? 'the Town Hall' : 'the Dojo') + '.</b>' : ''}`);
+    else if (X.rep >= POST_REP[0]) body += cardNote('<b style="color:#8fdf6a">Your name stands high enough to hold a post in Hollowbrook.</b> Ask at the Town Hall or the Dojo.');
     body += cardNote(`<b style="color:#ffd24a">Missions</b> · ${done} of ${MISSIONS.length} done`);
     if (!on.length) body += cardNote('<i>None taken. Folk with work for a wizard stand by the Wayfarers’ Guild in Hollowbrook, and in the squares of the far towns.</i>');
     for (const M of on) body += cardOpt(`track:${M.id}`, `${X.track === M.id ? '➤ ' : ''}${M.title}`, `${mHint(M)}${X.track === M.id ? '' : ' <i>Tap to follow this one.</i>'}`, false, mReady(M) ? '<div style="color:#8fdf6a;font-weight:bold;font-size:20px">✓</div>' : '');
@@ -6240,7 +6254,7 @@ function packShown() { return mode === 'adventure' && state === 'play' && !!ADV 
 function packHit(x, y) { if (!packShown()) return false; const b = packButton(); return Math.hypot(x - b.x, y - b.y) < b.r + 6; }
 function drawPackButton() {
   if (!packShown()) return;
-  const b = packButton(), n = MISSIONS.filter(mReady).length;
+  const b = packButton(), n = MISSIONS.filter(mReady).length + (townX().unread ? 1 : 0);
   circle(b.x, b.y, b.r, 'rgba(16,14,30,0.88)', 'rgba(240,200,144,0.9)', 2);
   ctx.textAlign = 'center'; ctx.fillStyle = '#f0c890'; ctx.font = `bold 10px ${SERIF}`; ctx.fillText('PACK', b.x, b.y);
   ctx.font = `8px ${SERIF}`; ctx.fillStyle = '#c8b090'; ctx.fillText(`★ ${farX().rep}`, b.x, b.y + 10);
@@ -6340,6 +6354,278 @@ function drawFarMinimap(mx, my) {
   sq(L.arch.x, L.arch.y, '#ffd24a'); sq(L.base.x, L.base.y, '#ff8a5a');
   for (const s of L.sites) circle(mx(s.x), my(s.y), 2.5, '#d8c8a0', '#000', 0.8);
   for (const f of foes) if (f.chief && !f.dead) circle(mx(f.x), my(f.y), 3.5, TYPE_COLOR[f.elem], '#000', 1);
+}
+
+// ── running your town: the posts you can hold in Hollowbrook ──
+// Reputation lets you hold a post: the mayor's chair in the Town Hall, the master's place in the Dojo. A little
+// holds one, more holds both. The town moves on a season each time you come home from a good while in the far
+// lands: money comes in, the council meets, what you chose takes effect, and doing a post well earns reputation.
+// What the town is like is told in words. Works of art are only ever described: it's for you to judge them.
+const POSTS = { mayor: { name: 'Mayor', hall: 'townhall', keeper: 'Speaker Maren' }, dojo: { name: 'Dojo master', hall: 'dojo', keeper: 'Sword-master Iwen' } };
+const POST_REP = [40, 120];          // reputation to hold one post, and to hold two
+const SEASON_AWAY = 90;              // seconds out in the far lands before a season passes at home
+// what the council and the townsfolk may propose. kind: need (food, arms, medicine, the town's running) ·
+// spirit (places of prayer) · art · private (someone's own venture: it costs the town nothing, you allow or refuse).
+// keep: upkeep each season · supply/need: what it gives to, or asks of, the town's spirit · classic/modern: art, by kind.
+const TOWN_WORKS = [
+  { id: 'granary', kind: 'need', by: 'Councillor Bell', name: 'A granary and seed store', cost: 120, keep: 10, food: 1, say: 'Grain kept dry through the winter. Meals at the Guild cost less.' },
+  { id: 'fishery', kind: 'need', by: 'Councillor Abe', name: 'Smokehouses by the jetty', cost: 160, keep: 12, food: 1, say: 'The lake’s catch, smoked to keep. Meals at the Guild cost less.' },
+  { id: 'smithy', kind: 'need', by: 'Councillor Garrick', name: 'A weapons forge', cost: 180, keep: 15, arms: 1, say: 'Better blades for every fighter you hire: they hit harder.' },
+  { id: 'armoury', kind: 'need', by: 'Councillor Garrick', name: 'An armoury', cost: 240, keep: 18, arms: 1, say: 'Tempered steel, kept oiled and sharp. Your fighters hit harder still.' },
+  { id: 'herbs', kind: 'need', by: 'Councillor Hazel', name: 'A physic garden', cost: 140, keep: 10, med: 1, say: 'Supplies for the medics: each dressing mends more.' },
+  { id: 'apothecary', kind: 'need', by: 'Councillor Hazel', name: 'An apothecary’s hall', cost: 220, keep: 15, med: 1, say: 'Tinctures and clean linen by the crate. Your medics mend more still.' },
+  { id: 'market', kind: 'need', by: 'Councillor Barnaby', name: 'A covered market', cost: 200, keep: 10, income: 60, say: 'Stalls out of the rain, and rent for the town every season.' },
+  { id: 'school', kind: 'need', by: 'Councillor Rowan', name: 'A village school', cost: 160, keep: 15, cohesion: 6, say: 'Every child taught to read, together. Neighbours’ children grow up friends.' },
+  { id: 'watch', kind: 'need', by: 'Councillor Coll', name: 'A watch house', cost: 150, keep: 20, watch: 1, say: 'Fewer thieves get away with it. It does nothing about why people steal.' },
+  { id: 'baths', kind: 'need', by: 'Councillor Ada', name: 'Public baths', cost: 130, keep: 12, cohesion: 4, say: 'Hot water and a place to talk. People who wash together quarrel less.' },
+  { id: 'shrine', kind: 'spirit', by: 'Mother Wren', name: 'A wayside shrine', cost: 80, keep: 4, supply: 8, say: 'A small place to stop and pray on the road in.' },
+  { id: 'bells', kind: 'spirit', by: 'Mother Wren', name: 'Bells for the hours of prayer', cost: 100, keep: 4, supply: 8, say: 'Rung at dawn, noon and dusk, so the whole town stops together.' },
+  { id: 'pilgrim', kind: 'spirit', by: 'Mother Wren', name: 'A pilgrims’ rest', cost: 140, keep: 6, supply: 10, income: 10, say: 'Beds and bread for those walking to the holy places.' },
+  { id: 'chapel', kind: 'spirit', by: 'Mother Wren', name: 'A chapel on the green', cost: 180, keep: 8, supply: 15, say: 'Somewhere for the town to gather, give thanks, marry and mourn.' },
+  { id: 'cloister', kind: 'spirit', by: 'Mother Wren', name: 'A cloister for study and silence', cost: 260, keep: 12, supply: 20, say: 'A few will live there in prayer. Many more will come to be taught by them.' },
+  { id: 'temple', kind: 'spirit', by: 'Mother Wren', name: 'A temple of the Five Elements', cost: 320, keep: 14, supply: 25, say: 'A great house of worship, with a rite for every season of a life.' },
+  { id: 'fountain', kind: 'art', by: 'Councillor Finch', name: 'A marble fountain of the Five Graces', cost: 160, keep: 4, classic: 2, say: 'Carved in the old manner: five calm, well-proportioned figures pouring water into a round basin.' },
+  { id: 'mural', kind: 'art', by: 'Councillor Finch', name: 'A mural of the founding of Hollowbrook', cost: 120, keep: 3, classic: 2, say: 'Painted in the style of the old masters: clear figures, warm light, every face a true likeness.' },
+  { id: 'statue', kind: 'art', by: 'Councillor Finch', name: 'A bronze of the first Elder', cost: 140, keep: 3, classic: 2, say: 'A faithful copy of the statue lost in the fire, cast from the sculptor’s own surviving drawings.' },
+  { id: 'garden', kind: 'art', by: 'Councillor Finch', name: 'A formal garden', cost: 130, keep: 6, classic: 2, say: 'Clipped hedges, a sundial and four beds of roses, laid out to the plan of the cloister gardens of old.' },
+  { id: 'theatre', kind: 'art', by: 'Councillor Finch', name: 'A playhouse for the great plays', cost: 200, keep: 8, classic: 2, say: 'The tragedies and comedies every child once knew by heart, staged plainly and spoken well.' },
+  { id: 'choir', kind: 'art', by: 'Councillor Finch', name: 'A choir hall', cost: 220, keep: 8, classic: 3, say: 'For the old hymns, and for new ones written in the old modes. Those who’ve heard the new ones say they sound as if they had always been sung.' },
+  { id: 'tower', kind: 'art', by: 'Councillor Pip', name: '“Untitled No. 7”', cost: 150, keep: 4, modern: 2, say: 'A tower of twisted scrap iron by a sculptor from the city. She says it means whatever you want it to mean.' },
+  { id: 'shock', kind: 'art', by: 'Councillor Pip', name: 'A playhouse for shock-plays', cost: 180, keep: 8, modern: 2, say: 'New plays in which the actors shout at the audience and nothing is resolved. The playwright calls beauty “a lie”.' },
+  { id: 'splash', kind: 'art', by: 'Councillor Pip', name: 'The Wall of Splashes', cost: 100, keep: 3, modern: 1, say: 'Paint thrown at the long wall by the market, a new colour each week. Nobody has done it before.' },
+  { id: 'noise', kind: 'art', by: 'Councillor Pip', name: 'A hall for the new music', cost: 170, keep: 8, modern: 2, say: 'No tunes: each player chooses his own notes and his own speed. It is the very latest thing.' },
+  { id: 'tavern', kind: 'private', by: 'Brewer Hodge', name: 'Three taverns on the green', keep: 0, income: 40, need: 8, say: 'He’ll pay rent to the town every season. There will be a good deal more drinking.' },
+  { id: 'dice', kind: 'private', by: 'Dicer Malk', name: 'A gaming house', keep: 0, income: 70, need: 14, say: 'He offers a fat fee every season. Men will lose their wages at his tables.' },
+  { id: 'lender', kind: 'private', by: 'Master Grice', name: 'A moneylender’s shop', keep: 0, income: 50, need: 10, cohesion: -4, say: 'Gold today for anyone who asks, and their house if they can’t pay it back.' },
+  { id: 'fair', kind: 'private', by: 'Showman Fizz', name: 'A travelling fair, every season', keep: 0, income: 30, need: 4, modern: 1, say: 'Loud, bright, full of things nobody has seen before, and gone by morning.' },
+  { id: 'bakery', kind: 'private', by: 'Baker Hobb', name: 'A second bakery', keep: 0, income: 10, food: 1, say: 'More bread, baked before dawn. Meals at the Guild cost less.' },
+  { id: 'weaver', kind: 'private', by: 'Marta the weaver', name: 'A weaving shed', keep: 0, income: 30, say: 'Twelve looms and honest work for twenty families.' },
+  { id: 'copying', kind: 'private', by: 'Elsie the Scribe', name: 'A copying house for the old books', keep: 0, supply: 6, cohesion: 2, say: 'She would copy the scriptures and the old tales, and read them aloud on feast days.' },
+  { id: 'hospice', kind: 'private', by: 'The Sisters of the Lamp', name: 'A hospice', keep: 0, supply: 6, med: 1, say: 'They ask only leave to nurse the sick and the dying, at their own cost.' },
+];
+const workById = id => TOWN_WORKS.find(w => w.id === id);
+// the dojo master's decisions: one comes up each season
+const DOJO_ASKS = [
+  { id: 'brawl', ask: 'Two students came to blows in the yard over a wager.', opts: [
+    ['Set them to rebuild the yard wall together, in silence', { code: 8 }, 'They finish it as friends. The others watch, and learn.'],
+    ['Let them settle it in the ring: the others enjoy a fight', { code: -8 }, 'The yard cheers. Wagers are laid on the next one.'],
+    ['Expel them both', { code: 3, fighters: -2 }, 'Two good fighters gone, and a lesson nobody will forget.']] },
+  { id: 'champion', ask: 'A prize-fighter from the city offers to teach his crowd-pleasing spinning strike, for 50.', opts: [
+    ['Pay him: a new trick is a new trick', { gold: -50, skill: 1, code: -6 }, 'They learn the strike, and that fighting is for show.'],
+    ['Decline: we teach what works, and why we fight', { code: 5 }, 'He shrugs and leaves. The students drill the old forms.']] },
+  { id: 'tourney', ask: 'The students want a tournament.', opts: [
+    ['Hold it for a purse of gold', { code: -8, skill: 1 }, 'They fight hard, for themselves. The losers sulk for a week.'],
+    ['Hold it for a laurel wreath, and feast the losers first', { code: 7 }, 'The winner serves the others at table. They talk of it for a year.'],
+    ['No tournament', {}, 'Training goes on as before.']] },
+  { id: 'silence', ask: 'Old Master Iwen asks to bring back the dawn silence before training. The young ones groan.', opts: [
+    ['Bring it back', { code: 10 }, 'Within a month they would not start the day without it.'],
+    ['Leave it: they need the sleep', { code: -3 }, 'Master Iwen says nothing, and sits alone at dawn.']] },
+  { id: 'bully', ask: 'Your best fighter has been bullying the youngest student.', opts: [
+    ['Stand him down until he has worked a month for the boy’s family', { code: 10 }, 'He comes back quieter, and the boy’s best friend.'],
+    ['He wins fights. Look away', { code: -12 }, 'The youngest leaves. The others learn what is allowed.']] },
+  { id: 'debts', ask: 'A merchant offers the dojo 80 to send students to collect his debts.', opts: [
+    ['Take the gold', { gold: 80, code: -10 }, 'They frighten an old man out of his house. The gold is good.'],
+    ['Refuse: we guard the town, we don’t squeeze it', { code: 6 }, 'The students hear of it, and stand a little straighter.']] },
+  { id: 'roof', ask: 'A widow asks whether the students could mend her roof before winter.', opts: [
+    ['Send them, and go yourself', { code: 8 }, 'It takes a day. She brings bread to the dojo every week after.'],
+    ['We’ve no time: they must train', { code: -4 }, 'She finds a roofer she can’t afford.']] },
+  { id: 'mock', ask: 'A rival school has been mocking yours in the market.', opts: [
+    ['Answer with a challenge, and thrash them', { code: -5, skill: 1 }, 'You win. Both schools now hate each other.'],
+    ['Invite them to train with you for a week', { code: 6 }, 'By the end of it nobody remembers who mocked whom.']] },
+];
+function townX() {
+  const X = farX();
+  if (!X.town || typeof X.town !== 'object') X.town = {};
+  const T = X.town;
+  for (const [k, v] of [['gold', 300], ['spirit', 62], ['cohesion', 58], ['season', 0], ['away', 0]]) if (typeof T[k] !== 'number') T[k] = v;
+  for (const k of ['built', 'posts', 'offers', 'report', 'refused']) if (!Array.isArray(T[k])) T[k] = [];
+  if (!T.dojo || typeof T.dojo !== 'object') T.dojo = {};
+  for (const [k, v] of [['gold', 60], ['fighters', 6], ['skill', 1], ['code', 55]]) if (typeof T.dojo[k] !== 'number') T.dojo[k] = v;
+  return T;
+}
+// everything the town's buildings add up to
+function townSums(T = townX()) {
+  const S = { keep: 0, food: 0, arms: 0, med: 0, income: 0, cohesion: 0, watch: 0, supply: 0, need: 8, classic: 0, modern: 0 };
+  for (const id of T.built) { const w = workById(id); if (!w) continue; for (const k in S) if (w[k]) S[k] += w[k]; if (w.kind === 'need' || w.kind === 'private') S.need += w.kind === 'need' ? 4 : 2; }
+  S.need += S.modern * 3;
+  if (T.dojo.code >= 60) S.supply += 5;
+  return S;
+}
+const townIncome = (T = townX(), S = townSums(T)) => Math.round((100 + S.income + S.classic * 8 + S.modern * 4) * (0.6 + T.cohesion / 125));
+const hasPost = p => !!ADV && townX().posts.includes(p);
+const postsAllowed = () => { const r = farX().rep; return r >= POST_REP[1] ? 2 : r >= POST_REP[0] ? 1 : 0; };
+// how the town is, in words
+const spiritWord = s => s >= 75 ? 'devout and glad' : s >= 55 ? 'steady' : s >= 40 ? 'thin: people are restless' : s >= 25 ? 'failing: there is stealing' : 'lost: there are feuds and burnings';
+const cohesionWord = c => c >= 75 ? 'close-knit' : c >= 55 ? 'neighbourly' : c >= 40 ? 'wary of one another' : 'divided';
+const codeWord = c => c >= 70 ? 'proud to serve, and brave' : c >= 55 ? 'steady' : c >= 40 ? 'slack: tempers are short' : c >= 25 ? 'poor: they brawl, and some will run from a fight' : 'gone: they fight each other and desert';
+// what the town does for those you hire, and for the price of a meal
+function crewMight(k) {
+  if (!ADV) return 1;
+  const T = townX(), S = townSums(T), soul = 0.85 + T.spirit / 100 * 0.3, code = T.dojo.code < 40 ? 0.8 : T.dojo.code >= 70 ? 1.1 : 1;
+  return k === 'medic' ? (1 + 0.2 * S.med) * soul : (1 + 0.12 * S.arms) * (1 + 0.1 * (T.dojo.skill - 1)) * soul * code;
+}
+const mealCost = () => Math.max(2, MEAL_COST - townSums().food);
+const crewMax = () => CREW_MAX + (hasPost('dojo') ? Math.min(2, Math.floor(townX().dojo.fighters / 12)) : 0);
+const hireCost = k => Math.round(CREW[k].cost * (k === 'fighter' && hasPost('dojo') ? 0.6 : 1));
+// a season passes in Hollowbrook
+function townSeason() {
+  const X = farX(), T = townX();
+  T.away = 0;
+  if (!T.posts.length) return;
+  T.season++;
+  const S = townSums(T), rep = [], D = T.dojo, R = Math.random;
+  const income = townIncome(T, S);
+  T.gold += income - S.keep;
+  rep.push(`The town took in ${income} and spent ${S.keep} on upkeep.`);
+  T.spirit += (clamp(50 + S.supply - S.need, 0, 100) - T.spirit) * 0.4;
+  const art = S.classic * 3 * (T.spirit / 100) - S.modern * 2;
+  T.cohesion += (clamp(T.spirit * 0.8 + 8 + S.cohesion + art, 0, 100) - T.cohesion) * 0.4;
+  // a town without prayer: first stealing, then feuds and fire
+  if (T.spirit < 40) {
+    const lost = Math.round(Math.max(0, T.gold) * (S.watch ? 0.08 : 0.18));
+    T.gold -= lost;
+    rep.push(lost ? `Thieves broke into the town chest and took ${lost}.${S.watch ? ' The watch caught some of them.' : ''}` : 'There is stealing in the market, and locks on every door.');
+  }
+  if (T.spirit < 25) {
+    const burn = T.built.filter(id => workById(id).kind !== 'spirit');
+    T.cohesion = Math.max(0, T.cohesion - 8);
+    if (burn.length) { const id = burn[Math.floor(R() * burn.length)]; T.built = T.built.filter(b => b !== id); rep.push(`A killing was answered with a killing, and in the night ${workById(id).name.replace(/^A |^An /, m => m.toLowerCase())} was burnt to the ground.`); }
+    else rep.push('A killing was answered with a killing. Families bar their doors at dusk.');
+  } else if (S.classic && T.spirit >= 60) rep.push('On feast days the whole town gathers, and visitors come to see what you have built.');
+  else if (S.classic && T.spirit < 45) rep.push('Visitors admire the town’s fine things. The townsfolk hardly look at them.');
+  if (S.modern && !S.classic) rep.push('Visitors come to stare at the new works, shrug, and go home.');
+  // the dojo
+  D.gold += 70;
+  const need = D.fighters * 2 + D.skill * 8;
+  if (D.code < need) D.code = Math.max(0, D.code - Math.min(12, (need - D.code) * 0.25));
+  if (D.code < 40 && D.fighters > 2) { const n = D.code < 25 ? 3 : 1 + Math.floor(R() * 2); D.fighters = Math.max(2, D.fighters - n); rep.push(D.code < 25 ? `${n} fighters deserted the dojo.` : `A brawl in the dojo left ${n} unfit to fight.`); }
+  // work done well is noticed
+  let gain = 0;
+  if (T.posts.includes('mayor')) gain += T.cohesion >= 75 ? 6 : T.cohesion >= 60 ? 4 : 0;
+  if (T.posts.includes('dojo')) gain += D.code >= 60 && D.fighters >= 8 ? 3 : 0;
+  if (gain) { X.rep += gain; rep.push(`You are well spoken of: ★ +${gain} reputation.`); }
+  if (T.posts.includes('mayor') && T.cohesion < 35) { X.rep = Math.max(0, X.rep - 3); rep.push('People blame the mayor: ★ −3 reputation.'); }
+  townAgenda();
+  T.report = rep; T.unread = true;
+  advSave();
+  afterGame(3.6, () => showBanner('A season has passed in Hollowbrook', T.posts.includes('mayor') ? 'The council is waiting for you in the Town Hall' : 'There is news at the Dojo', 5));
+}
+
+// what's put before you this season: for the council, something useful, a place of prayer, a work of art and
+// someone's own venture; for the dojo, one thing to decide
+function townAgenda() {
+  const T = townX(), D = T.dojo, R = Math.random;
+  const open = k => TOWN_WORKS.filter(w => w.kind === k && !T.built.includes(w.id)), pick = l => l.length ? l[Math.floor(R() * l.length)].id : null;
+  T.offers = ['need', 'spirit', 'art', 'private'].map(k => pick(open(k))).filter(Boolean);
+  if (typeof D.seed !== 'number') D.seed = Math.floor(R() * DOJO_ASKS.length);
+  D.ask = DOJO_ASKS[(T.season + D.seed) % DOJO_ASKS.length].id; D.said = null;
+}
+// ── the Town Hall: the council's proposals, and the mayor's chair ──
+function takePostNote(p) {
+  const X = farX(), T = townX(), can = postsAllowed();
+  if (T.posts.includes(p)) return '';
+  if (T.posts.length < can) return '';
+  return can === 0 ? `It takes a reputation of ${POST_REP[0]} to be given a post in Hollowbrook. Yours is ${X.rep}: folk with work for you stand by the Wayfarers’ Guild.`
+    : `You hold a post already. It takes a reputation of ${POST_REP[1]} to hold two; yours is ${X.rep}.`;
+}
+function takePost(p) {
+  const T = townX();
+  if (T.posts.includes(p) || T.posts.length >= postsAllowed()) return;
+  T.posts.push(p);
+  if (!T.season) { T.season = 1; T.away = 0; townAgenda(); T.report = []; }      // your first season begins
+  advSave(); SFX.discover();
+}
+function openTownHall() {
+  openFarCard(() => {
+    const T = townX(), S = townSums(T), X = farX();
+    if (!T.posts.includes('mayor')) {
+      const no = takePostNote('mayor');
+      return { title: 'The Town Hall', sub: 'Speaker Maren', body: cardNote('“The mayor sits with the council and chooses what Hollowbrook builds: food, weapons, medicine, places of prayer, works of art. Townsfolk bring their own ventures for leave, too. The town’s purse must balance.”') + cardNote(no || '“Your name stands high enough. The chair is yours if you’ll take it.”'), buttons: no ? [] : [['post', 'Take the mayor’s chair', true]] };
+    }
+    T.unread = false;
+    const income = townIncome(T, S);
+    let body = cardNote(`<b style="color:#ffd24a">The town chest:</b> ${Math.round(T.gold)} · each season ${income} comes in and ${S.keep} goes on upkeep.<br><b style="color:#ffd24a">The town’s spirit:</b> ${spiritWord(T.spirit)}.<br><b style="color:#ffd24a">The townsfolk:</b> ${cohesionWord(T.cohesion)}.`);
+    if (T.report.length) body += cardNote(`<b style="color:#e8d0a0">Last season.</b> ${T.report.join(' ')}`);
+    body += cardNote(`<b style="color:#ffd24a">Before the council</b> · season ${T.season}`);
+    if (!T.offers.length) body += cardNote('<i>Nothing more is proposed this season. The council meets again when you come home from your next journey.</i>');
+    for (const id of T.offers) {
+      const w = workById(id);
+      if (w.kind === 'private') body += `<div style="text-align:left;padding:10px 12px;margin-top:8px;border-radius:10px;background:#241c34;border:1.5px solid #6a5a8a"><div style="color:#ffd24a;font-weight:bold;font-size:16px">${w.name}</div><div style="color:#e8d0a0;font-size:12px;margin-top:1px">Asked of the town by ${w.by}</div><div style="color:#ccc;font-size:13px;margin-top:3px">${w.say}</div><div style="display:flex;gap:8px;margin-top:8px"><div data-go="allow:${id}" style="flex:1;text-align:center;padding:7px;border-radius:8px;font-weight:bold;cursor:pointer;background:#ffd24a;color:#2a1a00">Give leave</div><div data-go="refuse:${id}" style="flex:1;text-align:center;padding:7px;border-radius:8px;font-weight:bold;cursor:pointer;background:#2a2238;color:#ccc;border:1px solid #5a5070">Refuse</div></div></div>`;
+      else {
+        const poor = T.gold < w.cost, heavy = S.keep + w.keep > income;
+        body += cardOpt(`fund:${id}`, w.name, `<span style="color:#e8d0a0">${w.by} proposes:</span> ${w.say} <span style="color:#999">Upkeep ${w.keep} a season.</span>${poor ? ' <b style="color:#ff9a8a">The chest can’t pay for it.</b>' : heavy ? ' <b style="color:#ff9a8a">Its upkeep would outrun the town’s income.</b>' : ''}`, poor || heavy, cardPrice(w.cost, poor || heavy));
+      }
+    }
+    if (T.built.length) body += cardNote(`<b style="color:#e8d0a0">Built so far:</b> ${T.built.map(id => workById(id).name.replace(/^A |^An /, '')).join(' · ')}.`);
+    return { title: 'The council of Hollowbrook', sub: 'You sit as mayor', body, buttons: [['quit', 'Step down']] };
+  }, (what, v) => {
+    const T = townX(), w = workById(v);
+    if (what === 'post') takePost('mayor');
+    else if (what === 'quit') { T.posts = T.posts.filter(p => p !== 'mayor'); advSave(); }
+    else if (what === 'fund' && w && T.gold >= w.cost) { T.gold -= w.cost; T.built.push(v); T.offers = T.offers.filter(o => o !== v); advSave(); SFX.discover(); }
+    else if (what === 'allow' && w) { T.built.push(v); T.offers = T.offers.filter(o => o !== v); advSave(); SFX.discover(); }
+    else if (what === 'refuse' && w) { T.offers = T.offers.filter(o => o !== v); advSave(); SFX.buff(); }
+  });
+}
+// ── the Dojo: the fighters, how they fight, and what they fight for ──
+function openDojo() {
+  openFarCard(() => {
+    const T = townX(), D = T.dojo;
+    if (!T.posts.includes('dojo')) {
+      const no = takePostNote('dojo');
+      return { title: 'The Dojo', sub: 'Sword-master Iwen', body: cardNote('“The master of the dojo decides how many we train, what techniques they learn, and what they are taught to fight for. A master’s own students sign on with him for less, and more of them will follow him.”') + cardNote(`The dojo has ${D.fighters} fighters. Their spirit is ${codeWord(D.code)}.`) + cardNote(no || '“Your name stands high enough. The dojo is yours to lead, if you’ll take it.”'), buttons: no ? [] : [['post', 'Become dojo master', true]] };
+    }
+    if (!T.posts.includes('mayor')) T.unread = false;
+    const ask = DOJO_ASKS.find(a => a.id === D.ask);
+    let body = cardNote(`<b style="color:#ffd24a">The dojo’s purse:</b> ${Math.round(D.gold)} · the town grants 70 a season.<br><b style="color:#ffd24a">Fighters:</b> ${D.fighters}${crewMax() > CREW_MAX ? ` · ${crewMax()} will follow you on a journey` : ''}.<br><b style="color:#ffd24a">Technique:</b> ${['', 'plain', 'sound', 'sharp', 'fine', 'masterly'][D.skill]}.<br><b style="color:#ffd24a">Their spirit:</b> ${codeWord(D.code)}.`);
+    if (D.said) body += cardNote(`<i style="color:#e8d0a0">${D.said}</i>`);
+    if (ask) { body += cardNote(`<b style="color:#ffd24a">For you to decide.</b> ${ask.ask}`); ask.opts.forEach((o, i) => { const short = (o[1].gold || 0) < 0 && D.gold < -o[1].gold; body += cardOpt(`ask:${i}`, o[0], short ? 'The purse can’t pay for it' : '', short); }); }
+    body += cardNote('<b style="color:#ffd24a">This season’s training</b>');
+    const buy = (go, title, say, cost, off) => cardOpt(go, title, say, off || D.gold < cost, cardPrice(cost, off || D.gold < cost));
+    body += buy('train:more', 'Take on five recruits', 'More fighters. New faces need time to learn the dojo’s ways.', 40);
+    body += buy('train:skill', 'Bring in a master of technique', D.skill >= 5 ? 'There is nothing more to teach them' : 'They hit harder. Skill without a reason to fight makes a bully.', 60, D.skill >= 5);
+    body += buy('train:code', 'A season under the old code', 'Dawn drill, the old oaths, and a day’s work for the town each week. They learn what the sword is for.', 40);
+    return { title: 'The Dojo of Hollowbrook', sub: 'You are its master', body, buttons: [['quit', 'Step down']] };
+  }, (what, v) => {
+    const T = townX(), D = T.dojo;
+    if (what === 'post') takePost('dojo');
+    else if (what === 'quit') { T.posts = T.posts.filter(p => p !== 'dojo'); advSave(); }
+    else if (what === 'ask') {
+      const ask = DOJO_ASKS.find(a => a.id === D.ask), o = ask && ask.opts[+v];
+      if (!o) return;
+      const e = o[1];
+      D.gold += e.gold || 0; D.code = clamp(D.code + (e.code || 0), 0, 100); D.skill = clamp(D.skill + (e.skill || 0), 1, 5); D.fighters = Math.max(2, D.fighters + (e.fighters || 0));
+      D.ask = null; D.said = o[2]; advSave(); SFX.buff();
+    } else if (what === 'train') {
+      const cost = v === 'skill' ? 60 : 40;
+      if (D.gold < cost || (v === 'skill' && D.skill >= 5)) return;
+      D.gold -= cost;
+      if (v === 'more') { D.fighters += 5; D.code = Math.max(0, D.code - 4); D.said = 'Five new recruits are sweeping the yard.'; }
+      else if (v === 'skill') { D.skill++; D.code = Math.max(0, D.code - 5); D.said = 'The students are full of their new skill.'; }
+      else { D.code = Math.min(100, D.code + 18); D.said = 'The students take the old oaths at dawn.'; }
+      advSave(); SFX.discover();
+    }
+  });
+}
+// inside the Town Hall (the council's long table) and the Dojo (mats, a rack of practice swords, straw men)
+function drawTownInside(h) {
+  const T = HALL_T, x0 = h.x + T, y0 = h.y + T, w = h.w - 2 * T, hh = h.h - 2 * T, cx = h.x + h.w / 2, cy = h.y + h.h / 2;
+  if (h.id === 'townhall') {
+    ctx.fillStyle = 'rgba(120,30,40,0.5)'; ctx.fillRect(cx - 24, y0 + 60, 48, hh - 60);
+    ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.fillRect(cx - 96, y0 + 80, 198, 46);
+    ctx.fillStyle = '#6a4424'; roundRect(cx - 100, y0 + 74, 200, 44, 8); ctx.fill(); ctx.strokeStyle = '#3e2414'; ctx.lineWidth = 2.5; ctx.stroke();
+    for (let i = 0; i < 5; i++) for (const sy of [y0 + 64, y0 + 128]) circle(cx - 80 + i * 40, sy, 8, '#8a5a30', '#4e3218', 2);
+    for (let i = 0; i < 3; i++) { ctx.fillStyle = '#f4ead0'; ctx.fillRect(cx - 62 + i * 50, y0 + 88, 20, 14); }
+    for (const [bx, col] of [[x0 + 26, '#8a1a1a'], [x0 + w - 26, '#1a3a8a']]) { ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(bx - 12, y0); ctx.lineTo(bx + 12, y0); ctx.lineTo(bx + 12, y0 + 34); ctx.lineTo(bx, y0 + 26); ctx.lineTo(bx - 12, y0 + 34); ctx.closePath(); ctx.fill(); }
+    ctx.fillStyle = '#7a5232'; ctx.fillRect(cx - 22, y0 + 4, 44, 26); ctx.fillStyle = '#c8a24a'; ctx.fillRect(cx - 22, y0 + 4, 44, 5);
+  } else {
+    ctx.fillStyle = '#d8c690'; ctx.fillRect(cx - 100, cy - 44, 200, 110);
+    ctx.strokeStyle = 'rgba(110,90,40,0.5)'; ctx.lineWidth = 1.5; ctx.beginPath(); for (let i = 1; i < 5; i++) { ctx.moveTo(cx - 100 + i * 40, cy - 44); ctx.lineTo(cx - 100 + i * 40, cy + 66); } ctx.moveTo(cx - 100, cy + 11); ctx.lineTo(cx + 100, cy + 11); ctx.stroke();
+    ctx.strokeStyle = '#6a4a2a'; ctx.lineWidth = 3; ctx.strokeRect(cx - 100, cy - 44, 200, 110);
+    ctx.fillStyle = '#5a3a20'; ctx.fillRect(x0 + 10, y0 + 6, 70, 10);
+    for (let i = 0; i < 5; i++) { ctx.strokeStyle = '#c8a070'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(x0 + 18 + i * 14, y0 + 8); ctx.lineTo(x0 + 18 + i * 14, y0 + 40); ctx.stroke(); }
+    for (let i = 0; i < 2; i++) { const dx = x0 + w - 30 - i * 44, dy = y0 + 30; ctx.fillStyle = '#6a4a2a'; ctx.fillRect(dx - 2, dy, 4, 24); circle(dx, dy - 4, 10, '#d8b25a', '#8a6a2a', 2); ctx.fillStyle = '#d8b25a'; ctx.fillRect(dx - 12, dy + 4, 24, 6); }
+  }
 }
 
 // ── battle arena terrain ──
