@@ -1619,7 +1619,9 @@ function advLoad() {
   } catch (_) { return null; }
 }
 const hasAdventure = () => { try { return !!localStorage.getItem(ADV_SAVE); } catch (_) { return false; } };
-const worldOpen = () => !!ADV && ZONE_ELEMS.every(e => ADV.zones[e].done);
+// the wide world is open from the start: the Sanctum's five challenges are there to learn from, not a lock
+const worldOpen = () => !!ADV;
+const allMastered = () => !!ADV && ZONE_ELEMS.every(e => ADV.zones[e].done);
 // (for a save from before the book came back: everything the altars, titans, rivals and elder have given you)
 function taughtSoFar(a, s) {
   const w = s.world || {}, t = new Set(['SA']);
@@ -2291,13 +2293,13 @@ function updateSanctum(dt) {
       player.x = 0; player.y = 150;
       ADV.check = { x: 0, y: 150 }; advSave();
       flash = 0.6; SFX.scroll();
-      showBanner('Back in the Sanctum', worldOpen() ? 'The World Gate stands open, below the court' : `${ZONE_ELEMS.filter(z => ADV.zones[z].done).length} of 5 elements mastered`, 3);
+      showBanner('Back in the Sanctum', allMastered() ? 'All five elements are yours' : `${ZONE_ELEMS.filter(z => ADV.zones[z].done).length} of 5 elements mastered`, 3);
     }
   }
-  // the world gate, once all five are mastered
-  if (worldOpen() && segWalls.includes(WORLD_WALL)) {
-    segWalls = segWalls.filter(w => w !== WORLD_WALL);
-    afterPlay(1200, () => showBanner('The World Gate has opened!', 'It’s below the court. The wide world awaits', 4));
+  // all five mastered
+  if (allMastered() && !ADV.world.allTold) {
+    ADV.world.allTold = true; advSave();
+    if (insideSanctum(player.x, player.y)) afterPlay(1200, () => showBanner('All five elements are yours!', 'The wide world lies below the court, through the World Gate', 4));
   }
   // things to pick up
   for (const p of pickups) {
@@ -4667,7 +4669,7 @@ function drawLore() {
   y = wrapText(`${ELEM_NAME[e]} is strong against ${ELEM_NAME[next]} (2.5×).`, W / 2, y + 6, maxW, 20);
   ctx.fillStyle = '#ddd'; ctx.font = `15px ${SERIF}`;
   const nextDone = ADV.zones[next].done, avoidDone = ADV.zones[avoid].done;
-  if (!worldOpen()) {
+  if (!allMastered()) {
     y = wrapText(nextDone ? `You’ve mastered ${ELEM_NAME[next]} already: pick any gate you haven’t opened yet.` : `Go next to the ${ELEM_NAME[next].toUpperCase()} gate: your ${ELEM_NAME[e].toLowerCase()} tears through its titans.`, W / 2, y + 4, maxW, 20);
     if (!avoidDone) { ctx.fillStyle = '#ff9a9a'; y = wrapText(`Leave the ${ELEM_NAME[avoid].toUpperCase()} gate for later: ${ELEM_NAME[avoid].toLowerCase()} beats ${ELEM_NAME[e].toLowerCase()}, and its titans shrug your ${ELEM_NAME[e].toLowerCase()} off.`, W / 2, y + 4, maxW, 20); }
   } else {
@@ -6827,8 +6829,8 @@ function startGame(fresh) {
   banner = null; castMsg = null; reveal = null; wonShown = false; lore = null;
   seq = []; curNode = null;
   state = 'play';
-  if (ADV.known.size <= 1) showBanner('THE SANCTUM', 'Five glowing altars show the spells that open the five gates', 6);
-  else showBanner('Welcome back', worldOpen() ? 'The World Gate stands open' : `${ZONE_ELEMS.filter(e => ADV.zones[e].done).length} of 5 elements mastered`, 3);
+  if (ADV.known.size <= 1) showBanner('THE SANCTUM', 'Five altars teach the spells that open the five gates. The wide world lies below the court', 7);
+  else showBanner('Welcome back', allMastered() ? 'All five elements are yours' : `${ZONE_ELEMS.filter(e => ADV.zones[e].done).length} of 5 elements mastered`, 3);
 }
 
 function startWorld() {
@@ -6837,8 +6839,8 @@ function startWorld() {
   player.x = c.x; player.y = c.y; player.face = { x: 0, y: 1 };
   if (!ADV.world.ways.includes(w0.id)) ADV.world.ways.push(w0.id);
   for (const w of WAYSTONES) if (Math.hypot(c.x - w.x, c.y - w.y) < 160) WLD.healed[w.id] = true;
-  ADV.check = { x: c.x, y: c.y }; ADV.world.welcomed = true; advSave();
-  showBanner('THE WIDE WORLD', `${ADV.world.titans.length} of 9 titans beaten`, 3);
+  ADV.check = c.land ? { x: c.x, y: c.y, land: c.land } : { x: c.x, y: c.y }; ADV.world.welcomed = true; advSave();
+  if (!LANDNOW) showBanner('THE WIDE WORLD', `${ADV.world.titans.length} of 9 titans beaten`, 3);
 }
 
 function respawn() {
@@ -15416,7 +15418,7 @@ function drawHUD() {
   ctx.fillStyle = '#ccc';
   ctx.font = '12px "Big Caslon", "Libre Caslon Text", Georgia, serif';
   if (mode === 'battle' && teams) { drawMatchClock(14, 85); drawBattleRight(); } // the time, under the health bars
-  else ctx.fillText(worldOpen() ? `Spells ${ADV.known.size}   Titans ${ADV.world.titans.length}/9` : `Spells ${ADV.known.size}   Elements ${ZONE_ELEMS.filter(e => ADV.zones[e].done).length}/5`, 14, 90);
+  else ctx.fillText(allMastered() || !insideSanctum(player.x, player.y) ? `Spells ${ADV.known.size}   Titans ${ADV.world.titans.length}/9` : `Spells ${ADV.known.size}   Elements ${ZONE_ELEMS.filter(e => ADV.zones[e].done).length}/5`, 14, 90);
 
   const buffs = [];
   if (player.ward > 0)    buffs.push([`Ward ×${player.ward}`, TYPE_COLOR.spirit]);
@@ -16694,14 +16696,14 @@ function drawTitle() {
 
   if (menuPage === 'howto') { drawHowTo(y, bx, bw); return; }
   if (menuPage === 'adventure') {
-    // carry on (or begin), go straight out to the wide world once the Sanctum's five challenges are beaten, or start again
+    // carry on (or begin), go straight out to the wide world, or start again
     y += 10;
     const saved = hasAdventure() ? advLoad() : null, mastered = saved ? ZONE_ELEMS.filter(e => saved.zones[e].done).length : 0, open = mastered === 5;
     const bh = Math.min(64, Math.max(44, (H - y - 110) / 4.6));
     const opts = [
       saved ? { title: 'Continue', color: '#c77dff', go: () => startGame(false) } : { title: 'Begin', color: '#c77dff', go: () => startGame(true) },
-      { title: 'The Wide World', color: open ? '#8fdf6a' : '#5a5470', sub: open ? 'Straight out past the World Gate' : `Locked · beat all 5 challenges in the Sanctum first (${mastered}/5)`,
-        go: () => { if (open) startWorld(); else { SFX.fizzle(); worldLockedT = 1; } } },
+      { title: 'The Wide World', color: '#8fdf6a', sub: open ? 'Straight out past the World Gate' : `Straight out past the World Gate · the Sanctum’s 5 challenges can wait (${mastered}/5)`,
+        go: () => startWorld() },
     ];
     if (saved) opts.push({ title: 'New Adventure', color: '#ffd24a', go: () => { menuPage = 'confirmNew'; } });
     titleButtons = opts.map((o, i) => ({ ...o, x: bx, y: y + i * (bh + gap + 18), w: bw, h: bh }));
