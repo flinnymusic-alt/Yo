@@ -36,7 +36,7 @@ The file is organised in sections that start with `// ── name ──` commen
   - Joining uses a lobby code or an invite link `#join=CODE`.
   - Phones connect peer to peer with PeerJS and Trystero. When that fails, a backup route runs over public MQTT brokers on secure websockets.
 - **Adventure** (New Adventure / Continue):
-  - **The Sanctum:** five element gates. Each opens onto arenas with three titans, then a minion wave.
+  - **The Sanctum:** five element gates. Each opens onto arenas with three titans, then a minion wave. They teach the element lines but lock nothing: the World Gate is open from the start (`worldOpen`; `allMastered` says whether all five are done).
   - **The Wide World:** hills, rivers, a boat, sea serpents, rivals, roaming packs, waystones and a map.
   - **Hollowbrook:** the Spell School duels, the Scribe's House with the spell book, the Healing House, and teachers.
   - **Elsewhere in the world:** about 30 folk who need help, tokens and minion coins, and Barnaby's spell stall.
@@ -78,6 +78,7 @@ Ready-made scripts are in `spacewizard/tests/` (run each with `node spacewizard/
 - `lands.js`: every gate can be walked to; every far land builds and its places can be reached.
 - `beasts.js`: beasts turn up in every land, fight without errors and pay a bounty.
 - `missions.js`: all 34 missions can be taken, done and paid; hunger, hired hands, the coach, falling and loading a save.
+- `fresh.js`: a brand-new adventure walks straight out into the wide world.
 - `town.js`: the posts, the seasons, the council and dojo cards, and a badly run town against a well run one.
 - `shot.js <name> "<js>" [wide]`: take a picture after running some JavaScript in the page.
 
