@@ -1,0 +1,15 @@
+{
+  "name": "massive-group-chat",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A fake, old-school social network for messing around with friends.",
+  "type": "module",
+  "scripts": {
+    "start": "node --disable-warning=ExperimentalWarning server.mjs",
+    "dev": "node --disable-warning=ExperimentalWarning --watch server.mjs",
+    "test": "node --disable-warning=ExperimentalWarning --test test/*.test.mjs"
+  },
+  "engines": {
+    "node": ">=22.13"
+  }
+}
