@@ -14,7 +14,7 @@ let server;
 before(async () => {
   server = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', 'server.mjs'], {
     cwd: path.join(import.meta.dirname, '..'),
-    env: { ...process.env, PORT: String(PORT), DB_FILE: path.join(dir, 'test.db'), SIGNUPS_PER_HOUR: '1000' },
+    env: { ...process.env, PORT: String(PORT), DB_FILE: path.join(dir, 'test.db'), SIGNUPS_PER_HOUR: '1000', FIRST_FRIEND: 'hostie' },
     stdio: ['ignore', 'pipe', 'inherit'],
   });
   await new Promise(ok => server.stdout.on('data', d => String(d).includes('running') && ok()));
@@ -179,12 +179,40 @@ test('profile, drawings and beats', async () => {
   assert.equal(after.prof.bgMode, 'color');
 });
 
-test('top 8 shows chosen friends first', async () => {
+test('top friends shows chosen friends first, 4/8/12/16 of them', async () => {
   const star = await user('star');
   const fans = [];
-  for (let i = 0; i < 3; i++) fans.push(await user('fan' + i, 'star'));
+  for (let i = 0; i < 5; i++) fans.push(await user('fan' + i, 'star'));
   await star.call('PUT', '/profile', { top: [fans[2].me.id] });
-  assert.deepEqual((await star.call('GET', '/u/star')).top.map(t => t.name), ['fan2', 'fan0', 'fan1']);
+  assert.deepEqual((await star.call('GET', '/u/star')).top.map(t => t.name), ['fan2', 'fan0', 'fan1', 'fan3', 'fan4']);
+  await star.call('PUT', '/profile', { topN: 4 });
+  assert.deepEqual((await star.call('GET', '/u/star')).top.map(t => t.name), ['fan2', 'fan0', 'fan1', 'fan3']);
+  assert.equal(await status(star.call('PUT', '/profile', { topN: 5 })), 400);
+});
+
+test('friends comments wall: friends only', async () => {
+  const wally = await user('wally');
+  const pal = await user('wallpal', 'wally');
+  const nope = await user('wallnope');
+  await pal.call('POST', '/u/wally/wall', { body: 'thanks for the add!' });
+  assert.equal(await status(nope.call('POST', '/u/wally/wall', { body: 'hi' })), 403);
+  const prof = await wally.call('GET', '/u/wally');
+  assert.equal(prof.wallCount, 1);
+  assert.equal(prof.wall[0].body, 'thanks for the add!');
+  const stranger = await nope.call('GET', '/u/wally');
+  assert.equal(stranger.wall, null);
+  assert.equal(await status(nope.call('DELETE', '/wall/' + prof.wall[0].id)), 404);
+  await wally.call('DELETE', '/wall/' + prof.wall[0].id); // the page owner can delete any comment on it
+  assert.equal((await wally.call('GET', '/u/wally')).wallCount, 0);
+});
+
+test('profile views count each visitor once, not the owner', async () => {
+  const pop = await user('popular');
+  const fan = await user('viewer');
+  await fan.call('GET', '/u/popular');
+  await fan.call('GET', '/u/popular');
+  await pop.call('GET', '/u/popular');
+  assert.equal((await pop.call('GET', '/u/popular')).user.views, 1);
 });
 
 test('requests from other sites are refused', async () => {
@@ -212,4 +240,12 @@ test('pages are served as the app', async () => {
   }
   const js = await fetch(BASE + '/app.js', { headers: { 'accept-encoding': 'gzip' } });
   assert.equal(js.status, 200);
+});
+
+// Runs last: once "hostie" exists, everyone who signs up after starts out friends with them.
+test('new members start out friends with the first friend', async () => {
+  await user('hostie');
+  const newbie = await user('newbie');
+  assert.equal((await newbie.call('GET', '/u/hostie')).rel, 'friends');
+  assert.equal((await newbie.call('GET', '/u/hostie')).wall.length, 0);
 });

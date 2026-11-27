@@ -14,6 +14,7 @@ const PORT = Number(process.env.PORT) || 8080;
 const DB_FILE = process.env.DB_FILE || path.join(ROOT, 'data.db');
 const TRUST_PROXY = process.env.TRUST_PROXY === '1'; // set when behind a proxy that sets x-forwarded-*
 const SIGNUPS_PER_HOUR = Number(process.env.SIGNUPS_PER_HOUR) || 30; // per internet address (friends on one wifi share one)
+const FIRST_FRIEND = process.env.FIRST_FRIEND || ''; // a username every new member starts out friends with (MySpace's "Tom")
 const DAY = 864e5;
 const SESSION_DAYS = 60;
 const scrypt = promisify(crypto.scrypt);
@@ -56,7 +57,12 @@ CREATE INDEX IF NOT EXISTS drawings_uid ON drawings(uid,id);
 CREATE TABLE IF NOT EXISTS beats(id INTEGER PRIMARY KEY, uid INTEGER NOT NULL REFERENCES users ON DELETE CASCADE,
   name TEXT NOT NULL, data TEXT NOT NULL, created INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS beats_uid ON beats(uid,id);
+-- "Friends Comments" on someone's page
+CREATE TABLE IF NOT EXISTS wall(id INTEGER PRIMARY KEY, owner INTEGER NOT NULL REFERENCES users ON DELETE CASCADE,
+  uid INTEGER NOT NULL REFERENCES users ON DELETE CASCADE, body TEXT NOT NULL, created INTEGER NOT NULL);
+CREATE INDEX IF NOT EXISTS wall_owner ON wall(owner,id);
 `);
+if (!db.prepare('PRAGMA table_info(users)').all().some(c => c.name === 'views')) db.exec('ALTER TABLE users ADD COLUMN views INTEGER NOT NULL DEFAULT 0');
 
 const stmts = new Map();
 const st = sql => stmts.get(sql) || stmts.set(sql, db.prepare(sql)).get(sql);
@@ -137,7 +143,7 @@ const meInfo = uid => ({
 const added = (a, b) => !!get('SELECT 1 FROM adds WHERE a=? AND b=?', a, b);
 const isFriend = (a, b) => added(a, b) && added(b, a);
 const blockedEither = (a, b) => !!get('SELECT 1 FROM blocks WHERE (a=? AND b=?) OR (a=? AND b=?)', a, b, b, a);
-const userNamed = name => get('SELECT id, name, pic, prof, seen, created FROM users WHERE name=?', String(name)) || fail(404, 'No one has that username.');
+const userNamed = name => get('SELECT id, name, pic, prof, seen, created, views FROM users WHERE name=?', String(name)) || fail(404, 'No one has that username.');
 function unfriend(a, b) {
   run('DELETE FROM adds WHERE (a=? AND b=?) OR (a=? AND b=?)', a, b, b, a);
   run('DELETE FROM members WHERE (uid=? AND gid IN (SELECT id FROM grps WHERE uid=?)) OR (uid=? AND gid IN (SELECT id FROM grps WHERE uid=?))', b, a, a, b);
@@ -211,12 +217,13 @@ route('POST', '/signup', async ({ req, res, body: b }) => {
   if (get('SELECT 1 FROM users WHERE name=?', name)) fail(409, 'That username is taken.');
   const hash = await hashPass(pass);
   const inviter = b.invite ? get('SELECT id FROM users WHERE name=?', String(b.invite)) : null;
+  const first = FIRST_FRIEND ? get('SELECT id FROM users WHERE name=?', FIRST_FRIEND) : null;
   const uid = tx(() => {
     if (get('SELECT 1 FROM users WHERE name=?', name)) fail(409, 'That username is taken.');
     const t = now();
     const id = Number(run('INSERT INTO users(name,pass,created) VALUES(?,?,?)', name, hash, t).lastInsertRowid);
     run("INSERT INTO grps(uid,name) VALUES(?, 'Friends'), (?, 'Family')", id, id);
-    if (inviter) run('INSERT INTO adds(a,b,created) VALUES(?,?,?), (?,?,?)', id, inviter.id, t, inviter.id, id, t);
+    for (const f of [inviter, first]) if (f) run('INSERT OR IGNORE INTO adds(a,b,created) VALUES(?,?,?), (?,?,?)', id, f.id, t, f.id, id, t);
     return id;
   });
   startSession(req, res, uid);
@@ -316,23 +323,42 @@ route('GET', '/u/:name', ({ me, params }) => {
   if (u.id !== me.id) {
     if (get('SELECT 1 FROM blocks WHERE a=? AND b=?', u.id, me.id)) fail(404, 'No one has that username.');
     if (get('SELECT 1 FROM blocks WHERE a=? AND b=?', me.id, u.id)) return { blocked: 1, name: u.name };
+    const seenKey = `view:${me.id}:${u.id}`; // count each visitor once every 6 hours
+    if (!hits.has(seenKey)) { hits.set(seenKey, { n: 0, reset: now() + 6 * 36e5 }); run('UPDATE users SET views=views+1 WHERE id=?', u.id); u.views++; }
   }
   const rel = u.id === me.id ? 'me' : added(me.id, u.id) ? (added(u.id, me.id) ? 'friends' : 'sent') : added(u.id, me.id) ? 'received' : 'none';
   const topIds = JSON.stringify(Array.isArray(prof.top) ? prof.top : []);
+  const topN = [4, 8, 12, 16].includes(prof.topN) ? prof.topN : 8;
   const FRIEND_OF = 'EXISTS(SELECT 1 FROM adds WHERE a=$uid AND b=u.id) AND EXISTS(SELECT 1 FROM adds WHERE a=u.id AND b=$uid) AND NOT EXISTS(SELECT 1 FROM blocks WHERE (a=$me AND b=u.id) OR (a=u.id AND b=$me))';
-  const top = all(`SELECT u.id, u.name, u.pic FROM json_each($top) t JOIN users u ON u.id=t.value WHERE ${FRIEND_OF} ORDER BY t.key LIMIT 8`, { top: topIds, uid: u.id, me: me.id });
-  if (top.length < 8) top.push(...all(`SELECT u.id, u.name, u.pic FROM adds x JOIN users u ON u.id=x.b
+  const top = all(`SELECT u.id, u.name, u.pic FROM json_each($top) t JOIN users u ON u.id=t.value WHERE ${FRIEND_OF} ORDER BY t.key LIMIT $n`, { top: topIds, uid: u.id, me: me.id, n: topN });
+  if (top.length < topN) top.push(...all(`SELECT u.id, u.name, u.pic FROM adds x JOIN users u ON u.id=x.b
       WHERE x.a=$uid AND ${FRIEND_OF} AND u.id NOT IN (SELECT value FROM json_each($top)) ORDER BY x.created LIMIT $n`,
-    { uid: u.id, me: me.id, top: topIds, n: 8 - top.length }));
+    { uid: u.id, me: me.id, top: topIds, n: topN - top.length }));
   return {
-    user: { id: u.id, name: u.name, pic: u.pic, seen: u.seen, created: u.created },
+    user: { id: u.id, name: u.name, pic: u.pic, seen: u.seen, created: u.created, views: u.views },
     prof, rel, top,
     friendCount: get('SELECT count(*) n FROM adds x JOIN adds y ON y.a=x.b AND y.b=x.a WHERE x.a=?', u.id).n,
     ingroups: all('SELECT m.gid FROM members m JOIN grps g ON g.id=m.gid WHERE g.uid=? AND m.uid=?', me.id, u.id).map(r => r.gid),
     drawings: all('SELECT id FROM drawings WHERE uid=? ORDER BY id DESC', u.id).map(r => r.id),
     beats: all('SELECT id, name, data FROM beats WHERE uid=? ORDER BY id DESC', u.id).map(r => ({ ...r, data: JSON.parse(r.data) })),
     posts: feed(me.id, { author: u.id, limit: 5 }).posts,
+    wallCount: get('SELECT count(*) n FROM wall WHERE owner=?', u.id).n,
+    wall: rel === 'me' || rel === 'friends' ? all(`SELECT w.id, w.uid, u.name, u.pic, w.body, w.created FROM wall w JOIN users u ON u.id=w.uid
+      WHERE w.owner=$owner AND NOT EXISTS(SELECT 1 FROM blocks WHERE (a=$me AND b=w.uid) OR (a=w.uid AND b=$me))
+      ORDER BY w.id DESC LIMIT 50`, { owner: u.id, me: me.id }) : null,
   };
+});
+
+route('POST', '/u/:name/wall', ({ me, params, body: b }) => {
+  limit('w:' + me.id, 120, 6e5);
+  const u = userNamed(params[0]);
+  if (u.id !== me.id && !isFriend(me.id, u.id)) fail(403, `Be friends with ${u.name} to leave a comment.`);
+  const body = text(b.body, 1000, 'Your comment');
+  if (!body) fail(400, 'Write something first.');
+  return { id: Number(run('INSERT INTO wall(owner,uid,body,created) VALUES(?,?,?,?)', u.id, me.id, body, now()).lastInsertRowid) };
+});
+route('DELETE', '/wall/:id', ({ me, params }) => {
+  if (!run('DELETE FROM wall WHERE id=? AND (uid=? OR owner=?)', num(params[0]), me.id, me.id).changes) fail(404, 'Comment not found.');
 });
 
 route('PUT', '/profile', ({ me, body: b }) => {
@@ -352,8 +378,9 @@ route('PUT', '/profile', ({ me, body: b }) => {
   if ('bgPic' in b) p.bgPic = ownDrawing(me.id, b.bgPic);
   if ('autoplay' in b) p.autoplay = b.autoplay ? 1 : 0;
   if ('song' in b) p.song = b.song == null ? null : (get('SELECT id FROM beats WHERE id=? AND uid=?', num(b.song), me.id) || fail(400, 'That beat is gone.')).id;
+  if ('topN' in b) p.topN = [4, 8, 12, 16].includes(b.topN) ? b.topN : fail(400, 'Top friends can be 4, 8, 12 or 16.');
   if ('top' in b) {
-    if (!Array.isArray(b.top) || b.top.length > 8) fail(400, 'Top 8 is 8 people max.');
+    if (!Array.isArray(b.top) || b.top.length > 16) fail(400, 'Top friends is 16 people max.');
     p.top = [...new Set(b.top.map(num))];
   }
   if ('pic' in b) run('UPDATE users SET pic=? WHERE id=?', ownDrawing(me.id, b.pic), me.id);

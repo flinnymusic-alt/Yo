@@ -7,6 +7,12 @@ const app = document.getElementById('app');
 const nav = document.getElementById('nav');
 let me = null;
 
+// Addresses. (demo/build.mjs swaps these four lines so the preview runs with no server.)
+const SITE_URL = location.origin;
+const drawingUrl = id => `/d/${id}.png`;
+const here = () => location.pathname + location.hash;
+const setHere = (path, replace) => history[replace ? 'replaceState' : 'pushState'](null, '', path);
+
 // ---------- tiny helpers ----------
 function h(tag, props, ...kids) {
   const el = document.createElement(tag);
@@ -33,9 +39,33 @@ async function api(method, url, body) {
   return data;
 }
 function toast(msg) {
+  for (const old of document.querySelectorAll('.toast')) old.remove();
   const t = h('div', { class: 'toast', role: 'status' }, msg);
   document.body.append(t);
   setTimeout(() => t.remove(), 3500);
+}
+// The site's own "Are you sure?" box. Resolves true/false, or the typed text for a password box.
+function ask(msg, { input, value = '' } = {}) {
+  return new Promise(done => {
+    let finished = false;
+    const field = input && h('input', { type: input, value, readOnly: input === 'text', 'aria-label': msg });
+    const d = h('dialog', { class: 'ask' });
+    const close = ok => {
+      if (finished) return;
+      finished = true;
+      d.close();
+      d.remove();
+      done(ok && (input === 'password' ? field.value : true));
+    };
+    d.append(h('form', { class: 'in', onsubmit: e => { e.preventDefault(); close(true); } },
+      h('p', {}, msg), field,
+      h('div', { class: 'row end' }, input !== 'text' && h('button', { type: 'button', onclick: () => close(false) }, 'Cancel'),
+        h('button', { class: 'go' }, input === 'text' ? 'Done' : 'OK'))));
+    d.addEventListener('cancel', e => { e.preventDefault(); close(false); });
+    document.body.append(d);
+    d.showModal();
+    if (field) { field.focus(); field.select(); }
+  });
 }
 // Wrap an event handler so errors show up as a message instead of vanishing.
 const act = fn => async e => { try { await fn(e); } catch (err) { toast(err.message); } };
@@ -52,7 +82,7 @@ function ago(t) {
   return new Date(t).toLocaleDateString();
 }
 const pic = (id, size, name) => id
-  ? h('img', { class: 'pic', src: `/d/${id}.png`, width: size, height: size, alt: name + "'s pic", loading: 'lazy' })
+  ? h('img', { class: 'pic', src: drawingUrl(id), width: size, height: size, alt: name + "'s pic", loading: 'lazy' })
   : h('div', { class: 'pic nopic', style: { width: size + 'px', height: size + 'px', fontSize: Math.round(size / 3) + 'px' }, title: 'No pic yet' }, '?');
 const box = (title, ...kids) => h('section', { class: 'box' }, title && h('h2', {}, title), h('div', { class: 'in' }, ...kids));
 const pbox = (title, props, ...kids) => h('section', { class: 'pbox', ...props }, title && h('h3', {}, title), ...kids);
@@ -63,14 +93,14 @@ function select(options, value, onchange) {
   return s;
 }
 async function copy(text) {
-  try { await navigator.clipboard.writeText(text); toast('Copied!'); } catch { prompt('Copy this:', text); }
+  try { await navigator.clipboard.writeText(text); toast('Copied!'); } catch { await ask('Copy this:', { input: 'text', value: text }); }
 }
-const inviteLink = () => location.origin + '/join/' + me.name;
+const inviteLink = () => SITE_URL + '/join/' + me.name;
 
 // ---------- routing ----------
 let view = 0;
 function go(path, replace) {
-  history[replace ? 'replaceState' : 'pushState'](null, '', path);
+  setHere(path, replace);
   render();
 }
 addEventListener('popstate', () => render());
@@ -84,7 +114,7 @@ document.addEventListener('click', e => {
 const ROUTES = [
   [/^\/$/, () => feedPage()],
   [/^\/u\/(\w{1,20})$/, m => profilePage(m[1])],
-  [/^\/edit$/, () => editPage()],
+  [/^\/edit$/, (m, frag) => editPage(frag)],
   [/^\/draw$/, () => drawPage()],
   [/^\/beat(?:\/(\d+))?$/, m => beatPage(m[1])],
   [/^\/friends$/, () => friendsPage()],
@@ -95,7 +125,7 @@ async function render() {
   Sound.stop();
   resetTheme();
   drawNav();
-  const path = location.pathname;
+  const [path, frag = ''] = here().split('#');
   const join = /^\/join\/(\w{1,20})$/.exec(path);
   let el;
   try {
@@ -103,7 +133,7 @@ async function render() {
     else if (join) return go('/u/' + join[1], true);
     else {
       const r = ROUTES.find(([re]) => re.test(path));
-      el = r ? await r[1](r[0].exec(path)) : box('Not found', h('p', {}, 'Nothing here. ', h('a', { href: '/' }, 'Go home')));
+      el = r ? await r[1](r[0].exec(path), frag) : box('Not found', h('p', {}, 'Nothing here. ', h('a', { href: '/' }, 'Go home')));
     }
   } catch (err) {
     if (err.status === 401) { me = null; return render(); }
@@ -121,7 +151,7 @@ function drawNav() {
   const links = [['/', 'Home'], ['/u/' + me.name, 'My Page'], ['/friends', 'Friends' + (me.requests ? ` (${me.requests})` : '')],
     ['/draw', 'Draw'], ['/beat', 'Beat Maker'], ['/edit', 'Edit Page']];
   nav.replaceChildren(
-    ...links.map(([href, t]) => h('a', { href, class: location.pathname === href ? 'here' : '' }, t)),
+    ...links.map(([href, t]) => h('a', { href, class: here().split('#')[0] === href ? 'here' : '' }, t)),
     h('button', { onclick: act(async () => { await api('POST', '/logout'); me = null; go('/'); }) }, 'Log out'));
 }
 async function refreshMe() { me = await api('GET', '/me'); drawNav(); }
@@ -256,7 +286,7 @@ function postEl(p) {
       h('div', { class: 'actions' }, likeButton('post', p),
         p.uid === me.id && h('button', {
           class: 'linkish small',
-          onclick: act(async () => { if (confirm('Delete this post?')) { await api('DELETE', '/posts/' + p.id); el.remove(); } }),
+          onclick: act(async () => { if (await ask('Delete this post?')) { await api('DELETE', '/posts/' + p.id); el.remove(); } }),
         }, 'Delete')),
       comments,
       h('form', {
@@ -279,7 +309,7 @@ function commentEl(c, p) {
       h('div', { class: 'meta' }, h('span', { class: 'when' }, ago(c.created)), likeButton('comment', c),
         (c.uid === me.id || p.uid === me.id) && h('button', {
           class: 'linkish small',
-          onclick: act(async () => { if (confirm('Delete this comment?')) { await api('DELETE', '/comments/' + c.id); el.remove(); } }),
+          onclick: act(async () => { if (await ask('Delete this comment?')) { await api('DELETE', '/comments/' + c.id); el.remove(); } }),
         }, 'Delete'))));
   return el;
 }
@@ -314,7 +344,7 @@ function applyTheme(p) {
   if (t.bgMode !== 'color' && t.bgPic) {
     // Drawings are black on white. On a light color, "multiply" swaps the white for your color.
     // On a dark color, flip the drawing to white lines first (difference with white), then "lighten" adds your color.
-    const img = `url(/d/${Number(t.bgPic)}.png)`, size = t.bgMode === 'full' ? 'cover' : '160px';
+    const img = `url("${drawingUrl(Number(t.bgPic))}")`, size = t.bgMode === 'full' ? 'cover' : '160px';
     if (isDark(t.bg)) Object.assign(s, { backgroundImage: `linear-gradient(${t.bg},${t.bg}), ${img}, linear-gradient(#fff,#fff)`, backgroundBlendMode: 'lighten, difference, normal', backgroundSize: `auto, ${size}, auto` });
     else Object.assign(s, { backgroundImage: img, backgroundBlendMode: 'multiply', backgroundSize: size });
     if (t.bgMode === 'full') Object.assign(s, { backgroundPosition: 'center', backgroundAttachment: 'fixed' });
@@ -339,11 +369,12 @@ async function profilePage(name) {
           p.headline && h('p', { class: 'headline' }, `"${p.headline}"`),
           p.mood && h('p', {}, h('b', { class: 'acc' }, 'Mood: '), p.mood),
           h('p', {}, online ? h('span', { class: 'online' }, 'Online Now!') : 'Last seen: ' + (u.seen ? ago(u.seen) : 'a while ago')),
+          h('p', {}, h('b', { class: 'acc' }, 'Profile views: '), u.views.toLocaleString()),
           h('p', {}, 'Member since ' + new Date(u.created).toLocaleDateString()),
           mine && !u.pic && h('p', {}, h('a', { href: '/draw' }, 'Draw your face →')))),
-      h('p', { class: 'viewmy' }, h('b', {}, 'View my: '), jump('Drawings', 'drawings'), ' | ', jump('Music', 'music'), ' | ', jump('Friends', 'friendspace'))),
+      h('p', { class: 'viewmy' }, h('b', {}, 'View my: '), jump('Drawings', 'drawings'), ' | ', jump('Music', 'music'), ' | ', jump('Friends', 'friendspace'), ' | ', jump('Comments', 'comments'))),
     contactBox(r),
-    pbox(null, {}, h('div', { class: 'url' }, h('b', {}, `${u.name}'s URL:`), h('br'), location.origin + '/u/' + u.name)),
+    pbox(null, {}, h('div', { class: 'url' }, h('b', {}, `${u.name}'s URL:`), h('br'), SITE_URL + '/u/' + u.name)),
     pbox(`${u.name}'s Interests`, {}, INTERESTS.some(([k]) => ints[k])
       ? h('table', { class: 'ints' }, INTERESTS.filter(([k]) => ints[k]).map(([k, label]) => h('tr', {}, h('th', {}, label), h('td', {}, ints[k]))))
       : h('p', { class: 'small' }, mine ? h('a', { href: '/edit' }, 'Add your interests') : 'Nothing here yet.')));
@@ -358,11 +389,12 @@ async function profilePage(name) {
       : h('p', { class: 'small' }, 'Nothing here yet.')),
     drawingsBox(r, p, mine),
     pbox(`${u.name}'s Friend Space`, { id: 'friendspace' },
-      h('p', {}, h('b', { class: 'acc' }, `${u.name} has ${r.friendCount} friend${r.friendCount === 1 ? '' : 's'}.`)),
+      h('p', {}, h('b', { class: 'acc' }, `${u.name} has ${r.friendCount} friend${r.friendCount === 1 ? '' : 's'}.`), r.top.length ? ` Top ${p.topN || 8}:` : ''),
       r.top.length ? h('div', { class: 'top8' }, r.top.map(f => h('a', { href: '/u/' + f.name, class: 'friend' }, pic(f.pic, 80, f.name), f.name))) : null,
-      mine && h('p', { class: 'small' }, h('a', { href: '/friends' }, 'See all my friends'), ' · ', h('a', { href: '/edit#top8' }, 'Pick my Top 8'))),
+      mine && h('p', { class: 'small' }, h('a', { href: '/friends' }, 'See all my friends'), ' · ', h('a', { href: '/edit#top8' }, 'Pick my Top friends'))),
     pbox(`${u.name}'s Latest Posts`, {}, r.posts.length ? r.posts.map(postEl)
-      : h('p', { class: 'small' }, mine ? 'You haven\'t posted yet.' : r.rel === 'friends' ? 'No posts yet.' : `Be friends with ${u.name} to see their posts.`)));
+      : h('p', { class: 'small' }, mine ? 'You haven\'t posted yet.' : r.rel === 'friends' ? 'No posts yet.' : `Be friends with ${u.name} to see their posts.`)),
+    wallBox(r));
 
   const el = h('div', { class: 'profile' }, music, h('div', { class: 'pcols' }, left, right));
   el.theme = p;
@@ -371,11 +403,43 @@ async function profilePage(name) {
   return el;
 }
 
+// "Friends Comments": the comment wall at the bottom of a page. Only the owner's friends see it and write on it.
+function wallBox(r) {
+  const u = r.user, mine = r.rel === 'me';
+  const head = h('p', {}, h('b', { class: 'acc' }, `${u.name} has ${r.wallCount} comment${r.wallCount === 1 ? '' : 's'}.`));
+  if (!r.wall) return pbox(`${u.name}'s Friends Comments`, { id: 'comments' }, head, h('p', { class: 'small' }, `Be friends with ${u.name} to see and leave comments.`));
+  const one = w => {
+    const el = h('div', { class: 'wall' },
+      h('a', { href: '/u/' + w.name, class: 'friend' }, pic(w.pic, 56, w.name), w.name),
+      h('div', { class: 'pbody' }, h('div', { class: 'when' }, ago(w.created)), h('div', { class: 'text' }, w.body),
+        (mine || w.uid === me.id) && h('button', {
+          class: 'linkish small',
+          onclick: act(async () => { if (await ask('Delete this comment?')) { await api('DELETE', '/wall/' + w.id); el.remove(); } }),
+        }, 'Delete')));
+    return el;
+  };
+  const list = h('div', {}, r.wall.map(one));
+  const input = h('textarea', { rows: 2, maxLength: 1000, placeholder: mine ? 'Write on your own page…' : 'Leave a comment… (thanks for the add!)', 'aria-label': 'Leave a comment' });
+  return pbox(`${u.name}'s Friends Comments`, { id: 'comments' }, head,
+    h('form', {
+      class: 'stack',
+      onsubmit: act(async e => {
+        e.preventDefault();
+        const body = input.value.trim();
+        if (!body) return;
+        const res = await api('POST', `/u/${u.name}/wall`, { body });
+        input.value = '';
+        list.prepend(one({ id: res.id, uid: me.id, name: me.name, pic: me.pic, body, created: Date.now() }));
+      }),
+    }, input, h('div', { class: 'row end' }, h('button', {}, 'Add comment'))),
+    list);
+}
+
 function contactBox(r) {
   const u = r.user;
-  const cmd = (label, path, ask, after) => h('button', {
+  const cmd = (label, path, q, after) => h('button', {
     class: 'linkish',
-    onclick: act(async () => { if (ask && !confirm(ask)) return; await api('POST', path + u.name); await refreshMe(); after ? after() : render(); }),
+    onclick: act(async () => { if (q && !(await ask(q))) return; await api('POST', path + u.name); await refreshMe(); after ? after() : render(); }),
   }, label);
   if (r.rel === 'me') return pbox("It's you!", {}, h('div', { class: 'cgrid' },
     h('a', { href: '/edit' }, 'Edit my page'), h('a', { href: '/draw' }, 'Draw something'),
@@ -388,7 +452,7 @@ function contactBox(r) {
   }[r.rel];
   return pbox(`Contacting ${u.name}`, {},
     h('div', { class: 'cgrid' }, main,
-      h('button', { class: 'linkish', onclick: () => copy(location.origin + '/u/' + u.name) }, 'Copy link to page'),
+      h('button', { class: 'linkish', onclick: () => copy(SITE_URL + '/u/' + u.name) }, 'Copy link to page'),
       cmd('🚫 Block', '/block/', `Block ${u.name}? You won't see each other's stuff, and you won't be friends anymore.`, () => go('/'))),
     r.rel === 'friends' && h('div', {}, h('p', { class: 'small' }, `Put ${u.name} in your groups:`), groupChips(u.id, r.ingroups)));
 }
@@ -410,11 +474,11 @@ function drawingsBox(r, p, mine) {
   const setProf = (data, msg) => act(async () => { await api('PUT', '/profile', data); if ('pic' in data) me.pic = data.pic; toast(msg); render(); });
   return pbox(`${r.user.name}'s Drawings`, { id: 'drawings' },
     r.drawings.length ? h('div', { class: 'drawings' }, r.drawings.map(id => h('figure', {},
-      h('img', { src: `/d/${id}.png`, alt: 'A drawing', loading: 'lazy', width: 150, height: 150 }),
+      h('img', { src: drawingUrl(id), alt: 'A drawing', loading: 'lazy', width: 150, height: 150 }),
       mine && h('figcaption', {},
         h('button', { class: 'linkish', onclick: setProf({ pic: id }, 'That\'s your pic now.') }, 'Use as pic'),
         h('button', { class: 'linkish', onclick: setProf({ bgPic: id, bgMode: p.bgMode === 'full' ? 'full' : 'tile' }, 'Background set.') }, 'Use as background'),
-        h('button', { class: 'linkish', onclick: act(async () => { if (confirm('Delete this drawing?')) { await api('DELETE', '/drawings/' + id); if (me.pic === id) me.pic = null; render(); } }) }, 'Delete')))))
+        h('button', { class: 'linkish', onclick: act(async () => { if (await ask('Delete this drawing?')) { await api('DELETE', '/drawings/' + id); if (me.pic === id) me.pic = null; render(); } }) }, 'Delete')))))
       : h('p', { class: 'small' }, mine ? h('a', { href: '/draw' }, 'Draw something') : 'No drawings yet.'));
 }
 
@@ -432,13 +496,16 @@ function musicBox(r, p, mine) {
       }, b);
       const row = h('div', { class: 'track' }, btn, h('span', { class: 'name' }, b.name), steps,
         h('a', { href: '/beat/' + b.id, class: 'small' }, mine ? 'Edit a copy' : 'Remix'),
-        mine && h('button', { class: 'linkish small', onclick: act(async () => { if (confirm(`Delete "${b.name}"?`)) { await api('DELETE', '/beats/' + b.id); render(); } }) }, 'Delete'));
+        mine && h('button', { class: 'linkish small', onclick: act(async () => { if (await ask(`Delete "${b.name}"?`)) { await api('DELETE', '/beats/' + b.id); render(); } }) }, 'Delete'));
       return row;
     }) : h('p', { class: 'small' }, 'No music yet. ', h('a', { href: '/beat' }, 'Make a beat'), ' and it plays here.'));
 }
 
 // ---------- edit my page ----------
-async function editPage() {
+const MOODS = ['happy 😀', 'cheeky 😜', 'chill 😎', 'sleepy 😴', 'hyper 🤪', 'in love 😍', 'sad 😢', 'grumpy 😠', 'bored 😐', 'hungry 🍕', 'thinking 🤔', 'partying 🥳'];
+const TOP_SIZES = [4, 8, 12, 16];
+
+async function editPage(frag) {
   const [r, f] = await Promise.all([api('GET', '/u/' + me.name), api('GET', '/friends')]);
   const p = { ...CLASSIC, ...r.prof }, ints = p.interests || {};
   const input = (name, value, max, rows) => rows
@@ -456,10 +523,14 @@ async function editPage() {
   els.autoplay = h('input', { type: 'checkbox', checked: !!p.autoplay });
   let bgPic = p.bgPic;
   const picker = h('div', { class: 'picker' }, r.drawings.length ? r.drawings.map(id => h('label', {},
-    h('img', { src: `/d/${id}.png`, alt: 'Drawing', width: 70, height: 70 }),
+    h('img', { src: drawingUrl(id), alt: 'Drawing', width: 70, height: 70 }),
     h('input', { type: 'radio', name: 'bgpic', checked: id === bgPic, onchange: () => { bgPic = id; preview(); } }))) : h('span', { class: 'small' }, 'Draw something first, then you can use it as your background.'));
   const topIds = (Array.isArray(p.top) && p.top.length ? p.top : r.top.map(t => t.id));
-  const tops = Array.from({ length: 8 }, (_, i) => select([['', '(empty)'], ...f.friends.map(x => [x.id, x.name])], topIds[i] || ''));
+  const tops = Array.from({ length: 16 }, (_, i) => select([['', '(empty)'], ...f.friends.map(x => [x.id, x.name])], topIds[i] || ''));
+  const topBox = h('div', { class: 'top8pick' });
+  els.topN = select(TOP_SIZES.map(n => [n, `Top ${n}`]), p.topN || 8, () => drawTops());
+  const drawTops = () => topBox.replaceChildren(...tops.slice(0, Number(els.topN.value)).map((s, i) => field(`#${i + 1}`, s)));
+  drawTops();
 
   const read = () => ({
     headline: els.headline.value, mood: els.mood.value,
@@ -468,7 +539,8 @@ async function editPage() {
     ...Object.fromEntries(COLOR_NAMES.map(([k]) => [k, els[k].value])),
     font: els.font.value, bgMode: els.bgMode.value, bgPic: bgPic || null,
     song: els.song.value ? Number(els.song.value) : null, autoplay: els.autoplay.checked ? 1 : 0,
-    top: [...new Set(tops.map(s => Number(s.value)).filter(Boolean))],
+    topN: Number(els.topN.value),
+    top: [...new Set(tops.slice(0, Number(els.topN.value)).map(s => Number(s.value)).filter(Boolean))],
   });
   const preview = () => applyTheme(read()); // shows your colors and background while you edit
   const presets = h('div', { class: 'row presets' }, Object.entries(PRESETS).map(([name, t]) => h('button', {
@@ -483,6 +555,7 @@ async function editPage() {
   },
   box('About you', h('p', { class: 'warnline' }, 'Remember: nothing real. Make stuff up, be silly.'),
     h('div', { class: 'stack' }, field('Headline (a quote under your name)', els.headline), field('Mood', els.mood),
+      h('div', { class: 'chips' }, MOODS.map(m => chip(m, false, () => { els.mood.value = m; }))),
       ...SECTIONS.map(([k, label]) => field(label, els[k])))),
   box('Interests', h('div', { class: 'stack' }, ...INTERESTS.map(([k, label]) => field(label, els['i_' + k])))),
   box('Dress up your page', h('p', { class: 'hint' }, 'Pick a starter look, then change anything. The page behind this form shows your background as you go.'),
@@ -492,14 +565,14 @@ async function editPage() {
     h('p', { class: 'small' }, 'Background drawing:'), picker),
   box('Music', h('div', { class: 'stack' }, field('Song at the top of my page', els.song),
     h('label', { class: 'check' }, els.autoplay, h('span', {}, 'Play it when people open my page (old school!)')))),
-  h('section', { class: 'box', id: 'top8' }, h('h2', {}, 'My Top 8'), h('div', { class: 'in' },
-    f.friends.length ? h('div', { class: 'top8pick' }, tops.map((s, i) => field(`#${i + 1}`, s))) : h('p', { class: 'small' }, 'Add some friends first.'))),
+  h('section', { class: 'box', id: 'top8' }, h('h2', {}, 'My Top Friends'), h('div', { class: 'in' },
+    f.friends.length ? [h('div', { class: 'row' }, field('How many to show', els.topN)), topBox] : h('p', { class: 'small' }, 'Add some friends first.'))),
   h('div', { class: 'row end' }, h('a', { href: '/u/' + me.name }, 'Cancel'), save),
   box('Delete my account', h('p', { class: 'small' }, 'This deletes your page, posts, comments, drawings and beats for good.'),
     h('button', {
       type: 'button', class: 'danger',
       onclick: act(async () => {
-        const pass = prompt('Type your password to delete your account. This cannot be undone.');
+        const pass = await ask('Type your password to delete your account. This cannot be undone.', { input: 'password' });
         if (!pass) return;
         await api('DELETE', '/me', { pass });
         me = null;
@@ -507,7 +580,7 @@ async function editPage() {
       }),
     }, 'Delete my account')));
   el.theme = p;
-  if (location.hash === '#top8') el.after = () => document.getElementById('top8')?.scrollIntoView();
+  if (frag === 'top8') el.after = () => document.getElementById('top8')?.scrollIntoView();
   return el;
 }
 
@@ -535,7 +608,7 @@ function drawPage() {
   const drawTools = () => tools.replaceChildren(...Object.keys(TOOLS).map(t => chip(t, t === tool, () => { tool = t; drawTools(); })));
   drawTools();
   const post = asPic => act(async e => {
-    if (!drew && !confirm("It's blank. Post it anyway?")) return;
+    if (!drew && !(await ask("It's blank. Post it anyway?"))) return;
     e.target.disabled = true;
     try {
       const r = await api('POST', '/drawings', { png: c.toDataURL('image/png'), pic: asPic ? 1 : 0 });
@@ -713,7 +786,7 @@ async function friendsPage() {
   const link = inviteLink();
   const person = (u, ...extra) => h('div', { class: 'person' }, h('a', { href: '/u/' + u.name, tabIndex: -1 }, pic(u.pic, 40, u.name)),
     h('a', { href: '/u/' + u.name, class: 'who grow' }, u.name), ...extra);
-  const cmd = (label, path, ask) => h('button', { onclick: act(async () => { if (ask && !confirm(ask)) return; await api('POST', path); render(); }) }, label);
+  const cmd = (label, path, q) => h('button', { onclick: act(async () => { if (q && !(await ask(q))) return; await api('POST', path); render(); }) }, label);
   const newGroup = h('input', { maxLength: 30, placeholder: 'New group name, like "Band" or "Work"', 'aria-label': 'New group name' });
   const find = h('input', { maxLength: 20, placeholder: 'username', 'aria-label': 'Username', autocapitalize: 'off' });
   return h('div', {},
@@ -733,7 +806,7 @@ async function friendsPage() {
       f.groups.map(g => h('div', { class: 'person' }, h('b', { class: 'grow' }, g.name),
         h('button', {
           onclick: act(async () => {
-            if (!confirm(`Delete the group "${g.name}"? Posts you sent only to it will be visible only to you.`)) return;
+            if (!(await ask(`Delete the group "${g.name}"? Posts you sent only to it will be visible only to you.`))) return;
             await api('DELETE', '/groups/' + g.id); render();
           }),
         }, 'Delete'))),

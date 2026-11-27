@@ -62,6 +62,11 @@ button.danger { background: #c00; color: #fff; border-color: #900; }
 .chip { border-radius: 12px; padding: 1px 10px; font-size: 12px; background: #fff; border: 1px solid var(--nav); color: var(--site); }
 .chip.on, .tabs .on { background: var(--site); color: #fff; border-color: var(--site); }
 .show { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 6px; font-weight: bold; font-size: 12px; }
+.ask { border: 2px solid var(--site); padding: 0; width: min(420px, calc(100vw - 32px)); background: #fff; color: #000; }
+.ask::backdrop { background: rgba(0, 0, 0, .45); }
+.ask .in { display: grid; gap: 10px; padding: 14px; }
+.ask p { margin: 0; }
+.ask .row { margin: 0; }
 .toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); background: #222; color: #fff; padding: 8px 14px; z-index: 9; max-width: calc(100vw - 32px); }
 
 /* pics */
@@ -128,6 +133,8 @@ body.themed { background-color: var(--bg); }
 .drawings figure { margin: 0; }
 .drawings img { display: block; width: 100%; height: auto; border: 1px solid #999; background: #fff; }
 .drawings figcaption { display: flex; flex-wrap: wrap; gap: 0 8px; font-size: 11px; margin-top: 2px; }
+.wall { display: flex; gap: 10px; padding: 8px; margin-top: 6px; background: color-mix(in srgb, var(--head) 14%, var(--box)); }
+.wall .friend { width: 72px; flex: none; }
 .music { padding: 6px 8px; }
 .music > h3 { margin-bottom: 6px; }
 .track { display: flex; align-items: center; gap: 8px; padding: 3px 0; flex-wrap: wrap; }

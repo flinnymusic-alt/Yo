@@ -13,6 +13,7 @@ Needs [Node.js](https://nodejs.org) 22.13 or newer. There's nothing to install: 
 ```sh
 npm start        # http://localhost:8080
 npm test         # API tests
+npm run demo     # builds demo/demo.html, a playable preview with pretend friends and no server
 ```
 
 Everything is saved in `data.db`, one file. To back up, copy it while the server is stopped.
@@ -36,6 +37,7 @@ Put it behind HTTPS (Caddy, or your host's built-in HTTPS) so passwords aren't s
 | `DB_FILE` | `./data.db` | Where the database lives |
 | `TRUST_PROXY` | off | Set to `1` behind a proxy or HTTPS terminator, so login cookies are marked secure and rate limits see real addresses |
 | `SIGNUPS_PER_HOUR` | `30` | Sign-ups allowed per internet address per hour |
+| `FIRST_FRIEND` | none | A username every new member starts out friends with, like MySpace's Tom. Set it to your own username. |
 
 ## What's in it
 
@@ -45,12 +47,15 @@ Put it behind HTTPS (Caddy, or your host's built-in HTTPS) so passwords aren't s
 | `public/app.js` | The whole front end: plain JavaScript, no libraries. Beats are synthesized in the browser, so no audio files are stored. |
 | `public/style.css`, `index.html` | Look and shell |
 | `test/api.test.mjs` | API tests |
+| `demo/` | The preview: `fake-api.js` answers the same requests as the server, but inside the browser, with made-up people. `build.mjs` joins it to the real front end in one file. |
 
 **How it works**
 - **Friends.** Two people are friends when both have added each other. Signing up through someone's invite link (`/join/username`) makes you friends straight away.
 - **Feed.** You only see posts from friends. Posts are text only.
 - **Groups.** Everyone starts with "Friends" and "Family" and can add more. A post goes to all your friends, or only to the groups you pick. The feed can be filtered by group. If you take someone out of a group, they stop seeing posts sent to it.
 - **Blocking.** Blocking unfriends both of you and hides each person's page, posts and comments from the other. There's no report button. Block and move on.
+- **Friends Comments.** The comment wall at the bottom of each page ("Thanks for the add!"). Only the page owner's friends can see it or write on it. The owner can delete any comment on it.
+- **MySpace extras.** Profile views (each visitor counts once every 6 hours), a mood with an emoticon, and a Top 4, 8, 12 or 16.
 - **Deleting.** You can delete your own posts and comments, comments on your posts, your drawings, your beats and your whole account.
 - **Pages.** Any logged-in member can see anyone's page except people who blocked them. Posts on a page only show to people the post was shared with.
 - **Drawings.** 300×300, black and white. Use one as your pic, or as your page background (tiled like a mosaic, or one big image), tinted with your background color.
